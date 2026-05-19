@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.repository;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -36,6 +37,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
 
     Optional<Application> findByPhoneAndBookingNumberAndDeletedAtIsNull(String phone, String bookingNumber);
 
+    @EntityGraph(attributePaths = "gathering")
     List<Application> findByUserIdAndDeletedAtIsNull(UUID userId);
 
 }

@@ -33,6 +33,8 @@ public class ApplicationRepositoryCustomImpl implements ApplicationRepositoryCus
 
         return queryFactory
                 .selectFrom(application)
+                .join(application.gathering).fetchJoin()
+                .leftJoin(application.user).fetchJoin()
                 .where(builder)
                 .fetch();
     }
