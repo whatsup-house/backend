@@ -36,16 +36,11 @@
 - `GatheringService.getGatherings()` → `listGatherings()`
 - `GatheringController.getGatherings()` → `listGatherings()`
 
-### 2-3. Request/Response DTO 네이밍 — Admin prefix 불일치 ✅
-- `AdminApplicationStatusRequest` → `ApplicationStatusRequest`
-- `AdminApplicationDeleteResponse` → `ApplicationDeleteResponse`
-- `AdminApplicationStatusResponse` → `ApplicationStatusResponse`
-- `UserAdminListResponse` → `UserListResponse`
-- `UserAdminPageResponse` → `UserPageResponse`
-- (충돌로 유지) `AdminApplicationResponse`, `AdminCarouselSlideResponse`, `AdminGatheringResponse`
+### 2-3. Request/Response DTO 네이밍 — Admin prefix 불일치 ✅ (완료 확인)
+- `ApplicationStatusRequest`, `ApplicationDeleteResponse`, `ApplicationStatusResponse`, `UserListResponse`, `UserListResponse` 모두 이미 적용됨
 
-### 2-4. Repository 조회 결과 타입 — `*Row` suffix ✅
-- `UserApplicationStatsRow` → `UserApplicationStatsProjection`
+### 2-4. Repository 조회 결과 타입 — `*Row` suffix ✅ (완료 확인)
+- `UserApplicationStatsProjection`으로 이미 적용됨
 
 ---
 
@@ -62,14 +57,28 @@
 - `GatheringService.getGatherings()`와 `AdminGatheringService.resolveGatherings()`가 동일한 날짜/상태 필터 조합 분기를 각각 구현
 - 클라이언트용은 날짜 단일 필터, 어드민용은 날짜 범위 필터까지 포함하는 차이가 있으므로 현재 분리 유지가 맞지만, `GatheringRepository`에 Querydsl Custom 쿼리로 단일화하는 방향도 검토 가능
 
-### 3-4. 테스트 DTO 생성 방식 — `ReflectionTestUtils.setField` 사각지대 ✅
-- Request DTO 13개에 `@Builder @NoArgsConstructor @AllArgsConstructor` 추가
-- 테스트 6개 파일에서 DTO 대상 `ReflectionTestUtils.setField` → Builder 패턴으로 전환
-- Entity id 주입(`setField(entity, "id", ...)`)은 대상 아님 (JPA 관리 필드)
+### 3-4. 테스트 DTO 생성 방식 — `ReflectionTestUtils.setField` 사각지대
+- `ReviewServiceTest.java` — DTO(`request`, `updateRequest` 등)에 `setField` 사용 중 → Builder 전환 필요
+- `Entity.id` 주입(`setField(entity, "id", ...)`)은 JPA 관리 필드라 대상 아님
 
 ---
 
-## 4. SonarQube 정적 분석 (이후 단계)
+## 4. 코드 리뷰 보고서 이슈 (`docs/review_report.md`)
+
+> 진행 기준: 우선순위 8개 항목 순서대로 처리
+
+- [x] 1번 — `SecurityConfig.anyRequest().permitAll()` → `denyAll()` (커밋: `fix: SecurityConfig anyRequest().permitAll() → denyAll() 보안 정책 강화`)
+- [x] 2번 — N+1 쿼리 (`ApplicationRepositoryCustomImpl` fetch join, `ApplicationRepository` / `GatheringRepository` `@EntityGraph`) (커밋: `fix: N+1 쿼리 해결 — fetch join 및 @EntityGraph 추가`)
+- [ ] 3번 — `User.updateProfile()` null 덮어쓰기 — null 체크 후 조건부 업데이트 (`User.java`)
+- [ ] 4번 — soft delete 조회 일관성 — `AdminApplicationService.deleteApplication()`의 `findById()` → `findByIdAndDeletedAtIsNull()` 교체
+- [ ] 5번 — 토큰 만료/위변조 미구분 — `JwtTokenProvider.validateToken()`에서 `ExpiredJwtException` 별도 catch, `TOKEN_EXPIRED` 에러코드 실제 사용
+- [ ] 6번 — 인증 실패 응답 포맷 불일치 — `authenticationEntryPoint`에서 `ApiResult.fail(...)` JSON으로 응답
+- [ ] 7번 — 토큰 응답 바디 노출 — `LoginResponse`에서 토큰 필드 제거, 쿠키로만 전달
+- [ ] 8번 — carousel 경로 충돌 — `PATCH /{slideId}` → `PATCH /{slideId}/active`, `PUT /order` → `PUT /reorder`
+
+---
+
+## 5. SonarQube 정적 분석 (이후 단계)
 
 - [x] SonarQube 연동 설정 (`build.gradle` 플러그인 — sonarqube 6.0.1.5171, jacoco)
 - [x] `docker-compose.yml`에 SonarQube + 전용 PostgreSQL 서비스 추가
