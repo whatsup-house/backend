@@ -1,4 +1,4 @@
-package com.whatsuphouse.backend.domain.carousel.client.controller;
+package com.whatsuphouse.backend.domain.home.controller;
 
 import com.whatsuphouse.backend.domain.carousel.client.service.CarouselService;
 import com.whatsuphouse.backend.domain.carousel.common.dto.response.CarouselSlideResponse;

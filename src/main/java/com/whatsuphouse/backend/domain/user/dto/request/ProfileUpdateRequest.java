@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.common.enums.Mbti;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -18,6 +19,7 @@ import lombok.NoArgsConstructor;
 public class ProfileUpdateRequest {
 
     @Schema(example = "새닉네임")
+    @NotNull(message = "닉네임은 필수입니다.")
     @Size(min = 2, max = 50, message = "닉네임은 2자 이상 50자 이하여야 합니다.")
     private String nickname;
 
@@ -26,13 +28,16 @@ public class ProfileUpdateRequest {
     private String phone;
 
     @Schema(example = "홍길동")
+    @NotNull(message = "이름은 필수입니다.")
     @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
     private String name;
 
     @Schema(example = "FEMALE")
+    @NotNull(message = "성별은 필수입니다.")
     private Gender gender;
 
     @Schema(example = "26")
+    @NotNull(message = "나이는 필수입니다.")
     @Min(value = 1, message = "나이는 1 이상이어야 합니다.")
     private Integer age;
 

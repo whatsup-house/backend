@@ -1,4 +1,4 @@
-package com.whatsuphouse.backend.domain.image.controller;
+package com.whatsuphouse.backend.global.storage.controller;
 
 import com.whatsuphouse.backend.global.common.ApiResult;
 import com.whatsuphouse.backend.global.storage.dto.ImageUploadResponse;

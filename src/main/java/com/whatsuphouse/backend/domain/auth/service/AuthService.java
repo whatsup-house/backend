@@ -90,8 +90,16 @@ public class AuthService {
     }
 
     public TokenRefreshResponse refresh(String refreshToken) {
-        if (refreshToken == null || !jwtTokenProvider.validateToken(refreshToken)) {
+        if (refreshToken == null) {
             throw new CustomException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+        try {
+            jwtTokenProvider.validateToken(refreshToken);
+        } catch (CustomException e) {
+            ErrorCode code = e.getErrorCode() == ErrorCode.TOKEN_EXPIRED
+                    ? ErrorCode.EXPIRED_REFRESH_TOKEN
+                    : ErrorCode.INVALID_REFRESH_TOKEN;
+            throw new CustomException(code);
         }
 
         UUID userId = jwtTokenProvider.getUserIdFromToken(refreshToken);

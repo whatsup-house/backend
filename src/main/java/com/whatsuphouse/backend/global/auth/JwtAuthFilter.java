@@ -1,5 +1,7 @@
 package com.whatsuphouse.backend.global.auth;
 
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -26,11 +28,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         String token = resolveToken(request);
 
-        if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
-            UserPrincipal principal = jwtTokenProvider.getUserPrincipal(token);
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+        if (StringUtils.hasText(token)) {
+            try {
+                jwtTokenProvider.validateToken(token);
+                UserPrincipal principal = jwtTokenProvider.getUserPrincipal(token);
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            } catch (CustomException e) {
+                request.setAttribute("jwtErrorCode", e.getErrorCode());
+            }
         }
 
         filterChain.doFilter(request, response);

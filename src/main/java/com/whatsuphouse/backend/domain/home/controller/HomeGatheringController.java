@@ -1,4 +1,4 @@
-package com.whatsuphouse.backend.domain.gathering.client.controller;
+package com.whatsuphouse.backend.domain.home.controller;
 
 import com.whatsuphouse.backend.domain.gathering.client.dto.response.CuratedGatheringResponse;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
