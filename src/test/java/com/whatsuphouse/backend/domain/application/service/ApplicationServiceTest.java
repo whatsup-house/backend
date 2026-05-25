@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
@@ -34,6 +35,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+
+import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 
 @ExtendWith(MockitoExtension.class)
 class ApplicationServiceTest {
@@ -46,6 +51,9 @@ class ApplicationServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ApplicationService applicationService;
@@ -98,6 +106,7 @@ class ApplicationServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+        then(eventPublisher).should().publishEvent(any(ApplicationPendingEvent.class));
     }
 
     @Test
@@ -114,6 +123,7 @@ class ApplicationServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+        then(eventPublisher).should().publishEvent(any(ApplicationPendingEvent.class));
     }
 
     @Test
@@ -198,6 +208,7 @@ class ApplicationServiceTest {
         applicationService.cancel(applicationId, userId);
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        then(eventPublisher).should().publishEvent(any(ApplicationCancelledEvent.class));
     }
 
     @Test

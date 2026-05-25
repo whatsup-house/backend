@@ -31,7 +31,13 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+
+import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class AdminApplicationServiceTest {
@@ -41,6 +47,9 @@ class AdminApplicationServiceTest {
 
     @Mock
     private MileageService mileageService;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private AdminApplicationService adminApplicationService;
@@ -201,6 +210,7 @@ class AdminApplicationServiceTest {
         // THEN
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         assertThat(response.getMileageRewarded()).isNull();
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
 @Test
@@ -266,6 +276,7 @@ void changeStatus_toCancelled_throwsException() {
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.ATTENDED);
         assertThat(response.getMileageRewarded()).isEqualTo(1000);
         assertThat(response.getUserMileageAfter()).isEqualTo(1000);
+        then(eventPublisher).should().publishEvent(any(ApplicationAttendedEvent.class));
     }
 
     @Test
@@ -314,7 +325,7 @@ void changeStatus_toCancelled_throwsException() {
     @DisplayName("PENDING 신청 삭제 성공")
     void deleteApplication_pending_success() {
         // GIVEN
-        given(applicationRepository.findById(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
 
         //WHEN
         ApplicationDeleteResponse response = adminApplicationService.deleteApplication(applicationId);
@@ -326,7 +337,7 @@ void changeStatus_toCancelled_throwsException() {
     @DisplayName("이미 CANCELLED인 신청은 멱등 처리")
     void deleteApplication_alreadyCancelled_idempotent() {
         // GIVEN
-        given(applicationRepository.findById(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
         application.cancel();
 
         //WHEN
@@ -339,7 +350,7 @@ void changeStatus_toCancelled_throwsException() {
     @DisplayName("ATTENDED 신청 삭제 시도 시 예외 발생")
     void deleteApplication_attended_throwsException() {
         // GIVEN
-        given(applicationRepository.findById(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
         application.attend();
 
         // WHEN & THEN

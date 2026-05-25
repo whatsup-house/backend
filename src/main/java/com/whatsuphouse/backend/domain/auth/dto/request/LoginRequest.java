@@ -14,12 +14,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class LoginRequest {
 
-    @Schema(example = "user@example.com")
+    @Schema(example = "admin@whatsuphouse.com")
     @NotBlank
     @Email(message = "이메일 형식이 올바르지 않습니다.")
     private String email;
 
-    @Schema(example = "password123!")
+    @Schema(example = "Test1234!")
     @NotBlank
     private String password;
 }

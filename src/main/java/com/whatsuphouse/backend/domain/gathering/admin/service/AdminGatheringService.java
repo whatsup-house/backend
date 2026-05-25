@@ -1,8 +1,10 @@
 package com.whatsuphouse.backend.domain.gathering.admin.service;
 
+import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository.ApplicationCountProjection;
+import com.whatsuphouse.backend.domain.notification.event.GatheringCancelledEvent;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCreateRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCurationOrderRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCurationRequest;
@@ -19,6 +21,7 @@ import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -40,6 +43,7 @@ public class AdminGatheringService {
     private final LocationRepository locationRepository;
     private final ApplicationRepository applicationRepository;
     private final StorageService storageService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public List<AdminGatheringResponse> listGatherings(
             GatheringStatus status, LocalDate eventDate, LocalDate from, LocalDate to) {
@@ -128,6 +132,16 @@ public class AdminGatheringService {
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
         gathering.changeStatus(request.getStatus());
+
+        // 모임이 취소 상태로 전환될 때 PENDING/CONFIRMED 신청자 전원에게 알림 발송 (FR-NTF-06)
+        // 이미 CANCELLED/ATTENDED인 신청자는 알림 대상에서 제외합니다.
+        if (request.getStatus() == GatheringStatus.CANCELLED) {
+            List<Application> targets = applicationRepository.findByGatheringIdAndStatusInWithUser(
+                    id, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED));
+            if (!targets.isEmpty()) {
+                eventPublisher.publishEvent(new GatheringCancelledEvent(gathering, targets));
+            }
+        }
     }
 
     @Transactional

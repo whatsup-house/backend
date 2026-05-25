@@ -40,4 +40,20 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
     @EntityGraph(attributePaths = "gathering")
     List<Application> findByUserIdAndDeletedAtIsNull(UUID userId);
 
+    /**
+     * 모임 취소 시 알림 대상 신청자 목록 조회 (FR-NTF-06).
+     * PENDING/CONFIRMED 상태의 신청만 대상이며, user를 fetch join해
+     * 이메일 발송 시 N+1 없이 user.email에 접근할 수 있습니다.
+     */
+    @Query("""
+            SELECT a FROM Application a
+            JOIN FETCH a.user
+            WHERE a.gathering.id = :gatheringId
+              AND a.status IN :statuses
+              AND a.deletedAt IS NULL
+            """)
+    List<Application> findByGatheringIdAndStatusInWithUser(
+            @Param("gatheringId") UUID gatheringId,
+            @Param("statuses") List<ApplicationStatus> statuses);
+
 }
