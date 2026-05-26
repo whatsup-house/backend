@@ -33,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -187,7 +188,6 @@ class AuthServiceTest {
     @Test
     @DisplayName("정상 토큰 갱신")
     void refresh_success() {
-        given(jwtTokenProvider.validateToken("validRefreshToken")).willReturn(true);
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn("validRefreshToken");
@@ -205,7 +205,8 @@ class AuthServiceTest {
     @Test
     @DisplayName("유효하지 않은 리프레시 토큰이면 예외 발생")
     void refresh_invalidToken_throwsException() {
-        given(jwtTokenProvider.validateToken("invalidToken")).willReturn(false);
+        doThrow(new CustomException(ErrorCode.INVALID_TOKEN))
+                .when(jwtTokenProvider).validateToken("invalidToken");
 
         assertThatThrownBy(() -> authService.refresh("invalidToken"))
                 .isInstanceOf(CustomException.class)
@@ -215,7 +216,6 @@ class AuthServiceTest {
     @Test
     @DisplayName("Redis에 저장된 토큰과 다르면 예외 발생")
     void refresh_tokenMismatch_throwsException() {
-        given(jwtTokenProvider.validateToken("validRefreshToken")).willReturn(true);
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn("differentToken");
@@ -228,7 +228,6 @@ class AuthServiceTest {
     @Test
     @DisplayName("Redis에 토큰이 없으면 예외 발생")
     void refresh_tokenNotInRedis_throwsException() {
-        given(jwtTokenProvider.validateToken("validRefreshToken")).willReturn(true);
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn(null);
@@ -242,7 +241,6 @@ class AuthServiceTest {
     @DisplayName("토큰은 유효하나 유저가 삭제된 경우 예외 발생")
     void refresh_deletedUser_throwsException() {
         user.delete();
-        given(jwtTokenProvider.validateToken("validRefreshToken")).willReturn(true);
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn("validRefreshToken");
