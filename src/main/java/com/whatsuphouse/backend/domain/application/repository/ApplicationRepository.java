@@ -33,6 +33,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
 
     int countByGatheringIdAndStatusNotAndDeletedAtIsNull(UUID gatheringId, ApplicationStatus status);
 
+    @EntityGraph(attributePaths = {"gathering", "user"})
     Optional<Application> findByIdAndDeletedAtIsNull(UUID id);
 
     Optional<Application> findByPhoneAndBookingNumberAndDeletedAtIsNull(String phone, String bookingNumber);
