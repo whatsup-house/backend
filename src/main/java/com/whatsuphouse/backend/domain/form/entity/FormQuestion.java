@@ -89,4 +89,26 @@ public class FormQuestion extends BaseEntity {
         this.matchingStrategy = matchingStrategy;
         this.matchingWeight = matchingWeight;
     }
+
+    public void update(String questionKey, QuestionType type, String label, String placeholder,
+                       boolean required, int displayOrder, Map<String, Object> options,
+                       Map<String, Object> validation, boolean isMatchingField, String matchingKey,
+                       MatchingStrategy matchingStrategy, BigDecimal matchingWeight) {
+        this.questionKey = questionKey;
+        this.type = type;
+        this.label = label;
+        this.placeholder = placeholder;
+        this.required = required;
+        this.displayOrder = displayOrder;
+        this.options = options;
+        this.validation = validation;
+        this.isMatchingField = isMatchingField;
+        this.matchingKey = matchingKey;
+        this.matchingStrategy = matchingStrategy;
+        this.matchingWeight = matchingWeight;
+    }
+
+    public void softDelete() {
+        delete();
+    }
 }
