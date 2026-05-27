@@ -33,6 +33,9 @@ public enum ErrorCode {
 
     // Form
     FORM_NOT_FOUND("신청폼이 존재하지 않습니다.", HttpStatus.NOT_FOUND),
+    QUESTION_NOT_FOUND("존재하지 않는 질문입니다.", HttpStatus.NOT_FOUND),
+    OPTIONS_REQUIRED("선택형 질문은 options가 필수입니다.", HttpStatus.BAD_REQUEST),
+    MATCHING_STRATEGY_REQUIRED("매칭 필드는 matchingStrategy가 필수입니다.", HttpStatus.BAD_REQUEST),
 
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),

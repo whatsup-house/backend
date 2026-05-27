@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface GatheringFormRepository extends JpaRepository<GatheringForm, UUID> {
 
     Optional<GatheringForm> findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(UUID gatheringId);
+
+    Optional<GatheringForm> findByGathering_IdAndDeletedAtIsNull(UUID gatheringId);
 }
