@@ -1,9 +1,11 @@
 package com.whatsuphouse.backend.domain.application.admin.service;
 
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
+import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationDetailResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
+import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
@@ -44,6 +46,9 @@ class AdminApplicationServiceTest {
 
     @Mock
     private ApplicationRepository applicationRepository;
+
+    @Mock
+    private ApplicationAnswerRepository applicationAnswerRepository;
 
     @Mock
     private MileageService mileageService;
@@ -174,9 +179,11 @@ class AdminApplicationServiceTest {
     void getApplication_success() {
         // GIVEN
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        given(applicationAnswerRepository.findByApplicationOrderByQuestion_DisplayOrderAsc(application))
+                .willReturn(List.of());
 
         // WHEN
-        AdminApplicationResponse response = adminApplicationService.getApplication(applicationId);
+        AdminApplicationDetailResponse response = adminApplicationService.getApplication(applicationId);
 
         // THEN
         assertThat(response.getBookingNumber()).isEqualTo("WH260428-ABC123");
