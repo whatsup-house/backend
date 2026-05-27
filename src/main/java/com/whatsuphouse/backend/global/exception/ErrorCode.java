@@ -36,6 +36,9 @@ public enum ErrorCode {
     QUESTION_NOT_FOUND("존재하지 않는 질문입니다.", HttpStatus.NOT_FOUND),
     OPTIONS_REQUIRED("선택형 질문은 options가 필수입니다.", HttpStatus.BAD_REQUEST),
     MATCHING_STRATEGY_REQUIRED("매칭 필드는 matchingStrategy가 필수입니다.", HttpStatus.BAD_REQUEST),
+    REQUIRED_ANSWER_MISSING("필수 질문에 답변하지 않았습니다.", HttpStatus.BAD_REQUEST),
+    INVALID_QUESTION("해당 폼에 속하지 않는 질문입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_MBTI("유효하지 않은 MBTI 값입니다.", HttpStatus.BAD_REQUEST),
 
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),
