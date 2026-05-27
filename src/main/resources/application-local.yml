@@ -17,3 +17,21 @@ spring:
 
   flyway:
     enabled: false
+
+  # 로컬 개발 시 Mailpit 또는 MailHog 같은 로컬 SMTP 서버를 사용합니다.
+  # brew install mailpit 후 mailpit 실행 → http://localhost:8025 에서 수신 메일 확인 가능
+  mail:
+    host: localhost
+    port: 1025
+    username: ''
+    password: ''
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
+notification:
+  email:
+    from: noreply@whatsuphouse.local

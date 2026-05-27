@@ -9,10 +9,14 @@ import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +30,7 @@ public class AdminApplicationService {
 
     private final ApplicationRepository applicationRepository;
     private final MileageService mileageService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public List<AdminApplicationResponse> getAllApplications(UUID gatheringId, ApplicationStatus status) {
         return applicationRepository.findApplications(gatheringId, status)
@@ -50,6 +55,8 @@ public class AdminApplicationService {
         }
 
         application.cancel();
+        // 관리자 직접 삭제도 취소 알림 대상 (FR-NTF-04)
+        eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
         return ApplicationDeleteResponse.from(application);
     }
 
@@ -59,18 +66,21 @@ public class AdminApplicationService {
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
 
         ApplicationStatus newStatus = request.getStatus();
-       switch (newStatus) {
-    case CONFIRMED -> application.confirm();
-    case ATTENDED -> {
-        if (application.getStatus() == ApplicationStatus.ATTENDED) {
-            throw new CustomException(ErrorCode.ALREADY_ATTENDED);
+        switch (newStatus) {
+            case CONFIRMED -> {
+                application.confirm();
+                // 확정 알림 이메일 (FR-NTF-03)
+                eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
+            }
+            case ATTENDED -> {
+                if (application.getStatus() == ApplicationStatus.ATTENDED) {
+                    throw new CustomException(ErrorCode.ALREADY_ATTENDED);
+                }
+                application.attend();
+                return rewardAttendanceMileage(application);
+            }
+            default -> throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
         }
-        application.attend();
-        return rewardAttendanceMileage(application);
-    }
-    default -> throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
-}
-
 
         return ApplicationStatusResponse.of(application.getId(), application.getStatus(), null, null);
     }
@@ -82,6 +92,10 @@ public class AdminApplicationService {
         }
 
         MileageHistory history = mileageService.rewardAttendance(user, application.getId());
+        // 참석 확인 + 마일리지 적립 안내 이메일 (FR-NTF-05)
+        // 적립 금액과 잔액을 이벤트에 담아 이메일 본문에서 바로 사용할 수 있도록 합니다.
+        eventPublisher.publishEvent(new ApplicationAttendedEvent(
+                application, history.getAmount(), history.getBalanceAfter()));
         return ApplicationStatusResponse.of(
                 application.getId(),
                 application.getStatus(),

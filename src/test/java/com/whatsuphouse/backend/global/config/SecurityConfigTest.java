@@ -3,8 +3,6 @@ package com.whatsuphouse.backend.global.config;
 import com.whatsuphouse.backend.global.auth.JwtAuthFilter;
 import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.auth.CustomAuthEntryPoint;
-import com.whatsuphouse.backend.global.exception.CustomException;
-import com.whatsuphouse.backend.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,8 +16,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
+
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,8 +71,8 @@ class SecurityConfigTest {
     @Test
     @DisplayName("유효하지 않은 토큰으로 /api/** 에 접근하면 401을 반환한다")
     void protectedApi_invalidToken_returns401() throws Exception {
-        doThrow(new CustomException(ErrorCode.INVALID_TOKEN))
-                .when(jwtTokenProvider).validateToken(anyString());
+        willThrow(new CustomException(ErrorCode.INVALID_TOKEN))
+                .given(jwtTokenProvider).validateToken(anyString());
 
         mockMvc.perform(post("/api/gatherings")
                         .header("Authorization", "Bearer invalid.token.value"))

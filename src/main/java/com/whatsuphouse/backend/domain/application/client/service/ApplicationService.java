@@ -10,11 +10,14 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationReposit
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +35,7 @@ public class ApplicationService {
     private final ApplicationRepository applicationRepository;
     private final GatheringRepository gatheringRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -94,7 +98,11 @@ public class ApplicationService {
                 .referrerName(request.getReferrerName())
                 .build();
 
-        return ApplicationResponse.from(applicationRepository.save(application));
+        Application saved = applicationRepository.save(application);
+        // 트랜잭션 커밋 후 신청 확인 이메일 발송 (FR-NTF-01, 02)
+        // @TransactionalEventListener(AFTER_COMMIT)이 수신하므로 DB 저장 실패 시 이메일이 발송되지 않습니다.
+        eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
+        return ApplicationResponse.from(saved);
     }
 
     public ApplicationCheckResponse checkApplication(String phone, String bookingNumber) {
@@ -124,6 +132,8 @@ public class ApplicationService {
         }
 
         application.cancel();
+        // 트랜잭션 커밋 후 취소 알림 이메일 발송 (FR-NTF-04)
+        eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }
 
     private String generateBookingNumber() {

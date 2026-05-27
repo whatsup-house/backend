@@ -1,20 +1,21 @@
 CREATE TABLE IF NOT EXISTS users (
-    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    email       VARCHAR(255) NOT NULL UNIQUE,
-    password    VARCHAR(255) NOT NULL,
-    name        VARCHAR(50)  NOT NULL,
-    gender      VARCHAR(10)  NOT NULL,
-    age         INTEGER      NOT NULL,
-    nickname    VARCHAR(50)  NOT NULL UNIQUE,
-    phone       VARCHAR(11),
-    instagram_id VARCHAR(100),
-    mbti        VARCHAR(4),
-    job         VARCHAR(30),
-    intro       TEXT,
-    is_admin    BOOLEAN      NOT NULL DEFAULT FALSE,
-    created_at  TIMESTAMP    NOT NULL,
-    updated_at  TIMESTAMP    NOT NULL,
-    deleted_at  TIMESTAMP
+    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           VARCHAR(255) NOT NULL UNIQUE,
+    password        VARCHAR(255) NOT NULL,
+    name            VARCHAR(50)  NOT NULL,
+    gender          VARCHAR(10)  NOT NULL,
+    age             INTEGER      NOT NULL,
+    nickname        VARCHAR(50)  NOT NULL UNIQUE,
+    phone           VARCHAR(11),
+    instagram_id    VARCHAR(100),
+    mbti            VARCHAR(4),
+    job             VARCHAR(30),
+    intro           TEXT,
+    is_admin        BOOLEAN      NOT NULL DEFAULT FALSE,
+    mileage_balance INTEGER      NOT NULL DEFAULT 0,
+    created_at      TIMESTAMP    NOT NULL,
+    updated_at      TIMESTAMP    NOT NULL,
+    deleted_at      TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -31,20 +32,22 @@ CREATE TABLE IF NOT EXISTS locations (
 );
 
 CREATE TABLE IF NOT EXISTS gatherings (
-    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    title        VARCHAR(200) NOT NULL,
-    description  TEXT,
-    location_id  UUID         REFERENCES locations(id),
-    event_date   DATE         NOT NULL,
-    start_time   TIME,
-    end_time     TIME,
-    price        INTEGER,
-    max_attendees INTEGER     NOT NULL,
-    status       VARCHAR(20)  NOT NULL,
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    title         VARCHAR(200) NOT NULL,
+    description   TEXT,
+    location_id   UUID         REFERENCES locations(id),
+    event_date    DATE         NOT NULL,
+    start_time    TIME,
+    end_time      TIME,
+    price         INTEGER,
+    max_attendees INTEGER      NOT NULL,
+    status        VARCHAR(20)  NOT NULL,
     thumbnail_url VARCHAR(500),
-    created_at   TIMESTAMP    NOT NULL,
-    updated_at   TIMESTAMP    NOT NULL,
-    deleted_at   TIMESTAMP
+    is_curated    BOOLEAN      NOT NULL DEFAULT FALSE,
+    curated_rank  INTEGER      NOT NULL DEFAULT 0,
+    created_at    TIMESTAMP    NOT NULL,
+    updated_at    TIMESTAMP    NOT NULL,
+    deleted_at    TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS applications (
@@ -65,4 +68,85 @@ CREATE TABLE IF NOT EXISTS applications (
     created_at     TIMESTAMP   NOT NULL,
     updated_at     TIMESTAMP   NOT NULL,
     deleted_at     TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mileage_history (
+    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    mileage_user_id UUID         NOT NULL REFERENCES users(id),
+    mileage_type    VARCHAR(20)  NOT NULL,
+    amount          INTEGER      NOT NULL,
+    balance_after   INTEGER      NOT NULL,
+    related_id      UUID,
+    adjust_reason   VARCHAR(255),
+    earned_date     TIMESTAMP    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id            UUID        NOT NULL REFERENCES users(id),
+    application_id     UUID        NOT NULL REFERENCES applications(id),
+    gathering_id       UUID        NOT NULL REFERENCES gatherings(id),
+    review_type        VARCHAR(10) NOT NULL,
+    review_content     TEXT        NOT NULL,
+    like_count         INTEGER     NOT NULL DEFAULT 0,
+    is_home_featured   BOOLEAN     NOT NULL DEFAULT FALSE,
+    home_display_order INTEGER     NOT NULL DEFAULT 0,
+    created_at         TIMESTAMP   NOT NULL,
+    updated_at         TIMESTAMP   NOT NULL,
+    deleted_at         TIMESTAMP,
+    CONSTRAINT uk_reviews_application_id UNIQUE (application_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_gathering_id ON reviews(gathering_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_user_id ON reviews(user_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_home_featured ON reviews(is_home_featured, home_display_order);
+
+CREATE TABLE IF NOT EXISTS review_images (
+    id            UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+    review_id     UUID      NOT NULL REFERENCES reviews(id),
+    image_url     TEXT      NOT NULL,
+    display_order INTEGER   NOT NULL DEFAULT 0,
+    created_at    TIMESTAMP NOT NULL,
+    updated_at    TIMESTAMP NOT NULL,
+    deleted_at    TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_images_review_id ON review_images(review_id);
+
+CREATE TABLE IF NOT EXISTS review_likes (
+    id         UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+    review_id  UUID      NOT NULL REFERENCES reviews(id),
+    user_id    UUID      NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT uk_review_likes_review_user UNIQUE (review_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_likes_review_id ON review_likes(review_id);
+CREATE INDEX IF NOT EXISTS idx_review_likes_user_id ON review_likes(user_id);
+
+CREATE TABLE IF NOT EXISTS carousel_slides (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    type         VARCHAR(20)  NOT NULL,
+    title        VARCHAR(200) NOT NULL,
+    content      VARCHAR(500),
+    image_url    VARCHAR(500) NOT NULL,
+    gathering_id UUID         REFERENCES gatherings(id),
+    sort_order   INTEGER      NOT NULL DEFAULT 0,
+    is_active    BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMP    NOT NULL,
+    updated_at   TIMESTAMP    NOT NULL,
+    deleted_at   TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS home_reviews (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    content         TEXT        NOT NULL,
+    author_name     VARCHAR(50) NOT NULL,
+    avatar_url      TEXT,
+    gathering_title VARCHAR(100) NOT NULL,
+    rating          INTEGER     NOT NULL,
+    display_order   INTEGER     NOT NULL DEFAULT 0,
+    is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMP   NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP   NOT NULL DEFAULT NOW()
 );
