@@ -1,12 +1,15 @@
 package com.whatsuphouse.backend.domain.application.admin.service;
 
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
+import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationDetailResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
@@ -29,6 +32,7 @@ import java.util.UUID;
 public class AdminApplicationService {
 
     private final ApplicationRepository applicationRepository;
+    private final ApplicationAnswerRepository applicationAnswerRepository;
     private final MileageService mileageService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -39,10 +43,12 @@ public class AdminApplicationService {
                 .toList();
     }
 
-    public AdminApplicationResponse getApplication(UUID id) {
+    public AdminApplicationDetailResponse getApplication(UUID id) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        return AdminApplicationResponse.from(application);
+        List<ApplicationAnswer> answers =
+                applicationAnswerRepository.findByApplicationOrderByQuestion_DisplayOrderAsc(application);
+        return AdminApplicationDetailResponse.from(application, answers);
     }
 
     @Transactional
