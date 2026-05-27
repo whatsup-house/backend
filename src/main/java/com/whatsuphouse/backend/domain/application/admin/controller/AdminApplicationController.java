@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.admin.controller;
 
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
+import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationDetailResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
@@ -37,7 +38,7 @@ public class AdminApplicationController {
 
     @Operation(summary = "신청 상세 조회")
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResult<AdminApplicationResponse>> getApplication(
+    public ResponseEntity<ApiResult<AdminApplicationDetailResponse>> getApplication(
             @PathVariable UUID id
     ) {
         return ResponseEntity.ok(ApiResult.success(adminApplicationService.getApplication(id)));
