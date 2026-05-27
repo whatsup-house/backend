@@ -31,6 +31,9 @@ public enum ErrorCode {
     GATHERING_FULL("게더링 정원이 초과되었습니다.", HttpStatus.BAD_REQUEST),
     GATHERING_NOT_RECRUITING("모집중인 게더링이 아닙니다.", HttpStatus.BAD_REQUEST),
 
+    // Form
+    FORM_NOT_FOUND("신청폼이 존재하지 않습니다.", HttpStatus.NOT_FOUND),
+
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("이미 신청한 게더링입니다.", HttpStatus.CONFLICT),
