@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.entity;
 
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.JobCategory;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
@@ -11,7 +12,10 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -50,8 +54,16 @@ public class Application extends BaseEntity {
     @Column(name = "instagram_id", length = 100)
     private String instagramId;
 
-    @Column(length = 50)
-    private String job;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "job_category", nullable = false, length = 30)
+    private JobCategory jobCategory;
+
+    @Column(name = "job_detail", length = 100)
+    private String jobDetail;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "form_snapshot", columnDefinition = "jsonb")
+    private Map<String, Object> formSnapshot;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 4)
@@ -70,7 +82,8 @@ public class Application extends BaseEntity {
     @Builder
     public Application(String bookingNumber, Gathering gathering, User user, String name, String phone,
                        Gender gender, Integer age, String instagramId, String job, Mbti mbti,
-                       String intro, String referrerName) {
+                       String intro, String referrerName, JobCategory jobCategory, String jobDetail,
+                       Map<String, Object> formSnapshot) {
         this.bookingNumber = bookingNumber;
         this.gathering = gathering;
         this.user = user;
@@ -79,11 +92,17 @@ public class Application extends BaseEntity {
         this.gender = gender;
         this.age = age;
         this.instagramId = instagramId;
-        this.job = job;
+        this.jobCategory = jobCategory != null ? jobCategory : JobCategory.ETC;
+        this.jobDetail = jobDetail != null ? jobDetail : job;
+        this.formSnapshot = formSnapshot;
         this.mbti = mbti;
         this.intro = intro;
         this.referrerName = referrerName;
         this.status = ApplicationStatus.PENDING;
+    }
+
+    public String getJob() {
+        return jobDetail;
     }
 
     public void cancel() {

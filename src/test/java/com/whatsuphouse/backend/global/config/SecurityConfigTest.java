@@ -2,6 +2,9 @@ package com.whatsuphouse.backend.global.config;
 
 import com.whatsuphouse.backend.global.auth.JwtAuthFilter;
 import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
+import com.whatsuphouse.backend.global.auth.CustomAuthEntryPoint;
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,13 +19,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = SecurityConfigTest.TestControllerConfig.FakeController.class)
-@Import({SecurityConfig.class, JwtAuthFilter.class, SecurityConfigTest.TestControllerConfig.class})
+@Import({SecurityConfig.class, JwtAuthFilter.class, CustomAuthEntryPoint.class, SecurityConfigTest.TestControllerConfig.class})
 class SecurityConfigTest {
 
     @Autowired
@@ -66,7 +69,8 @@ class SecurityConfigTest {
     @Test
     @DisplayName("유효하지 않은 토큰으로 /api/** 에 접근하면 401을 반환한다")
     void protectedApi_invalidToken_returns401() throws Exception {
-        given(jwtTokenProvider.validateToken(anyString())).willReturn(false);
+        doThrow(new CustomException(ErrorCode.INVALID_TOKEN))
+                .when(jwtTokenProvider).validateToken(anyString());
 
         mockMvc.perform(post("/api/gatherings")
                         .header("Authorization", "Bearer invalid.token.value"))
