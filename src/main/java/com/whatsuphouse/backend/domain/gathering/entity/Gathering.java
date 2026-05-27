@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.gathering.entity;
 
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import jakarta.persistence.*;
@@ -46,6 +47,10 @@ public class Gathering extends BaseEntity {
 
     @Column(name = "max_attendees", nullable = false)
     private int maxAttendees;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gathering_type", length = 20)
+    private GatheringType gatheringType;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
