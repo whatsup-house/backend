@@ -1,11 +1,9 @@
 package com.whatsuphouse.backend.domain.application.admin.service;
 
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
-import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationDetailResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
-import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
@@ -46,9 +44,6 @@ class AdminApplicationServiceTest {
 
     @Mock
     private ApplicationRepository applicationRepository;
-
-    @Mock
-    private ApplicationAnswerRepository applicationAnswerRepository;
 
     @Mock
     private MileageService mileageService;
@@ -179,11 +174,9 @@ class AdminApplicationServiceTest {
     void getApplication_success() {
         // GIVEN
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
-        given(applicationAnswerRepository.findByApplicationOrderByQuestion_DisplayOrderAsc(application))
-                .willReturn(List.of());
 
         // WHEN
-        AdminApplicationDetailResponse response = adminApplicationService.getApplication(applicationId);
+        AdminApplicationResponse response = adminApplicationService.getApplication(applicationId);
 
         // THEN
         assertThat(response.getBookingNumber()).isEqualTo("WH260428-ABC123");
@@ -220,19 +213,18 @@ class AdminApplicationServiceTest {
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
-@Test
-@DisplayName("CANCELLED로 상태 변경 시도 시 예외 발생")
-void changeStatus_toCancelled_throwsException() {
-    // GIVEN
-    given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
-    ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.CANCELLED);
+    @Test
+    @DisplayName("CANCELLED로 상태 변경 시도 시 예외 발생")
+    void changeStatus_toCancelled_throwsException() {
+        // GIVEN
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.CANCELLED);
 
-    // WHEN & THEN
-    assertThatThrownBy(() -> adminApplicationService.changeStatus(applicationId, request))
-            .isInstanceOf(CustomException.class)
-            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATUS_TRANSITION);
-}
-
+        // WHEN & THEN
+        assertThatThrownBy(() -> adminApplicationService.changeStatus(applicationId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATUS_TRANSITION);
+    }
 
     @Test
     @DisplayName("ATTENDED로 상태 변경 성공 - 게스트 신청이면 마일리지 미지급")
