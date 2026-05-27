@@ -1,12 +1,20 @@
 package com.whatsuphouse.backend.domain.application.client.service;
 
+import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.JobCategory;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
+import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
+import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
+import com.whatsuphouse.backend.domain.form.repository.GatheringFormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
@@ -14,6 +22,8 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEv
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
+import com.whatsuphouse.backend.global.common.enums.Gender;
+import com.whatsuphouse.backend.global.common.enums.Mbti;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -24,8 +34,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -35,6 +50,9 @@ public class ApplicationService {
     private final ApplicationRepository applicationRepository;
     private final GatheringRepository gatheringRepository;
     private final UserRepository userRepository;
+    private final GatheringFormRepository gatheringFormRepository;
+    private final FormQuestionRepository formQuestionRepository;
+    private final ApplicationAnswerRepository applicationAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -64,6 +82,21 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.GATHERING_FULL);
         }
 
+        GatheringForm form = gatheringFormRepository
+                .findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId)
+                .orElseThrow(() -> new CustomException(ErrorCode.FORM_NOT_FOUND));
+
+        List<FormQuestion> questions = formQuestionRepository
+                .findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form);
+
+        Map<UUID, FormQuestion> questionMap = questions.stream()
+                .collect(Collectors.toMap(FormQuestion::getId, q -> q));
+
+        validateAnswers(request.getAnswers(), questions, questionMap);
+
+        // questionKey → value 맵
+        Map<String, Object> byKey = buildAnswersByKey(request.getAnswers(), questionMap);
+
         User user = null;
         if (userId != null) {
             user = userRepository.findByIdAndDeletedAtIsNull(userId)
@@ -72,16 +105,25 @@ public class ApplicationService {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         } else {
-            if (request.getPhone() == null || request.getPhone().isBlank()) {
+            String guestPhone = extractString(byKey, "phone");
+            if (guestPhone == null || guestPhone.isBlank()) {
                 throw new CustomException(ErrorCode.GUEST_PHONE_REQUIRED);
             }
-            if (applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(gathering.getId(), request.getPhone())) {
+            if (applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(gathering.getId(), guestPhone)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         }
 
-        String name = (user != null) ? user.getName() : request.getName();
-        String phone = (user != null) ? user.getPhone() : request.getPhone();
+        String name = user != null ? user.getName() : extractString(byKey, "name");
+        String phone = user != null ? user.getPhone() : extractString(byKey, "phone");
+        Gender gender = extractEnum(byKey, "gender", Gender.class);
+        Integer age = extractInteger(byKey, "age");
+        String instagramId = extractString(byKey, "instagram_id");
+        JobCategory jobCategory = extractEnum(byKey, "job_category", JobCategory.class);
+        String jobDetail = extractString(byKey, "job_detail");
+        Mbti mbti = extractMbti(byKey, "mbti");
+        String intro = extractString(byKey, "intro");
+        String referrerName = extractString(byKey, "referrer_name");
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
@@ -89,20 +131,123 @@ public class ApplicationService {
                 .user(user)
                 .name(name)
                 .phone(phone)
-                .gender(request.getGender())
-                .age(request.getAge())
-                .instagramId(request.getInstagramId())
-                .job(request.getJob())
-                .mbti(request.getMbti())
-                .intro(request.getIntro())
-                .referrerName(request.getReferrerName())
+                .gender(gender)
+                .age(age)
+                .instagramId(instagramId)
+                .jobCategory(jobCategory)
+                .jobDetail(jobDetail)
+                .mbti(mbti)
+                .intro(intro)
+                .referrerName(referrerName)
+                .formSnapshot(buildFormSnapshot(questions))
                 .build();
 
         Application saved = applicationRepository.save(application);
-        // 트랜잭션 커밋 후 신청 확인 이메일 발송 (FR-NTF-01, 02)
-        // @TransactionalEventListener(AFTER_COMMIT)이 수신하므로 DB 저장 실패 시 이메일이 발송되지 않습니다.
+
+        saveAnswers(saved, request.getAnswers(), questionMap);
+
+        // 자동매칭 대상은 status = CONFIRMED인 신청만 포함한다. PENDING/CANCELLED/ATTENDED는 제외.
         eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
         return ApplicationResponse.from(saved);
+    }
+
+    private void validateAnswers(List<AnswerItem> answers, List<FormQuestion> questions,
+                                 Map<UUID, FormQuestion> questionMap) {
+        Set<UUID> submittedIds = answers.stream()
+                .map(AnswerItem::getQuestionId)
+                .collect(Collectors.toSet());
+
+        for (UUID id : submittedIds) {
+            if (!questionMap.containsKey(id)) {
+                throw new CustomException(ErrorCode.INVALID_QUESTION);
+            }
+        }
+
+        for (FormQuestion q : questions) {
+            if (q.isRequired() && !submittedIds.contains(q.getId())) {
+                throw new CustomException(ErrorCode.REQUIRED_ANSWER_MISSING);
+            }
+        }
+    }
+
+    private Map<String, Object> buildAnswersByKey(List<AnswerItem> answers, Map<UUID, FormQuestion> questionMap) {
+        Map<String, Object> result = new HashMap<>();
+        for (AnswerItem item : answers) {
+            FormQuestion q = questionMap.get(item.getQuestionId());
+            if (q != null) {
+                result.put(q.getQuestionKey(), item.getValue());
+            }
+        }
+        return result;
+    }
+
+    private void saveAnswers(Application application, List<AnswerItem> answers,
+                             Map<UUID, FormQuestion> questionMap) {
+        List<ApplicationAnswer> toSave = new ArrayList<>();
+        for (AnswerItem item : answers) {
+            FormQuestion q = questionMap.get(item.getQuestionId());
+            if (q != null) {
+                toSave.add(ApplicationAnswer.builder()
+                        .application(application)
+                        .question(q)
+                        .value(Map.of("value", item.getValue()))
+                        .build());
+            }
+        }
+        applicationAnswerRepository.saveAll(toSave);
+    }
+
+    private Map<String, Object> buildFormSnapshot(List<FormQuestion> questions) {
+        List<Map<String, Object>> list = questions.stream().map(q -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("questionId", q.getId().toString());
+            m.put("questionKey", q.getQuestionKey());
+            m.put("type", q.getType().name());
+            m.put("label", q.getLabel());
+            m.put("required", q.isRequired());
+            m.put("displayOrder", q.getDisplayOrder());
+            m.put("options", q.getOptions());
+            m.put("validation", q.getValidation());
+            m.put("isMatchingField", q.isMatchingField());
+            return m;
+        }).toList();
+        return Map.of("questions", list);
+    }
+
+    private String extractString(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        return val instanceof String s ? s : null;
+    }
+
+    private Integer extractInteger(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        if (val instanceof Integer i) return i;
+        if (val instanceof Number n) return n.intValue();
+        if (val instanceof String s) {
+            try { return Integer.parseInt(s); } catch (NumberFormatException ignored) { return null; }
+        }
+        return null;
+    }
+
+    private <E extends Enum<E>> E extractEnum(Map<String, Object> map, String key, Class<E> enumClass) {
+        Object val = map.get(key);
+        if (val instanceof String s) {
+            try { return Enum.valueOf(enumClass, s.toUpperCase()); } catch (IllegalArgumentException ignored) { return null; }
+        }
+        return null;
+    }
+
+    private Mbti extractMbti(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        if (val == null) return null;
+        if (val instanceof String s) {
+            try {
+                return Mbti.valueOf(s.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new CustomException(ErrorCode.INVALID_MBTI);
+            }
+        }
+        return null;
     }
 
     public ApplicationCheckResponse checkApplication(String phone, String bookingNumber) {
@@ -132,7 +277,6 @@ public class ApplicationService {
         }
 
         application.cancel();
-        // 트랜잭션 커밋 후 취소 알림 이메일 발송 (FR-NTF-04)
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }
 
