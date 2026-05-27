@@ -3,7 +3,10 @@ package com.whatsuphouse.backend.domain.form.repository;
 import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface GatheringFormRepository extends JpaRepository<GatheringForm, UUID> {
+
+    Optional<GatheringForm> findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(UUID gatheringId);
 }
