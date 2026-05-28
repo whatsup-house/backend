@@ -172,6 +172,61 @@ class EmailNotificationServiceTest {
         then(mailSender).should(times(1)).send(any(SimpleMailMessage.class));
     }
 
+    @Test
+    @DisplayName("신청 확정 이메일 - 비회원(user == null)이면 send 호출되지 않음")
+    void sendApplicationConfirmed_guest_sendNotCalled() {
+        // given
+        Gathering gathering = buildGathering();
+        Application application = buildApplication(null, gathering);
+
+        // when
+        emailNotificationService.sendApplicationConfirmed(application);
+
+        // then
+        then(mailSender).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("신청 취소 이메일 - 비회원(user == null)이면 send 호출되지 않음")
+    void sendApplicationCancelled_guest_sendNotCalled() {
+        // given
+        Gathering gathering = buildGathering();
+        Application application = buildApplication(null, gathering);
+
+        // when
+        emailNotificationService.sendApplicationCancelled(application);
+
+        // then
+        then(mailSender).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("참석 처리 이메일 - 비회원(user == null)이면 send 호출되지 않음")
+    void sendApplicationAttended_guest_sendNotCalled() {
+        // given
+        Gathering gathering = buildGathering();
+        Application application = buildApplication(null, gathering);
+
+        // when
+        emailNotificationService.sendApplicationAttended(application, 1000, 2000);
+
+        // then
+        then(mailSender).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("모임 취소 일괄 이메일 - 대상 신청 없으면 send 호출되지 않음")
+    void sendGatheringCancelled_emptyList_sendNotCalled() {
+        // given
+        Gathering gathering = buildGathering();
+
+        // when
+        emailNotificationService.sendGatheringCancelled(gathering, List.of());
+
+        // then
+        then(mailSender).shouldHaveNoInteractions();
+    }
+
     // ── MailException 격리 ────────────────────────────────────────────────────
 
     @Test
@@ -183,6 +238,26 @@ class EmailNotificationServiceTest {
 
         // when & then
         assertThatNoException().isThrownBy(() -> emailNotificationService.sendWelcome(user));
+    }
+
+    @Test
+    @DisplayName("모임 취소 일괄 발송 중 한 건이 MailException이어도 나머지가 발송된다")
+    void sendGatheringCancelled_oneMailException_othersSent() {
+        // given
+        Gathering gathering = buildGathering();
+        User user1 = buildUser("user1@test.com");
+        User user2 = buildUser("user2@test.com");
+        Application app1 = buildApplication(user1, gathering);
+        Application app2 = buildApplication(user2, gathering);
+
+        willThrow(new MailSendException("SMTP 오류"))
+                .willDoNothing()
+                .given(mailSender).send(any(SimpleMailMessage.class));
+
+        // when & then
+        assertThatNoException().isThrownBy(() ->
+                emailNotificationService.sendGatheringCancelled(gathering, List.of(app1, app2)));
+        then(mailSender).should(times(2)).send(any(SimpleMailMessage.class));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
