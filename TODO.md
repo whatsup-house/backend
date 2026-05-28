@@ -1,10 +1,24 @@
 # TODO
 
-### KAN-60 — 이메일 알림 서비스 PR 마무리
-- 구현/테스트 완료, Jira 완료 처리만 남음
+### KAN-141 — 네이밍/컨벤션 정리 및 Swagger 개선
+작업 순서: 도메인별 순차 진행
 
-### Resend SMTP 운영 테스트 (내일)
-- `MAIL_FROM=onboarding@resend.dev` 환경변수 설정
-- prod 프로파일로 bootRun 후 Swagger에서 API 호출
-- Resend 대시보드(resend.com → Emails)에서 발송 확인
-- 도메인 생기면 DNS 인증 후 MAIL_FROM 환경변수만 교체
+**1단계 — 내가 작업한 도메인 (맥락 파악 완료)**
+- [ ] auth
+- [ ] user
+- [ ] gathering
+- [ ] application
+- [ ] notification
+
+**2단계 — 협업 도메인 (파악하면서 같이 결정)**
+- [ ] home
+- [ ] review
+- [ ] mileage
+- [ ] location
+
+**각 도메인 체크 항목**
+- 변수명/메서드명 컨벤션 불일치
+- API 경로 일관성 (REST 규칙)
+- @Tag, @Operation summary/description 누락 또는 불일치
+- Swagger 태그 그룹명 통일 (기능별 정렬 config로 지정)
+- DTO 필드명 일관성
