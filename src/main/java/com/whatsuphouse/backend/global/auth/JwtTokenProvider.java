@@ -55,35 +55,32 @@ public class JwtTokenProvider {
     }
 
     public void validateToken(String token) {
+        parseClaims(token);
+    }
+
+    public UUID getUserIdFromToken(String token) {
+        return UUID.fromString(parseClaims(token).getSubject());
+    }
+
+    public UserPrincipal getUserPrincipal(String token) {
+        Claims claims = parseClaims(token);
+        UUID userId = UUID.fromString(claims.getSubject());
+        String email = claims.get("email", String.class);
+        boolean isAdmin = Boolean.TRUE.equals(claims.get("isAdmin", Boolean.class));
+        return new UserPrincipal(userId, email, isAdmin);
+    }
+
+    private Claims parseClaims(String token) {
         try {
-            Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token);
+            return Jwts.parser()
+                    .verifyWith(signingKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
         } catch (ExpiredJwtException e) {
             throw new CustomException(ErrorCode.TOKEN_EXPIRED);
         } catch (JwtException | IllegalArgumentException e) {
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
-    }
-
-    public UUID getUserIdFromToken(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(signingKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-        return UUID.fromString(claims.getSubject());
-    }
-
-    public UserPrincipal getUserPrincipal(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(signingKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-
-        UUID userId = UUID.fromString(claims.getSubject());
-        String email = claims.get("email", String.class);
-        boolean isAdmin = Boolean.TRUE.equals(claims.get("isAdmin", Boolean.class));
-
-        return new UserPrincipal(userId, email, isAdmin);
     }
 }

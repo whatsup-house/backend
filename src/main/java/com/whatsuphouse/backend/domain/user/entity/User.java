@@ -63,7 +63,8 @@ public class User extends BaseEntity {
     private Integer mileageBalance = 0;
 
     @Builder
-    public User(String email, String password, String name, Gender gender, Integer age, String nickname, String phone) {
+    public User(String email, String password, String name, Gender gender, Integer age, String nickname,
+                String phone, String instagramId, Mbti mbti, String job, String intro) {
         this.email = email;
         this.password = password;
         this.name = name;
@@ -71,6 +72,10 @@ public class User extends BaseEntity {
         this.age = age;
         this.nickname = nickname;
         this.phone = phone;
+        this.instagramId = instagramId;
+        this.mbti = mbti;
+        this.job = job;
+        this.intro = intro;
     }
 
     public void updateProfile(String nickname, String phone, String name, Gender gender, Integer age,

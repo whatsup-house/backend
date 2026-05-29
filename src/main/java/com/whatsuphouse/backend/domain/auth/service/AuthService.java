@@ -24,7 +24,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Service
-@Transactional
 @RequiredArgsConstructor
 public class AuthService {
 
@@ -37,6 +36,7 @@ public class AuthService {
     private final MileageService mileageService;
     private final ApplicationEventPublisher eventPublisher;
 
+    @Transactional
     public RegisterResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS);
@@ -53,6 +53,10 @@ public class AuthService {
                 .age(request.getAge())
                 .nickname(request.getNickname())
                 .phone(request.getPhone())
+                .instagramId(request.getInstagramId())
+                .mbti(request.getMbti())
+                .job(request.getJob())
+                .intro(request.getIntro())
                 .build();
 
         userRepository.save(user);
@@ -62,6 +66,7 @@ public class AuthService {
         return RegisterResponse.from(user);
     }
 
+    @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .filter(u -> u.getDeletedAt() == null)
@@ -94,20 +99,20 @@ public class AuthService {
         redisTemplate.delete(REFRESH_TOKEN_PREFIX + userId);
     }
 
+    @Transactional(readOnly = true)
     public TokenRefreshResponse refresh(String refreshToken) {
         if (refreshToken == null) {
             throw new CustomException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
+        UUID userId;
         try {
-            jwtTokenProvider.validateToken(refreshToken);
+            userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
         } catch (CustomException e) {
             ErrorCode code = e.getErrorCode() == ErrorCode.TOKEN_EXPIRED
                     ? ErrorCode.EXPIRED_REFRESH_TOKEN
                     : ErrorCode.INVALID_REFRESH_TOKEN;
             throw new CustomException(code);
         }
-
-        UUID userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
         String stored = redisTemplate.opsForValue().get(REFRESH_TOKEN_PREFIX + userId);
 
         if (stored == null || !stored.equals(refreshToken)) {

@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.auth.dto.request;
 
 import com.whatsuphouse.backend.global.common.enums.Gender;
+import com.whatsuphouse.backend.global.common.enums.Mbti;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
@@ -47,4 +48,16 @@ public class RegisterRequest {
     @NotNull(message = "나이를 입력해주세요.")
     @Min(value = 1, message = "나이는 1 이상이어야 합니다.")
     private Integer age;
+
+    @Schema(example = "hong_gildong")
+    private String instagramId;
+
+    @Schema(example = "ENFP")
+    private Mbti mbti;
+
+    @Schema(example = "개발자")
+    private String job;
+
+    @Schema(example = "재즈와 커피를 좋아합니다")
+    private String intro;
 }
