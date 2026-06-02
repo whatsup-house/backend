@@ -118,4 +118,51 @@ class GatheringServiceTest {
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_NOT_FOUND);
     }
+
+    // ── 과거 게더링 상태 보정 (KAN-163) ───────────────────────────────────────
+
+    @Test
+    @DisplayName("과거 OPEN 게더링 상세 조회 시 상태가 COMPLETED로 보정된다")
+    void getGathering_pastOpen_returnsCompletedStatus() {
+        Gathering pastGathering = pastGathering(GatheringStatus.OPEN);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(pastGathering));
+
+        GatheringDetailResponse response = gatheringService.getGathering(gatheringId);
+
+        assertThat(response.getStatus()).isEqualTo(GatheringStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("과거 CANCELLED 게더링은 상태가 그대로 유지된다")
+    void getGathering_pastCancelled_keepsCancelledStatus() {
+        Gathering cancelled = pastGathering(GatheringStatus.CANCELLED);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(cancelled));
+
+        GatheringDetailResponse response = gatheringService.getGathering(gatheringId);
+
+        assertThat(response.getStatus()).isEqualTo(GatheringStatus.CANCELLED);
+    }
+
+    @Test
+    @DisplayName("status=OPEN 목록 조회 시 과거 게더링은 모집중 목록에서 제외된다")
+    void getGatherings_openStatus_excludesPastGathering() {
+        Gathering pastGathering = pastGathering(GatheringStatus.OPEN);
+        given(gatheringRepository.findByStatusAndDeletedAtIsNull(GatheringStatus.OPEN))
+                .willReturn(List.of(gathering, pastGathering));
+
+        List<GatheringResponse> result = gatheringService.listGatherings(null, GatheringStatus.OPEN);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getTitle()).isEqualTo("재즈 게더링");
+    }
+
+    private Gathering pastGathering(GatheringStatus status) {
+        Gathering pastGathering = Gathering.builder()
+                .title("지난 게더링")
+                .eventDate(LocalDate.now().minusDays(1))
+                .maxAttendees(10)
+                .build();
+        pastGathering.changeStatus(status);
+        return pastGathering;
+    }
 }

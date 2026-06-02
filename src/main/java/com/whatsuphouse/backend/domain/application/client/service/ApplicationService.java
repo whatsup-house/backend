@@ -70,7 +70,8 @@ public class ApplicationService {
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
-        if (gathering.getStatus() != GatheringStatus.OPEN) {
+        // eventDate가 지난 모집중 게더링은 effective status가 COMPLETED로 계산되어 신청이 차단된다. (KAN-163)
+        if (gathering.getEffectiveStatus() != GatheringStatus.OPEN) {
             throw new CustomException(ErrorCode.GATHERING_NOT_RECRUITING);
         }
 

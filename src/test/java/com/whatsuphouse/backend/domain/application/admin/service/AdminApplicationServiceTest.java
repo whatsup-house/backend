@@ -216,19 +216,18 @@ class AdminApplicationServiceTest {
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
-@Test
-@DisplayName("CANCELLED로 상태 변경 시도 시 예외 발생")
-void changeStatus_toCancelled_throwsException() {
-    // GIVEN
-    given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
-    ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.CANCELLED);
+    @Test
+    @DisplayName("CANCELLED로 상태 변경 시도 시 예외 발생")
+    void changeStatus_toCancelled_throwsException() {
+        // GIVEN
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.CANCELLED);
 
-    // WHEN & THEN
-    assertThatThrownBy(() -> adminApplicationService.changeStatus(applicationId, request))
-            .isInstanceOf(CustomException.class)
-            .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATUS_TRANSITION);
-}
-
+        // WHEN & THEN
+        assertThatThrownBy(() -> adminApplicationService.changeStatus(applicationId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_STATUS_TRANSITION);
+    }
 
     @Test
     @DisplayName("ATTENDED로 상태 변경 성공 - 게스트 신청이면 마일리지 미지급")

@@ -48,7 +48,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
      */
     @Query("""
             SELECT a FROM Application a
-            JOIN FETCH a.user
+            LEFT JOIN FETCH a.user
             WHERE a.gathering.id = :gatheringId
               AND a.status IN :statuses
               AND a.deletedAt IS NULL

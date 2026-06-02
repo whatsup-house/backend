@@ -58,7 +58,7 @@ public class EmailNotificationService implements NotificationService {
      * AuthService.register()에서 WelcomeEvent 발행 → NotificationEventListener 경유 → 이 메서드 호출.
      */
     @Override
-    @Async
+    @Async("emailTaskExecutor")
     public void sendWelcome(User user) {
         String subject = "[Whats up House] 가입을 환영합니다!";
         String body = String.format("""
@@ -78,7 +78,7 @@ public class EmailNotificationService implements NotificationService {
      * 비회원(user == null)은 이메일 주소가 없으므로 발송을 건너뜁니다.
      */
     @Override
-    @Async
+    @Async("emailTaskExecutor")
     public void sendApplicationPending(Application application) {
         String email = resolveEmail(application);
         if (email == null) return;
@@ -108,7 +108,7 @@ public class EmailNotificationService implements NotificationService {
      * 관리자가 AdminApplicationService.changeStatus(CONFIRMED) 호출 시 트리거됩니다.
      */
     @Override
-    @Async
+    @Async("emailTaskExecutor")
     public void sendApplicationConfirmed(Application application) {
         String email = resolveEmail(application);
         if (email == null) return;
@@ -138,7 +138,7 @@ public class EmailNotificationService implements NotificationService {
      * ApplicationCancelledEvent를 수신해 호출됩니다.
      */
     @Override
-    @Async
+    @Async("emailTaskExecutor")
     public void sendApplicationCancelled(Application application) {
         String email = resolveEmail(application);
         if (email == null) return;
@@ -169,7 +169,7 @@ public class EmailNotificationService implements NotificationService {
      * @param mileageBalance 적립 후 현재 총 잔액
      */
     @Override
-    @Async
+    @Async("emailTaskExecutor")
     public void sendApplicationAttended(Application application, int mileageEarned, int mileageBalance) {
         String email = resolveEmail(application);
         if (email == null) return;
@@ -200,7 +200,7 @@ public class EmailNotificationService implements NotificationService {
      * @param applications PENDING 또는 CONFIRMED 상태인 신청 목록 (CANCELLED, ATTENDED 제외)
      */
     @Override
-    @Async
+    @Async("emailTaskExecutor")
     public void sendGatheringCancelled(Gathering gathering, List<Application> applications) {
         for (Application application : applications) {
             String email = resolveEmail(application);

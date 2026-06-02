@@ -54,7 +54,7 @@ public class AdminApplicationService {
 
     @Transactional
     public ApplicationDeleteResponse deleteApplication(UUID id) {
-        Application application = applicationRepository.findById(id)
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
 
         if (application.getStatus() == ApplicationStatus.ATTENDED) {
