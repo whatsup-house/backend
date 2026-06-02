@@ -12,6 +12,7 @@ import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
 import com.whatsuphouse.backend.domain.matching.entity.MatchingGroup;
 import com.whatsuphouse.backend.domain.matching.entity.MatchingMember;
@@ -145,5 +146,119 @@ public class MatchingService {
         if (pending.isEmpty()) return;
         matchingMemberRepository.deleteByGroupIn(pending);
         matchingGroupRepository.deleteAll(pending);
+    }
+
+    // ── 관리자 검토 ────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public MatchingResultResponse getMatchingResult(UUID gatheringId) {
+        gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
+                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+
+        List<MatchingGroup> groups = matchingGroupRepository
+                .findByGathering_IdAndDeletedAtIsNullOrderByEventDateAsc(gatheringId);
+        List<UUID> groupIds = groups.stream().map(MatchingGroup::getId).toList();
+        List<MatchingMember> members = groupIds.isEmpty()
+                ? List.of()
+                : matchingMemberRepository.findByGroupIdsWithApplication(groupIds);
+
+        Map<UUID, List<MatchingMember>> byGroup = members.stream()
+                .collect(java.util.stream.Collectors.groupingBy(m -> m.getGroup().getId()));
+        java.util.Set<UUID> matchedAppIds = members.stream()
+                .map(m -> m.getApplication().getId())
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<MatchingResultResponse.GroupView> groupViews = groups.stream()
+                .map(g -> MatchingResultResponse.GroupView.builder()
+                        .groupId(g.getId())
+                        .eventDate(g.getEventDate())
+                        .status(g.getStatus())
+                        .groupScore(g.getGroupScore())
+                        .groupSize(g.getGroupSize())
+                        .restaurantName(g.getRestaurantName())
+                        .restaurantAddress(g.getRestaurantAddress())
+                        .members(byGroup.getOrDefault(g.getId(), List.of()).stream()
+                                .map(this::toMemberView).toList())
+                        .build())
+                .toList();
+
+        List<MatchingResultResponse.MemberView> unmatched = applicationRepository
+                .findByGatheringIdAndStatusAndDeletedAtIsNull(gatheringId, ApplicationStatus.CONFIRMED).stream()
+                .filter(a -> !matchedAppIds.contains(a.getId()))
+                .map(a -> MatchingResultResponse.MemberView.builder()
+                        .applicationId(a.getId()).name(a.getName()).phone(a.getPhone()).build())
+                .toList();
+
+        return MatchingResultResponse.builder()
+                .gatheringId(gatheringId).groups(groupViews).unmatched(unmatched).build();
+    }
+
+    private MatchingResultResponse.MemberView toMemberView(MatchingMember m) {
+        return MatchingResultResponse.MemberView.builder()
+                .memberId(m.getId())
+                .applicationId(m.getApplication().getId())
+                .name(m.getApplication().getName())
+                .phone(m.getApplication().getPhone())
+                .seatOrder(m.getSeatOrder())
+                .manualAssign(m.isManualAssign())
+                .build();
+    }
+
+    @Transactional
+    public void moveMember(UUID memberId, UUID targetGroupId) {
+        MatchingMember member = matchingMemberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
+        MatchingGroup oldGroup = member.getGroup();
+        MatchingGroup target = matchingGroupRepository.findById(targetGroupId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+
+        member.moveTo(target, matchingMemberRepository.countByGroup_Id(targetGroupId) + 1);
+        matchingMemberRepository.flush();
+        oldGroup.updateGroupSize(matchingMemberRepository.countByGroup_Id(oldGroup.getId()));
+        target.updateGroupSize(matchingMemberRepository.countByGroup_Id(targetGroupId));
+    }
+
+    @Transactional
+    public void excludeMember(UUID memberId) {
+        MatchingMember member = matchingMemberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
+        MatchingGroup group = member.getGroup();
+        matchingMemberRepository.delete(member);
+        matchingMemberRepository.flush();
+        group.updateGroupSize(matchingMemberRepository.countByGroup_Id(group.getId()));
+    }
+
+    @Transactional
+    public void assignMember(UUID groupId, UUID applicationId) {
+        MatchingGroup group = matchingGroupRepository.findById(groupId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+        if (matchingMemberRepository.existsByApplication_Id(applicationId)) {
+            throw new CustomException(ErrorCode.MATCHING_ALREADY_ASSIGNED);
+        }
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+
+        matchingMemberRepository.save(MatchingMember.builder()
+                .application(application)
+                .group(group)
+                .seatOrder(matchingMemberRepository.countByGroup_Id(groupId) + 1)
+                .isManualAssign(true)
+                .build());
+        matchingMemberRepository.flush();
+        group.updateGroupSize(matchingMemberRepository.countByGroup_Id(groupId));
+    }
+
+    @Transactional
+    public void confirmGroup(UUID groupId) {
+        MatchingGroup group = matchingGroupRepository.findById(groupId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+        group.confirm();
+    }
+
+    @Transactional
+    public void updateRestaurant(UUID groupId, String name, String address) {
+        MatchingGroup group = matchingGroupRepository.findById(groupId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+        group.updateRestaurant(name, address);
     }
 }

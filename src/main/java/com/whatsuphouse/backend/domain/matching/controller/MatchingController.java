@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.matching.controller;
 
+import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -23,5 +24,11 @@ public class MatchingController {
     @PostMapping
     public ResponseEntity<ApiResult<MatchingRunResponse>> run(@PathVariable UUID gatheringId) {
         return ResponseEntity.ok(ApiResult.success("자동매칭이 완료되었습니다.", matchingService.runMatching(gatheringId)));
+    }
+
+    @Operation(summary = "매칭 결과 조회", description = "게더링의 매칭 그룹/멤버와 미배정 신청자를 조회합니다.")
+    @GetMapping
+    public ResponseEntity<ApiResult<MatchingResultResponse>> result(@PathVariable UUID gatheringId) {
+        return ResponseEntity.ok(ApiResult.success(matchingService.getMatchingResult(gatheringId)));
     }
 }

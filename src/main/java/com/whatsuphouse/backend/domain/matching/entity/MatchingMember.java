@@ -49,4 +49,11 @@ public class MatchingMember {
         this.seatOrder = seatOrder;
         this.isManualAssign = isManualAssign;
     }
+
+    // 관리자가 다른 그룹으로 이동시킬 때 (수동 조정으로 표시)
+    public void moveTo(MatchingGroup group, Integer seatOrder) {
+        this.group = group;
+        this.seatOrder = seatOrder;
+        this.isManualAssign = true;
+    }
 }

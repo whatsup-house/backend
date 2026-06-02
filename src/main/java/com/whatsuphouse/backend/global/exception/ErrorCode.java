@@ -44,6 +44,8 @@ public enum ErrorCode {
     // Matching
     MATCHING_NOT_ALLOWED("우연한 식탁(RANDOM_TABLE) 게더링만 자동매칭할 수 있습니다.", HttpStatus.BAD_REQUEST),
     MATCHING_GROUP_NOT_FOUND("존재하지 않는 매칭 그룹입니다.", HttpStatus.NOT_FOUND),
+    MATCHING_MEMBER_NOT_FOUND("존재하지 않는 매칭 멤버입니다.", HttpStatus.NOT_FOUND),
+    MATCHING_ALREADY_ASSIGNED("이미 다른 그룹에 배정된 신청입니다.", HttpStatus.BAD_REQUEST),
 
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),

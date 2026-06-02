@@ -75,6 +75,10 @@ public class MatchingGroup extends BaseEntity {
         this.matchedAt = matchedAt;
     }
 
+    public void updateGroupSize(int groupSize) {
+        this.groupSize = groupSize;
+    }
+
     public void confirm() {
         this.status = MatchingGroupStatus.CONFIRMED;
     }
