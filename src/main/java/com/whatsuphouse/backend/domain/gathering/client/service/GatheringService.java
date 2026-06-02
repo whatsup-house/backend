@@ -24,20 +24,31 @@ public class GatheringService {
     private final GatheringRepository gatheringRepository;
 
     public List<GatheringResponse> listGatherings(LocalDate date, GatheringStatus status) {
+        return findGatherings(date, status).stream()
+                .filter(gathering -> isVisibleInList(gathering, status))
+                .map(GatheringResponse::from)
+                .toList();
+    }
+
+    private List<Gathering> findGatherings(LocalDate date, GatheringStatus status) {
         if (date != null && status != null) {
-            return gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNull(date, status)
-                    .stream().map(GatheringResponse::from).toList();
+            return gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNull(date, status);
         }
         if (date != null) {
-            return gatheringRepository.findByEventDateAndDeletedAtIsNull(date)
-                    .stream().map(GatheringResponse::from).toList();
+            return gatheringRepository.findByEventDateAndDeletedAtIsNull(date);
         }
         if (status != null) {
-            return gatheringRepository.findByStatusAndDeletedAtIsNull(status)
-                    .stream().map(GatheringResponse::from).toList();
+            return gatheringRepository.findByStatusAndDeletedAtIsNull(status);
         }
-        return gatheringRepository.findByDeletedAtIsNull()
-                .stream().map(GatheringResponse::from).toList();
+        return gatheringRepository.findByDeletedAtIsNull();
+    }
+
+    // status=OPEN(모집중) 조회 시 eventDate가 지난 게더링은 모집 목록에서 제외한다. (KAN-163)
+    private boolean isVisibleInList(Gathering gathering, GatheringStatus status) {
+        if (status == GatheringStatus.OPEN) {
+            return !gathering.getEventDate().isBefore(LocalDate.now());
+        }
+        return true;
     }
 
     public List<CuratedGatheringResponse> listCuratedGatherings() {

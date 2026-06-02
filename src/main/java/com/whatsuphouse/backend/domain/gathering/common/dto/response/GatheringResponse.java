@@ -45,7 +45,7 @@ public class GatheringResponse {
                 .endTime(gathering.getEndTime())
                 .price(gathering.getPrice())
                 .maxAttendees(gathering.getMaxAttendees())
-                .status(gathering.getStatus())
+                .status(gathering.getEffectiveStatus())
                 .thumbnailUrl(gathering.getThumbnailUrl())
                 .location(locationSummary)
                 .build();
