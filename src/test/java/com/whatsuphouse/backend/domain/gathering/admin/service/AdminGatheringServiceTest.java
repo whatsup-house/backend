@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.enums.LocationStatus;
+import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -52,6 +53,9 @@ class AdminGatheringServiceTest {
 
     @Mock
     private StorageService storageService;
+
+    @Mock
+    private FormProvisionService formProvisionService;
 
     @InjectMocks
     private AdminGatheringService adminGatheringService;

@@ -15,6 +15,7 @@ import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringDe
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -43,6 +44,7 @@ public class AdminGatheringService {
     private final LocationRepository locationRepository;
     private final ApplicationRepository applicationRepository;
     private final StorageService storageService;
+    private final FormProvisionService formProvisionService;
     private final ApplicationEventPublisher eventPublisher;
 
     public List<AdminGatheringResponse> listGatherings(
@@ -107,7 +109,10 @@ public class AdminGatheringService {
                 .maxAttendees(request.getMaxAttendees())
                 .thumbnailUrl(thumbnailUrl)
                 .build();
-        return GatheringDetailResponse.from(gatheringRepository.save(gathering));
+        Gathering saved = gatheringRepository.save(gathering);
+        // 신청폼 + 시스템 예약 질문(이름/연락처) 자동 생성
+        formProvisionService.createDefaultForm(saved);
+        return GatheringDetailResponse.from(saved);
     }
 
     @Transactional

@@ -40,6 +40,7 @@ public class GatheringFormResponse {
         private int displayOrder;
         private Map<String, Object> options;
         private Map<String, Object> validation;
+        private boolean systemReserved;
 
         public static QuestionDetail from(FormQuestion question) {
             return QuestionDetail.builder()
@@ -52,6 +53,7 @@ public class GatheringFormResponse {
                     .displayOrder(question.getDisplayOrder())
                     .options(question.getOptions())
                     .validation(question.getValidation())
+                    .systemReserved(question.isSystemReserved())
                     .build();
         }
     }

@@ -19,6 +19,7 @@ public class FormQuestionResponse {
     private String label;
     private int displayOrder;
     private boolean isMatchingField;
+    private boolean systemReserved;
     private MatchingStrategy matchingStrategy;
     private BigDecimal matchingWeight;
 
@@ -30,6 +31,7 @@ public class FormQuestionResponse {
                 .label(question.getLabel())
                 .displayOrder(question.getDisplayOrder())
                 .isMatchingField(question.isMatchingField())
+                .systemReserved(question.isSystemReserved())
                 .matchingStrategy(question.getMatchingStrategy())
                 .matchingWeight(question.getMatchingWeight())
                 .build();

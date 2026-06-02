@@ -59,6 +59,10 @@ public class FormQuestion extends BaseEntity {
     @Column(name = "is_matching_field", nullable = false)
     private boolean isMatchingField = false;
 
+    // 시스템 예약 질문(name/phone 등). 관리자가 삭제하거나 question_key를 바꿀 수 없다.
+    @Column(name = "is_system_reserved", nullable = false)
+    private boolean isSystemReserved = false;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "matching_strategy", length = 100)
     private MatchingStrategy matchingStrategy;
@@ -70,7 +74,7 @@ public class FormQuestion extends BaseEntity {
     public FormQuestion(Form form, String questionKey, QuestionType type, String label,
                         String placeholder, boolean required, int displayOrder,
                         Map<String, Object> options, Map<String, Object> validation,
-                        boolean isMatchingField,
+                        boolean isMatchingField, boolean isSystemReserved,
                         MatchingStrategy matchingStrategy, BigDecimal matchingWeight) {
         this.form = form;
         this.questionKey = questionKey;
@@ -82,6 +86,7 @@ public class FormQuestion extends BaseEntity {
         this.options = options;
         this.validation = validation;
         this.isMatchingField = isMatchingField;
+        this.isSystemReserved = isSystemReserved;
         this.matchingStrategy = matchingStrategy;
         this.matchingWeight = matchingWeight;
     }

@@ -73,6 +73,11 @@ public class AdminFormService {
                 .filter(q -> q.getDeletedAt() == null)
                 .orElseThrow(() -> new CustomException(ErrorCode.QUESTION_NOT_FOUND));
 
+        // 시스템 예약 질문(이름/연락처)은 question_key를 바꿀 수 없다 (라벨/순서 등은 허용)
+        if (question.isSystemReserved() && !question.getQuestionKey().equals(request.getQuestionKey())) {
+            throw new CustomException(ErrorCode.RESERVED_QUESTION_READONLY);
+        }
+
         BigDecimal weight = request.getMatchingWeight() != null
                 ? request.getMatchingWeight()
                 : BigDecimal.ONE;
@@ -91,6 +96,11 @@ public class AdminFormService {
         FormQuestion question = formQuestionRepository.findById(questionId)
                 .filter(q -> q.getDeletedAt() == null)
                 .orElseThrow(() -> new CustomException(ErrorCode.QUESTION_NOT_FOUND));
+
+        // 시스템 예약 질문(이름/연락처)은 삭제할 수 없다
+        if (question.isSystemReserved()) {
+            throw new CustomException(ErrorCode.RESERVED_QUESTION_READONLY);
+        }
         question.softDelete();
     }
 

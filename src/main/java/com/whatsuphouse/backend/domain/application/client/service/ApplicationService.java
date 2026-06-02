@@ -89,7 +89,8 @@ public class ApplicationService {
         Map<UUID, FormQuestion> questionMap = questions.stream()
                 .collect(Collectors.toMap(FormQuestion::getId, q -> q));
 
-        validateAnswers(request.getAnswers(), questions, questionMap);
+        // 회원은 이름/연락처를 계정에서 가져오므로 시스템 예약 질문은 필수 검증에서 제외한다.
+        validateAnswers(request.getAnswers(), questions, questionMap, userId != null);
 
         // questionKey → value 맵
         Map<String, Object> byKey = buildAnswersByKey(request.getAnswers(), questionMap);
@@ -133,7 +134,7 @@ public class ApplicationService {
     }
 
     private void validateAnswers(List<AnswerItem> answers, List<FormQuestion> questions,
-                                 Map<UUID, FormQuestion> questionMap) {
+                                 Map<UUID, FormQuestion> questionMap, boolean skipReservedRequired) {
         Set<UUID> submittedIds = answers.stream()
                 .map(AnswerItem::getQuestionId)
                 .collect(Collectors.toSet());
@@ -145,6 +146,9 @@ public class ApplicationService {
         }
 
         for (FormQuestion q : questions) {
+            if (skipReservedRequired && q.isSystemReserved()) {
+                continue;
+            }
             if (q.isRequired() && !submittedIds.contains(q.getId())) {
                 throw new CustomException(ErrorCode.REQUIRED_ANSWER_MISSING);
             }
