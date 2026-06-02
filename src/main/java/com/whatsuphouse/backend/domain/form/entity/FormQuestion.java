@@ -59,9 +59,6 @@ public class FormQuestion extends BaseEntity {
     @Column(name = "is_matching_field", nullable = false)
     private boolean isMatchingField = false;
 
-    @Column(name = "matching_key", length = 100)
-    private String matchingKey;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "matching_strategy", length = 100)
     private MatchingStrategy matchingStrategy;
@@ -73,7 +70,7 @@ public class FormQuestion extends BaseEntity {
     public FormQuestion(GatheringForm form, String questionKey, QuestionType type, String label,
                         String placeholder, boolean required, int displayOrder,
                         Map<String, Object> options, Map<String, Object> validation,
-                        boolean isMatchingField, String matchingKey,
+                        boolean isMatchingField,
                         MatchingStrategy matchingStrategy, BigDecimal matchingWeight) {
         this.form = form;
         this.questionKey = questionKey;
@@ -85,14 +82,13 @@ public class FormQuestion extends BaseEntity {
         this.options = options;
         this.validation = validation;
         this.isMatchingField = isMatchingField;
-        this.matchingKey = matchingKey;
         this.matchingStrategy = matchingStrategy;
         this.matchingWeight = matchingWeight;
     }
 
     public void update(String questionKey, QuestionType type, String label, String placeholder,
                        boolean required, int displayOrder, Map<String, Object> options,
-                       Map<String, Object> validation, boolean isMatchingField, String matchingKey,
+                       Map<String, Object> validation, boolean isMatchingField,
                        MatchingStrategy matchingStrategy, BigDecimal matchingWeight) {
         this.questionKey = questionKey;
         this.type = type;
@@ -103,7 +99,6 @@ public class FormQuestion extends BaseEntity {
         this.options = options;
         this.validation = validation;
         this.isMatchingField = isMatchingField;
-        this.matchingKey = matchingKey;
         this.matchingStrategy = matchingStrategy;
         this.matchingWeight = matchingWeight;
     }

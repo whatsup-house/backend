@@ -58,7 +58,6 @@ public class AdminFormService {
                 .options(request.getOptions())
                 .validation(request.getValidation())
                 .isMatchingField(request.isMatchingField())
-                .matchingKey(request.getMatchingKey())
                 .matchingStrategy(request.getMatchingStrategy())
                 .matchingWeight(weight)
                 .build();
@@ -82,7 +81,7 @@ public class AdminFormService {
                 request.getQuestionKey(), request.getType(), request.getLabel(),
                 request.getPlaceholder(), request.getRequired(), request.getDisplayOrder(),
                 request.getOptions(), request.getValidation(), request.isMatchingField(),
-                request.getMatchingKey(), request.getMatchingStrategy(), weight);
+                request.getMatchingStrategy(), weight);
 
         return FormQuestionResponse.from(question);
     }

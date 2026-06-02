@@ -35,8 +35,6 @@ public class FormQuestionUpdateRequest {
 
     private boolean isMatchingField = false;
 
-    private String matchingKey;
-
     private MatchingStrategy matchingStrategy;
 
     private BigDecimal matchingWeight;
