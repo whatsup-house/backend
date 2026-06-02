@@ -25,8 +25,14 @@ public class LocationCreateRequest {
     @NotBlank
     private String address;
 
-    @Schema(example = "https://map.kakao.com/link/map/12345678")
+    @Schema(description = "하위 호환용 legacy 지도 URL", example = "https://naver.me/xHgIyXJR")
     private String mapUrl;
+
+    @Schema(description = "네이버 지도 URL", example = "https://naver.me/xHgIyXJR")
+    private String naverMapUrl;
+
+    @Schema(description = "카카오 지도 URL", example = "https://kko.kakao.com/abcdEFGH")
+    private String kakaoMapUrl;
 
     @Schema(example = "20")
     @NotNull
@@ -45,6 +51,8 @@ public class LocationCreateRequest {
                 .name(name)
                 .address(address)
                 .mapUrl(mapUrl)
+                .naverMapUrl(naverMapUrl)
+                .kakaoMapUrl(kakaoMapUrl)
                 .maxCapacity(maxCapacity)
                 .status(status != null ? status : LocationStatus.ACTIVE)
                 .memo(memo)

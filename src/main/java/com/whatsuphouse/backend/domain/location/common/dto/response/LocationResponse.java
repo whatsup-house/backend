@@ -14,6 +14,8 @@ public class LocationResponse {
     private String name;
     private String address;
     private String mapUrl;
+    private String naverMapUrl;
+    private String kakaoMapUrl;
 
     public static LocationResponse from(Location location) {
         return LocationResponse.builder()
@@ -21,6 +23,8 @@ public class LocationResponse {
                 .name(location.getName())
                 .address(location.getAddress())
                 .mapUrl(location.getMapUrl())
+                .naverMapUrl(location.getNaverMapUrl())
+                .kakaoMapUrl(location.getKakaoMapUrl())
                 .build();
     }
 }
