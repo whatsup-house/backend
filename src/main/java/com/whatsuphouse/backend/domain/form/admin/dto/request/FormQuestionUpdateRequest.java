@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.form.admin.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.whatsuphouse.backend.domain.form.enums.MatchingStrategy;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import jakarta.validation.constraints.NotBlank;
@@ -33,6 +34,7 @@ public class FormQuestionUpdateRequest {
 
     private Map<String, Object> validation;
 
+    @JsonProperty("isMatchingField")
     private boolean isMatchingField = false;
 
     private MatchingStrategy matchingStrategy;

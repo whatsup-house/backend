@@ -67,7 +67,8 @@ public class Gathering extends BaseEntity {
 
     @Builder
     public Gathering(String title, String description, Location location, LocalDate eventDate,
-                     LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl) {
+                     LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl,
+                     GatheringType gatheringType) {
         this.title = title;
         this.description = description;
         this.location = location;
@@ -77,6 +78,7 @@ public class Gathering extends BaseEntity {
         this.price = price;
         this.maxAttendees = maxAttendees;
         this.thumbnailUrl = thumbnailUrl;
+        this.gatheringType = gatheringType != null ? gatheringType : GatheringType.REGULAR;
         this.status = GatheringStatus.OPEN;
     }
 

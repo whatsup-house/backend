@@ -108,6 +108,7 @@ public class AdminGatheringService {
                 .price(request.getPrice())
                 .maxAttendees(request.getMaxAttendees())
                 .thumbnailUrl(thumbnailUrl)
+                .gatheringType(request.getGatheringType())
                 .build();
         Gathering saved = gatheringRepository.save(gathering);
         // 신청폼 + 시스템 예약 질문(이름/연락처) 자동 생성

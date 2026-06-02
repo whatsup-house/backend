@@ -70,4 +70,17 @@ public class MatchingGroup extends BaseEntity {
         this.groupScore = groupScore;
         this.status = MatchingGroupStatus.PENDING;
     }
+
+    public void markMatched(LocalDateTime matchedAt) {
+        this.matchedAt = matchedAt;
+    }
+
+    public void confirm() {
+        this.status = MatchingGroupStatus.CONFIRMED;
+    }
+
+    public void updateRestaurant(String restaurantName, String restaurantAddress) {
+        this.restaurantName = restaurantName;
+        this.restaurantAddress = restaurantAddress;
+    }
 }

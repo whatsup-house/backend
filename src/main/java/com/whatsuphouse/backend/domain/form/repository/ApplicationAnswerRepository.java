@@ -18,4 +18,13 @@ public interface ApplicationAnswerRepository extends JpaRepository<ApplicationAn
             order by q.displayOrder asc
             """)
     List<ApplicationAnswer> findDetailByApplicationId(@Param("applicationId") UUID applicationId);
+
+    // 자동매칭: 여러 신청의 답변을 질문과 함께 일괄 로드
+    @Query("""
+            select aa from ApplicationAnswer aa
+            join fetch aa.question q
+            where aa.application.id in :applicationIds
+              and aa.deletedAt is null
+            """)
+    List<ApplicationAnswer> findByApplicationIds(@Param("applicationIds") List<UUID> applicationIds);
 }

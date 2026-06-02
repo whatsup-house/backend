@@ -57,4 +57,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
             @Param("gatheringId") UUID gatheringId,
             @Param("statuses") List<ApplicationStatus> statuses);
 
+    // 자동매칭 대상: 특정 게더링의 특정 상태(CONFIRMED) 신청 (게스트 포함, user fetch 안 함)
+    List<Application> findByGatheringIdAndStatusAndDeletedAtIsNull(UUID gatheringId, ApplicationStatus status);
+
 }

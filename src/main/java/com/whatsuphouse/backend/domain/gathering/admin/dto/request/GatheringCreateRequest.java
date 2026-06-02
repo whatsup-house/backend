@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.gathering.admin.dto.request;
 
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -22,6 +23,9 @@ public class GatheringCreateRequest {
     @Schema(example = "4월 홍대 소셜 게더링")
     @NotBlank
     private String title;
+
+    @Schema(example = "REGULAR", description = "REGULAR(일반) 또는 RANDOM_TABLE(우연한 식탁). 미지정 시 REGULAR")
+    private GatheringType gatheringType;
 
     @Schema(example = "편안하게 대화 나누는 소규모 모임입니다.")
     private String description;
