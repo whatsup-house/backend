@@ -325,7 +325,7 @@ void changeStatus_toCancelled_throwsException() {
     @DisplayName("PENDING 신청 삭제 성공")
     void deleteApplication_pending_success() {
         // GIVEN
-        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.findById(applicationId)).willReturn(Optional.of(application));
 
         //WHEN
         ApplicationDeleteResponse response = adminApplicationService.deleteApplication(applicationId);
@@ -337,7 +337,7 @@ void changeStatus_toCancelled_throwsException() {
     @DisplayName("이미 CANCELLED인 신청은 멱등 처리")
     void deleteApplication_alreadyCancelled_idempotent() {
         // GIVEN
-        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.findById(applicationId)).willReturn(Optional.of(application));
         application.cancel();
 
         //WHEN
@@ -350,7 +350,7 @@ void changeStatus_toCancelled_throwsException() {
     @DisplayName("ATTENDED 신청 삭제 시도 시 예외 발생")
     void deleteApplication_attended_throwsException() {
         // GIVEN
-        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.findById(applicationId)).willReturn(Optional.of(application));
         application.attend();
 
         // WHEN & THEN

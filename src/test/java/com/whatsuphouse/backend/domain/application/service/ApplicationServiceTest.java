@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.application.service;
 
+import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
@@ -8,6 +9,12 @@ import com.whatsuphouse.backend.domain.application.client.service.ApplicationSer
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
+import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
+import com.whatsuphouse.backend.domain.form.enums.QuestionType;
+import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
+import com.whatsuphouse.backend.domain.form.repository.GatheringFormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
@@ -53,6 +60,15 @@ class ApplicationServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private GatheringFormRepository gatheringFormRepository;
+
+    @Mock
+    private FormQuestionRepository formQuestionRepository;
+
+    @Mock
+    private ApplicationAnswerRepository applicationAnswerRepository;
+
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
@@ -89,6 +105,7 @@ class ApplicationServiceTest {
         ReflectionTestUtils.setField(user, "id", userId);
 
         request = new ApplicationRequest();
+        setAnswers(request, List.of());
     }
 
     // ── apply() ──────────────────────────────────────────────────────────────
@@ -98,6 +115,9 @@ class ApplicationServiceTest {
     void apply_member_success() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+                .willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
@@ -112,10 +132,15 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("비회원 정상 신청")
     void apply_guest_success() {
-        setPhone(request, "01098765432");
+        FormQuestion phoneQuestion = question("phone", false);
+        setAnswers(request, List.of(answerItem(phoneQuestion.getId(), "01098765432")));
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+                .willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+                .willReturn(List.of(phoneQuestion));
         given(applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -164,6 +189,9 @@ class ApplicationServiceTest {
     void apply_memberAlreadyApplied_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+                .willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(true);
 
@@ -177,6 +205,9 @@ class ApplicationServiceTest {
     void apply_guestPhoneMissing_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+                .willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
 
         assertThatThrownBy(() -> applicationService.apply(gatheringId, request, null))
                 .isInstanceOf(CustomException.class)
@@ -186,10 +217,15 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("비회원이 이미 신청한 전화번호로 재신청하면 예외 발생")
     void apply_guestPhoneDuplicated_throwsException() {
-        setPhone(request, "01098765432");
+        FormQuestion phoneQuestion = question("phone", false);
+        setAnswers(request, List.of(answerItem(phoneQuestion.getId(), "01098765432")));
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+                .willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+                .willReturn(List.of(phoneQuestion));
         given(applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(true);
 
         assertThatThrownBy(() -> applicationService.apply(gatheringId, request, null))
@@ -321,13 +357,34 @@ class ApplicationServiceTest {
         return application;
     }
 
-    private void setPhone(ApplicationRequest req, String phone) {
-        try {
-            var field = ApplicationRequest.class.getDeclaredField("phone");
-            field.setAccessible(true);
-            field.set(req, phone);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+    private GatheringForm activeForm() {
+        return GatheringForm.builder()
+                .gathering(gathering)
+                .isActive(true)
+                .build();
+    }
+
+    private FormQuestion question(String questionKey, boolean required) {
+        FormQuestion question = FormQuestion.builder()
+                .form(activeForm())
+                .questionKey(questionKey)
+                .type(QuestionType.SHORT_TEXT)
+                .label(questionKey)
+                .required(required)
+                .displayOrder(0)
+                .build();
+        ReflectionTestUtils.setField(question, "id", UUID.randomUUID());
+        return question;
+    }
+
+    private AnswerItem answerItem(UUID questionId, Object value) {
+        AnswerItem item = new AnswerItem();
+        ReflectionTestUtils.setField(item, "questionId", questionId);
+        ReflectionTestUtils.setField(item, "value", value);
+        return item;
+    }
+
+    private void setAnswers(ApplicationRequest req, List<AnswerItem> answers) {
+        ReflectionTestUtils.setField(req, "answers", answers);
     }
 }
