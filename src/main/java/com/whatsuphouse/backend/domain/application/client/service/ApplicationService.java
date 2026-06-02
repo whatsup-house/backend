@@ -10,10 +10,10 @@ import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
-import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
+import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
-import com.whatsuphouse.backend.domain.form.repository.GatheringFormRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
@@ -47,7 +47,7 @@ public class ApplicationService {
     private final ApplicationRepository applicationRepository;
     private final GatheringRepository gatheringRepository;
     private final UserRepository userRepository;
-    private final GatheringFormRepository gatheringFormRepository;
+    private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -79,8 +79,8 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.GATHERING_FULL);
         }
 
-        GatheringForm form = gatheringFormRepository
-                .findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId)
+        Form form = formRepository
+                .findByGathering_IdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.FORM_NOT_FOUND));
 
         List<FormQuestion> questions = formQuestionRepository

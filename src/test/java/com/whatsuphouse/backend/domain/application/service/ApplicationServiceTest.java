@@ -9,12 +9,12 @@ import com.whatsuphouse.backend.domain.application.client.service.ApplicationSer
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
-import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
-import com.whatsuphouse.backend.domain.form.repository.GatheringFormRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
@@ -60,7 +60,7 @@ class ApplicationServiceTest {
     private UserRepository userRepository;
 
     @Mock
-    private GatheringFormRepository gatheringFormRepository;
+    private FormRepository formRepository;
 
     @Mock
     private FormQuestionRepository formQuestionRepository;
@@ -115,7 +115,7 @@ class ApplicationServiceTest {
     void apply_member_success() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
@@ -137,7 +137,7 @@ class ApplicationServiceTest {
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
                 .willReturn(List.of(phoneQuestion));
@@ -189,7 +189,7 @@ class ApplicationServiceTest {
     void apply_memberAlreadyApplied_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
@@ -205,7 +205,7 @@ class ApplicationServiceTest {
     void apply_guestPhoneMissing_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
 
@@ -222,7 +222,7 @@ class ApplicationServiceTest {
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(gatheringFormRepository.findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId))
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
                 .willReturn(List.of(phoneQuestion));
@@ -357,10 +357,10 @@ class ApplicationServiceTest {
         return application;
     }
 
-    private GatheringForm activeForm() {
-        return GatheringForm.builder()
+    private Form activeForm() {
+        return Form.builder()
                 .gathering(gathering)
-                .isActive(true)
+                .isTemplate(false)
                 .build();
     }
 

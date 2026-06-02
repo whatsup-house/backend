@@ -3,11 +3,11 @@ package com.whatsuphouse.backend.domain.form.admin.service;
 import com.whatsuphouse.backend.domain.form.admin.dto.request.FormQuestionCreateRequest;
 import com.whatsuphouse.backend.domain.form.admin.dto.request.FormQuestionUpdateRequest;
 import com.whatsuphouse.backend.domain.form.admin.dto.response.FormQuestionResponse;
+import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
-import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
-import com.whatsuphouse.backend.domain.form.repository.GatheringFormRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -25,7 +25,7 @@ import java.util.UUID;
 public class AdminFormService {
 
     private final GatheringRepository gatheringRepository;
-    private final GatheringFormRepository gatheringFormRepository;
+    private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
 
     @Transactional
@@ -35,12 +35,12 @@ public class AdminFormService {
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
-        GatheringForm form = gatheringFormRepository
+        Form form = formRepository
                 .findByGathering_IdAndDeletedAtIsNull(gatheringId)
-                .orElseGet(() -> gatheringFormRepository.save(
-                        GatheringForm.builder()
+                .orElseGet(() -> formRepository.save(
+                        Form.builder()
                                 .gathering(gathering)
-                                .isActive(true)
+                                .isTemplate(false)
                                 .build()));
 
         BigDecimal weight = request.getMatchingWeight() != null

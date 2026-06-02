@@ -27,7 +27,7 @@ public class FormQuestion extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "form_id", nullable = false)
-    private GatheringForm form;
+    private Form form;
 
     @Column(name = "question_key", nullable = false, length = 100)
     private String questionKey;
@@ -67,7 +67,7 @@ public class FormQuestion extends BaseEntity {
     private BigDecimal matchingWeight;
 
     @Builder
-    public FormQuestion(GatheringForm form, String questionKey, QuestionType type, String label,
+    public FormQuestion(Form form, String questionKey, QuestionType type, String label,
                         String placeholder, boolean required, int displayOrder,
                         Map<String, Object> options, Map<String, Object> validation,
                         boolean isMatchingField,

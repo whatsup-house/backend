@@ -1,10 +1,10 @@
 package com.whatsuphouse.backend.domain.form.client.service;
 
 import com.whatsuphouse.backend.domain.form.client.dto.response.GatheringFormResponse;
+import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
-import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
-import com.whatsuphouse.backend.domain.form.repository.GatheringFormRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -21,15 +21,15 @@ import java.util.UUID;
 public class FormService {
 
     private final GatheringRepository gatheringRepository;
-    private final GatheringFormRepository gatheringFormRepository;
+    private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
 
     public GatheringFormResponse getForm(UUID gatheringId) {
         gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
-        GatheringForm form = gatheringFormRepository
-                .findByGathering_IdAndIsActiveTrueAndDeletedAtIsNull(gatheringId)
+        Form form = formRepository
+                .findByGathering_IdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.FORM_NOT_FOUND));
 
         List<FormQuestion> questions = formQuestionRepository

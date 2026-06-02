@@ -1,7 +1,7 @@
 package com.whatsuphouse.backend.domain.form.client.dto.response;
 
+import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
-import com.whatsuphouse.backend.domain.form.entity.GatheringForm;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import lombok.Builder;
 import lombok.Getter;
@@ -16,14 +16,14 @@ public class GatheringFormResponse {
 
     private UUID formId;
     private UUID gatheringId;
-    private String description;
+    private String guideText;
     private List<QuestionDetail> questions;
 
-    public static GatheringFormResponse from(GatheringForm form, List<FormQuestion> questions) {
+    public static GatheringFormResponse from(Form form, List<FormQuestion> questions) {
         return GatheringFormResponse.builder()
                 .formId(form.getId())
-                .gatheringId(form.getGathering().getId())
-                .description(form.getDescription())
+                .gatheringId(form.getGathering() != null ? form.getGathering().getId() : null)
+                .guideText(form.getGuideText())
                 .questions(questions.stream().map(QuestionDetail::from).toList())
                 .build();
     }
