@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.client.service;
 
 import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
+import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
@@ -207,7 +208,23 @@ public class ApplicationService {
     public ApplicationCheckResponse checkApplication(String phone, String bookingNumber) {
         Application application = applicationRepository.findByPhoneAndBookingNumberAndDeletedAtIsNull(phone, bookingNumber)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        return ApplicationCheckResponse.from(application);
+        return ApplicationCheckResponse.from(application, loadAnswers(application.getId()));
+    }
+
+    public ApplicationCheckResponse getMyApplication(UUID applicationId, UUID userId) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        if (application.getUser() == null || !application.getUser().getId().equals(userId)) {
+            throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
+        }
+        return ApplicationCheckResponse.from(application, loadAnswers(applicationId));
+    }
+
+    private List<AnswerView> loadAnswers(UUID applicationId) {
+        return applicationAnswerRepository.findDetailByApplicationId(applicationId)
+                .stream()
+                .map(AnswerView::from)
+                .toList();
     }
 
     public List<ApplicationListResponse> getMyApplications(UUID userId) {

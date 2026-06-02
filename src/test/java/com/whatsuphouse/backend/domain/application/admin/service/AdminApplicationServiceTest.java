@@ -46,6 +46,9 @@ class AdminApplicationServiceTest {
     private ApplicationRepository applicationRepository;
 
     @Mock
+    private com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository applicationAnswerRepository;
+
+    @Mock
     private MileageService mileageService;
 
     @Mock

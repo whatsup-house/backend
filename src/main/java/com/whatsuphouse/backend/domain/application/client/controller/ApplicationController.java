@@ -62,6 +62,15 @@ public class ApplicationController {
         return ResponseEntity.ok(ApiResult.success(applicationService.getMyApplications(principal.getUserId())));
     }
 
+    @Operation(summary = "내 신청 상세 조회 (회원)", description = "로그인된 회원이 자신의 신청 내역과 작성한 답변을 조회합니다.")
+    @GetMapping("/api/applications/{id}")
+    public ResponseEntity<ApiResult<ApplicationCheckResponse>> getMyApplication(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResult.success(applicationService.getMyApplication(id, principal.getUserId())));
+    }
+
     @Operation(summary = "신청 취소 (회원)", description = "로그인된 회원이 자신의 신청을 취소합니다.")
     @DeleteMapping("/api/applications/{id}")
     public ResponseEntity<ApiResult<Void>> cancel(

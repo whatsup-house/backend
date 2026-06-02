@@ -4,9 +4,11 @@ import com.whatsuphouse.backend.domain.application.admin.dto.request.Application
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
+import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
@@ -29,6 +31,7 @@ import java.util.UUID;
 public class AdminApplicationService {
 
     private final ApplicationRepository applicationRepository;
+    private final ApplicationAnswerRepository applicationAnswerRepository;
     private final MileageService mileageService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -42,7 +45,11 @@ public class AdminApplicationService {
     public AdminApplicationResponse getApplication(UUID id) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        return AdminApplicationResponse.from(application);
+        List<AnswerView> answers = applicationAnswerRepository.findDetailByApplicationId(id)
+                .stream()
+                .map(AnswerView::from)
+                .toList();
+        return AdminApplicationResponse.from(application, answers);
     }
 
     @Transactional
