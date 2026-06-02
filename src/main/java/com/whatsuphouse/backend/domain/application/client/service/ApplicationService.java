@@ -7,7 +7,6 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.Applicati
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
-import com.whatsuphouse.backend.domain.application.enums.JobCategory;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
@@ -22,8 +21,6 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEv
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
-import com.whatsuphouse.backend.global.common.enums.Gender;
-import com.whatsuphouse.backend.global.common.enums.Mbti;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -116,14 +113,6 @@ public class ApplicationService {
 
         String name = user != null ? user.getName() : extractString(byKey, "name");
         String phone = user != null ? user.getPhone() : extractString(byKey, "phone");
-        Gender gender = extractEnum(byKey, "gender", Gender.class);
-        Integer age = extractInteger(byKey, "age");
-        String instagramId = extractString(byKey, "instagram_id");
-        JobCategory jobCategory = extractEnum(byKey, "job_category", JobCategory.class);
-        String jobDetail = extractString(byKey, "job_detail");
-        Mbti mbti = extractMbti(byKey, "mbti");
-        String intro = extractString(byKey, "intro");
-        String referrerName = extractString(byKey, "referrer_name");
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
@@ -131,14 +120,6 @@ public class ApplicationService {
                 .user(user)
                 .name(name)
                 .phone(phone)
-                .gender(gender)
-                .age(age)
-                .instagramId(instagramId)
-                .jobCategory(jobCategory)
-                .jobDetail(jobDetail)
-                .mbti(mbti)
-                .intro(intro)
-                .referrerName(referrerName)
                 .formSnapshot(buildFormSnapshot(questions))
                 .build();
 
@@ -217,37 +198,6 @@ public class ApplicationService {
     private String extractString(Map<String, Object> map, String key) {
         Object val = map.get(key);
         return val instanceof String s ? s : null;
-    }
-
-    private Integer extractInteger(Map<String, Object> map, String key) {
-        Object val = map.get(key);
-        if (val instanceof Integer i) return i;
-        if (val instanceof Number n) return n.intValue();
-        if (val instanceof String s) {
-            try { return Integer.parseInt(s); } catch (NumberFormatException ignored) { return null; }
-        }
-        return null;
-    }
-
-    private <E extends Enum<E>> E extractEnum(Map<String, Object> map, String key, Class<E> enumClass) {
-        Object val = map.get(key);
-        if (val instanceof String s) {
-            try { return Enum.valueOf(enumClass, s.toUpperCase()); } catch (IllegalArgumentException ignored) { return null; }
-        }
-        return null;
-    }
-
-    private Mbti extractMbti(Map<String, Object> map, String key) {
-        Object val = map.get(key);
-        if (val == null) return null;
-        if (val instanceof String s) {
-            try {
-                return Mbti.valueOf(s.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                throw new CustomException(ErrorCode.INVALID_MBTI);
-            }
-        }
-        return null;
     }
 
     public ApplicationCheckResponse checkApplication(String phone, String bookingNumber) {
