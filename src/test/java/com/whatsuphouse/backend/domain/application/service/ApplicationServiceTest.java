@@ -148,6 +148,21 @@ class ApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("eventDate가 지난 OPEN 게더링에 신청하면 예외 발생 (KAN-163)")
+    void apply_pastGathering_throwsException() {
+        Gathering pastGathering = Gathering.builder()
+                .title("지난 게더링")
+                .eventDate(LocalDate.now().minusDays(1))
+                .maxAttendees(10)
+                .build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(pastGathering));
+
+        assertThatThrownBy(() -> applicationService.apply(gatheringId, request, userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_NOT_RECRUITING);
+    }
+
+    @Test
     @DisplayName("정원이 초과된 게더링에 신청하면 예외 발생")
     void apply_gatheringFull_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));

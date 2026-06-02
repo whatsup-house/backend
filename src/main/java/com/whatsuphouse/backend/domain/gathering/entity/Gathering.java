@@ -79,6 +79,17 @@ public class Gathering extends BaseEntity {
         this.status = status;
     }
 
+    /**
+     * 사용자 응답용 유효 상태. eventDate가 지난 모집중(OPEN) 게더링은 진행 완료(COMPLETED)로 간주한다. (KAN-163)
+     * CANCELLED, CLOSED, COMPLETED 등 명시적 상태는 그대로 유지한다.
+     */
+    public GatheringStatus getEffectiveStatus() {
+        if (status == GatheringStatus.OPEN && eventDate.isBefore(LocalDate.now())) {
+            return GatheringStatus.COMPLETED;
+        }
+        return status;
+    }
+
     public void updateCuration(boolean isCurated) {
         this.isCurated = isCurated;
     }

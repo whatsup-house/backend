@@ -49,7 +49,7 @@ public class CuratedGatheringResponse {
                 .eventDate(gathering.getEventDate())
                 .locationName(locationName)
                 .price(gathering.getPrice())
-                .status(gathering.getStatus())
+                .status(gathering.getEffectiveStatus())
                 .curatedRank(gathering.getCuratedRank())
                 .build();
     }
