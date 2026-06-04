@@ -24,9 +24,6 @@ public class LocationUpdateRequest {
     @NotBlank
     private String address;
 
-    @Schema(description = "하위 호환용 legacy 지도 URL", example = "https://naver.me/xHgIyXJR")
-    private String mapUrl;
-
     @Schema(description = "네이버 지도 URL", example = "https://naver.me/xHgIyXJR")
     private String naverMapUrl;
 

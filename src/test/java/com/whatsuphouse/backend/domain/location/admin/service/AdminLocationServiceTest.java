@@ -44,7 +44,8 @@ class AdminLocationServiceTest {
         location = Location.builder()
                 .name("재즈바 A")
                 .address("서울시 마포구 합정동 123")
-                .mapUrl("https://map.kakao.com/link/map/12345678")
+                .naverMapUrl("https://naver.me/abcd1234")
+                .kakaoMapUrl("https://kko.kakao.com/xyz789")
                 .status(LocationStatus.ACTIVE)
                 .maxCapacity(20)
                 .memo("주차 불가")
@@ -75,7 +76,6 @@ class AdminLocationServiceTest {
         // GIVEN
         LocationCreateRequest request = LocationCreateRequest.builder()
                 .name("홍대 카페").address("서울 마포구 어울마당로 35")
-                .mapUrl("https://naver.me/legacyMap")
                 .naverMapUrl("https://naver.me/abcd1234")
                 .kakaoMapUrl("https://kko.kakao.com/xyz789")
                 .maxCapacity(20).status(LocationStatus.ACTIVE).build();
@@ -85,7 +85,6 @@ class AdminLocationServiceTest {
         LocationDetailResponse response = adminLocationService.createLocation(request);
 
         // THEN
-        assertThat(response.getMapUrl()).isEqualTo("https://naver.me/legacyMap");
         assertThat(response.getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
         assertThat(response.getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
     }
@@ -113,7 +112,6 @@ class AdminLocationServiceTest {
         // GIVEN
         LocationUpdateRequest request = LocationUpdateRequest.builder()
                 .name("홍대 카페 (수정)").address("서울 마포구 어울마당로 99")
-                .mapUrl("https://naver.me/legacyUpdated")
                 .naverMapUrl("https://naver.me/newNaver")
                 .kakaoMapUrl("https://kko.kakao.com/newKakao")
                 .maxCapacity(20).status(LocationStatus.ACTIVE).build();
@@ -123,7 +121,6 @@ class AdminLocationServiceTest {
         LocationDetailResponse response = adminLocationService.updateLocation(locationId, request);
 
         // THEN
-        assertThat(response.getMapUrl()).isEqualTo("https://naver.me/legacyUpdated");
         assertThat(response.getNaverMapUrl()).isEqualTo("https://naver.me/newNaver");
         assertThat(response.getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/newKakao");
     }

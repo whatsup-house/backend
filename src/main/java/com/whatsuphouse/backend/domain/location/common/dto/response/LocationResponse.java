@@ -13,7 +13,6 @@ public class LocationResponse {
     private UUID id;
     private String name;
     private String address;
-    private String mapUrl;
     private String naverMapUrl;
     private String kakaoMapUrl;
 
@@ -22,7 +21,6 @@ public class LocationResponse {
                 .id(location.getId())
                 .name(location.getName())
                 .address(location.getAddress())
-                .mapUrl(location.getMapUrl())
                 .naverMapUrl(location.getNaverMapUrl())
                 .kakaoMapUrl(location.getKakaoMapUrl())
                 .build();

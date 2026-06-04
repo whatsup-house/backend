@@ -117,7 +117,6 @@ class GatheringServiceTest {
         Location location = Location.builder()
                 .name("재즈바 A")
                 .address("서울시 마포구 합정동 123")
-                .mapUrl("https://naver.me/legacyMap")
                 .naverMapUrl("https://naver.me/abcd1234")
                 .kakaoMapUrl("https://kko.kakao.com/xyz789")
                 .status(LocationStatus.ACTIVE)
@@ -135,7 +134,6 @@ class GatheringServiceTest {
         GatheringDetailResponse response = gatheringService.getGathering(gatheringId);
 
         assertThat(response.getLocation()).isNotNull();
-        assertThat(response.getLocation().getMapUrl()).isEqualTo("https://naver.me/legacyMap");
         assertThat(response.getLocation().getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
         assertThat(response.getLocation().getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
     }

@@ -34,7 +34,6 @@ public class GatheringDetailResponse {
                     .id(location.getId())
                     .name(location.getName())
                     .address(location.getAddress())
-                    .mapUrl(location.getMapUrl())
                     .naverMapUrl(location.getNaverMapUrl())
                     .kakaoMapUrl(location.getKakaoMapUrl())
                     .build();
@@ -61,7 +60,6 @@ public class GatheringDetailResponse {
         private UUID id;
         private String name;
         private String address;
-        private String mapUrl;
         private String naverMapUrl;
         private String kakaoMapUrl;
     }

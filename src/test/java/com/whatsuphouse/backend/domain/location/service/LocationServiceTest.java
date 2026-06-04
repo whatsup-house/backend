@@ -43,7 +43,6 @@ class LocationServiceTest {
         location = Location.builder()
                 .name("재즈바 A")
                 .address("서울시 마포구 합정동 123")
-                .mapUrl("https://naver.me/legacyMap")
                 .naverMapUrl("https://naver.me/abcd1234")
                 .kakaoMapUrl("https://kko.kakao.com/xyz789")
                 .status(LocationStatus.ACTIVE)
@@ -72,7 +71,6 @@ class LocationServiceTest {
         List<LocationResponse> result = locationService.getLocations();
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getMapUrl()).isEqualTo("https://naver.me/legacyMap");
         assertThat(result.get(0).getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
         assertThat(result.get(0).getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
     }
@@ -108,7 +106,6 @@ class LocationServiceTest {
 
         LocationDetailResponse response = locationService.getLocation(locationId);
 
-        assertThat(response.getMapUrl()).isEqualTo("https://naver.me/legacyMap");
         assertThat(response.getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
         assertThat(response.getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
     }
