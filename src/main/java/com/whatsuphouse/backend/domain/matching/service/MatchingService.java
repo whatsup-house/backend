@@ -30,7 +30,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -55,31 +57,37 @@ public class MatchingService {
             throw new CustomException(ErrorCode.MATCHING_NOT_ALLOWED);
         }
 
-        // 1. CONFIRMED 신청 대상
+        // 1. 기존 추천(PENDING) 결과 정리 — 확정(CONFIRMED) 그룹은 유지한다.
+        clearPendingGroups(gatheringId);
+
+        // 2. 이미 살아있는 그룹(=확정 그룹)에 배정된 신청은 재매칭 대상에서 제외한다.
+        //    (확정 그룹 멤버를 다시 매칭하면 application_id 유니크 제약을 위반한다.)
+        Set<UUID> assignedAppIds = loadAssignedApplicationIds(gatheringId);
+
+        // 3. CONFIRMED 신청 중 아직 배정되지 않은 신청만 매칭 대상으로 삼는다.
         List<Application> applications = applicationRepository
-                .findByGatheringIdAndStatusAndDeletedAtIsNull(gatheringId, ApplicationStatus.CONFIRMED);
+                .findByGatheringIdAndStatusAndDeletedAtIsNull(gatheringId, ApplicationStatus.CONFIRMED).stream()
+                .filter(a -> !assignedAppIds.contains(a.getId()))
+                .toList();
         List<UUID> appIds = applications.stream().map(Application::getId).toList();
 
-        // 2. 매칭 설정 (form_questions where is_matching_field)
+        // 4. 매칭 설정 (form_questions where is_matching_field)
         List<MatchingEngine.MatchingField> fields = loadMatchingFields(gatheringId);
 
-        // 3. 신청별 답변 맵 (question_key → 값)
+        // 5. 신청별 답변 맵 (question_key → 값)
         Map<UUID, Map<String, Object>> answersByApp = loadAnswers(appIds);
 
-        // 4. Applicant 구성
+        // 6. Applicant 구성
         List<MatchingEngine.Applicant> applicants = applications.stream()
                 .map(a -> new MatchingEngine.Applicant(
                         a.getId(), answersByApp.getOrDefault(a.getId(), Map.of())))
                 .toList();
 
-        // 5. 기존 추천(PENDING) 결과 정리 후 재실행
-        clearPendingGroups(gatheringId);
-
-        // 6. 엔진 실행
+        // 7. 엔진 실행
         List<MatchingEngine.GroupResult> groups =
                 matchingEngine.match(applicants, fields, gathering.getEventDate());
 
-        // 7. 저장
+        // 8. 저장
         Map<UUID, Application> appMap = new HashMap<>();
         applications.forEach(a -> appMap.put(a.getId(), a));
         int matched = 0;
@@ -140,12 +148,27 @@ public class MatchingService {
         return result;
     }
 
+    // 현재 게더링의 살아있는 그룹(PENDING 정리 후 남은 = 확정 그룹)에 배정된 신청 ID 집합
+    private Set<UUID> loadAssignedApplicationIds(UUID gatheringId) {
+        List<MatchingGroup> groups = matchingGroupRepository
+                .findByGathering_IdAndDeletedAtIsNullOrderByEventDateAsc(gatheringId);
+        if (groups.isEmpty()) return Set.of();
+        List<UUID> groupIds = groups.stream().map(MatchingGroup::getId).toList();
+        return matchingMemberRepository.findByGroupIdsWithApplication(groupIds).stream()
+                .map(m -> m.getApplication().getId())
+                .collect(Collectors.toSet());
+    }
+
     private void clearPendingGroups(UUID gatheringId) {
         List<MatchingGroup> pending = matchingGroupRepository
                 .findByGathering_IdAndStatusAndDeletedAtIsNull(gatheringId, MatchingGroupStatus.PENDING);
         if (pending.isEmpty()) return;
         matchingMemberRepository.deleteByGroupIn(pending);
         matchingGroupRepository.deleteAll(pending);
+        // 기존 멤버 DELETE를 즉시 DB에 반영한다. flush하지 않으면 Hibernate 기본 flush 순서상
+        // 새 멤버 INSERT가 기존 멤버 DELETE보다 먼저 실행되어 application_id 유니크 제약을 위반한다.
+        matchingMemberRepository.flush();
+        matchingGroupRepository.flush();
     }
 
     // ── 관리자 검토 ────────────────────────────────────────────────────────────
