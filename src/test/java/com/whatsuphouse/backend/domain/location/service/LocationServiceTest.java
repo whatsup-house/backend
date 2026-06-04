@@ -43,6 +43,9 @@ class LocationServiceTest {
         location = Location.builder()
                 .name("재즈바 A")
                 .address("서울시 마포구 합정동 123")
+                .mapUrl("https://naver.me/legacyMap")
+                .naverMapUrl("https://naver.me/abcd1234")
+                .kakaoMapUrl("https://kko.kakao.com/xyz789")
                 .status(LocationStatus.ACTIVE)
                 .maxCapacity(20)
                 .build();
@@ -59,6 +62,19 @@ class LocationServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getName()).isEqualTo("재즈바 A");
+    }
+
+    @Test
+    @DisplayName("장소 목록 응답에 네이버·카카오 지도 URL이 포함된다")
+    void getLocations_includesProviderMapUrls() {
+        given(locationRepository.findByDeletedAtIsNull()).willReturn(List.of(location));
+
+        List<LocationResponse> result = locationService.getLocations();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getMapUrl()).isEqualTo("https://naver.me/legacyMap");
+        assertThat(result.get(0).getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
+        assertThat(result.get(0).getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
     }
 
     @Test
@@ -83,6 +99,18 @@ class LocationServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.getName()).isEqualTo("재즈바 A");
         assertThat(response.getAddress()).isEqualTo("서울시 마포구 합정동 123");
+    }
+
+    @Test
+    @DisplayName("장소 상세 응답에 네이버·카카오 지도 URL이 포함된다")
+    void getLocation_includesProviderMapUrls() {
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+
+        LocationDetailResponse response = locationService.getLocation(locationId);
+
+        assertThat(response.getMapUrl()).isEqualTo("https://naver.me/legacyMap");
+        assertThat(response.getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
+        assertThat(response.getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
     }
 
     @Test

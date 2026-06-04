@@ -6,6 +6,8 @@ import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringRe
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.location.entity.Location;
+import com.whatsuphouse.backend.domain.location.enums.LocationStatus;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,6 +109,35 @@ class GatheringServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.getTitle()).isEqualTo("재즈 게더링");
         assertThat(response.getStatus()).isEqualTo(GatheringStatus.OPEN);
+    }
+
+    @Test
+    @DisplayName("게더링 상세의 location에 네이버·카카오 지도 URL이 포함된다")
+    void getGathering_includesLocationProviderMapUrls() {
+        Location location = Location.builder()
+                .name("재즈바 A")
+                .address("서울시 마포구 합정동 123")
+                .mapUrl("https://naver.me/legacyMap")
+                .naverMapUrl("https://naver.me/abcd1234")
+                .kakaoMapUrl("https://kko.kakao.com/xyz789")
+                .status(LocationStatus.ACTIVE)
+                .maxCapacity(20)
+                .build();
+        Gathering gatheringWithLocation = Gathering.builder()
+                .title("재즈 게더링")
+                .eventDate(eventDate)
+                .maxAttendees(10)
+                .location(location)
+                .build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId))
+                .willReturn(Optional.of(gatheringWithLocation));
+
+        GatheringDetailResponse response = gatheringService.getGathering(gatheringId);
+
+        assertThat(response.getLocation()).isNotNull();
+        assertThat(response.getLocation().getMapUrl()).isEqualTo("https://naver.me/legacyMap");
+        assertThat(response.getLocation().getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
+        assertThat(response.getLocation().getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
     }
 
     @Test
