@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "신청폼 관리 (관리자)", description = "관리자 신청폼 질문 추가/수정/삭제 API")
@@ -21,6 +22,14 @@ import java.util.UUID;
 public class AdminFormController {
 
     private final AdminFormService adminFormService;
+
+    @Operation(summary = "질문 목록 조회", description = "게더링 신청폼의 질문 목록을 매칭 설정과 함께 조회합니다. (관리자용)")
+    @GetMapping("/api/admin/gatherings/{gatheringId}/form/questions")
+    public ResponseEntity<ApiResult<List<FormQuestionResponse>>> getQuestions(
+            @PathVariable UUID gatheringId
+    ) {
+        return ResponseEntity.ok(ApiResult.success(adminFormService.getQuestions(gatheringId)));
+    }
 
     @Operation(summary = "질문 추가", description = "게더링 신청폼에 질문을 추가합니다. 활성 폼이 없으면 자동 생성됩니다.")
     @PostMapping("/api/admin/gatherings/{gatheringId}/form/questions")

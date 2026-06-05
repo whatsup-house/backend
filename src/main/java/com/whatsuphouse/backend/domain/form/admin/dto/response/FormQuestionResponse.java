@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.UUID;
 
 @Getter
@@ -17,7 +18,11 @@ public class FormQuestionResponse {
     private String questionKey;
     private QuestionType type;
     private String label;
+    private String placeholder;
+    private boolean required;
     private int displayOrder;
+    private Map<String, Object> options;
+    private Map<String, Object> validation;
     private boolean isMatchingField;
     private boolean systemReserved;
     private MatchingStrategy matchingStrategy;
@@ -29,7 +34,11 @@ public class FormQuestionResponse {
                 .questionKey(question.getQuestionKey())
                 .type(question.getType())
                 .label(question.getLabel())
+                .placeholder(question.getPlaceholder())
+                .required(question.isRequired())
                 .displayOrder(question.getDisplayOrder())
+                .options(question.getOptions())
+                .validation(question.getValidation())
                 .isMatchingField(question.isMatchingField())
                 .systemReserved(question.isSystemReserved())
                 .matchingStrategy(question.getMatchingStrategy())

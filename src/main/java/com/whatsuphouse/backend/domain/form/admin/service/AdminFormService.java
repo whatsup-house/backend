@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -27,6 +28,16 @@ public class AdminFormService {
     private final GatheringRepository gatheringRepository;
     private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
+
+    // 관리자용 질문 목록 (매칭 설정 포함). 폼이 아직 없으면 빈 목록.
+    public List<FormQuestionResponse> getQuestions(UUID gatheringId) {
+        return formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)
+                .map(form -> formQuestionRepository
+                        .findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form).stream()
+                        .map(FormQuestionResponse::from)
+                        .toList())
+                .orElseGet(List::of);
+    }
 
     @Transactional
     public FormQuestionResponse addQuestion(UUID gatheringId, FormQuestionCreateRequest request) {
