@@ -14,7 +14,8 @@ public class LocationDetailResponse {
     private UUID id;
     private String name;
     private String address;
-    private String mapUrl;
+    private String naverMapUrl;
+    private String kakaoMapUrl;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -23,7 +24,8 @@ public class LocationDetailResponse {
                 .id(location.getId())
                 .name(location.getName())
                 .address(location.getAddress())
-                .mapUrl(location.getMapUrl())
+                .naverMapUrl(location.getNaverMapUrl())
+                .kakaoMapUrl(location.getKakaoMapUrl())
                 .createdAt(location.getCreatedAt())
                 .updatedAt(location.getUpdatedAt())
                 .build();

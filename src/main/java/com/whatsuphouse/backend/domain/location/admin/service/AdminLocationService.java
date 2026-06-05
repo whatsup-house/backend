@@ -30,7 +30,8 @@ public class AdminLocationService {
     public LocationDetailResponse updateLocation(UUID id, LocationUpdateRequest request) {
         Location location = locationRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
-        location.update(request.getName(), request.getAddress(), request.getMapUrl(),
+        location.update(request.getName(), request.getAddress(),
+                request.getNaverMapUrl(), request.getKakaoMapUrl(),
                 request.getMaxCapacity(), request.getStatus(), request.getMemo());
         return LocationDetailResponse.from(location);
     }
