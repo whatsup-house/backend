@@ -102,4 +102,26 @@ class ReviewOpenApiTest {
         assertThat(response.getBody()).contains("page");
         assertThat(response.getBody()).contains("size");
     }
+
+    @Test
+    @DisplayName("Swagger 문서에 리뷰 페이지 위치 조회 API 스펙이 노출된다")
+    void reviewLocateApi_isExposedInOpenApiDocs() {
+        ResponseEntity<String> response = restTemplate.getForEntity("/api-docs", String.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).contains("\"/api/reviews/locate\"");
+        assertThat(response.getBody()).contains("\"get\"");
+        assertThat(response.getBody()).contains("reviewId");
+        assertThat(response.getBody()).contains("gatheringId");
+    }
+
+    @Test
+    @DisplayName("리뷰 정렬 파라미터의 기본값은 LIKES이며 LATEST 기본값은 노출되지 않는다")
+    void reviewSortDefault_isLikes_inOpenApiDocs() {
+        ResponseEntity<String> response = restTemplate.getForEntity("/api-docs", String.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).contains("\"default\":\"LIKES\"");
+        assertThat(response.getBody()).doesNotContain("\"default\":\"LATEST\"");
+    }
 }
