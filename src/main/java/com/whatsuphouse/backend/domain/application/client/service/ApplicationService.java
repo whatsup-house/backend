@@ -55,6 +55,8 @@ public class ApplicationService {
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final java.util.regex.Pattern EMAIL_PATTERN =
+            java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     @Transactional
     public ApplicationResponse apply(UUID gatheringId, ApplicationRequest request, UUID userId) {
@@ -112,10 +114,18 @@ public class ApplicationService {
             if (applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(gathering.getId(), guestPhone)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
+            // 이메일 누락은 시스템 예약 질문(required)에서 REQUIRED_ANSWER_MISSING으로 처리된다.
+            // 여기서는 값이 있을 때 형식만 검증한다. (폼에 email 질문이 없는 구버전은 통과)
+            String guestEmail = extractString(byKey, "email");
+            if (guestEmail != null && !guestEmail.isBlank() && !EMAIL_PATTERN.matcher(guestEmail).matches()) {
+                throw new CustomException(ErrorCode.INVALID_EMAIL_FORMAT);
+            }
         }
 
         String name = user != null ? user.getName() : extractString(byKey, "name");
         String phone = user != null ? user.getPhone() : extractString(byKey, "phone");
+        // 알림 발송용 이메일: 회원=계정 이메일, 비회원=신청서 답변 이메일
+        String email = user != null ? user.getEmail() : extractString(byKey, "email");
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
@@ -123,6 +133,7 @@ public class ApplicationService {
                 .user(user)
                 .name(name)
                 .phone(phone)
+                .email(email)
                 .formSnapshot(buildFormSnapshot(questions))
                 .build();
 

@@ -42,6 +42,10 @@ public class Application extends BaseEntity {
     @Column(nullable = false, length = 11)
     private String phone;
 
+    // 알림 발송용 이메일. 회원=계정 이메일, 비회원=신청서 답변 이메일. 기존 데이터 호환을 위해 nullable.
+    @Column(length = 255)
+    private String email;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "form_snapshot", columnDefinition = "jsonb")
     private Map<String, Object> formSnapshot;
@@ -52,12 +56,13 @@ public class Application extends BaseEntity {
 
     @Builder
     public Application(String bookingNumber, Gathering gathering, User user, String name, String phone,
-                       Map<String, Object> formSnapshot) {
+                       String email, Map<String, Object> formSnapshot) {
         this.bookingNumber = bookingNumber;
         this.gathering = gathering;
         this.user = user;
         this.name = name;
         this.phone = phone;
+        this.email = email;
         this.formSnapshot = formSnapshot;
         this.status = ApplicationStatus.PENDING;
     }

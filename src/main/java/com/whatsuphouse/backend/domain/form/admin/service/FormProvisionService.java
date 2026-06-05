@@ -13,8 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * 게더링 생성 시 신청폼을 만들고, 시스템 예약 질문(이름/연락처)을 자동으로 시드한다.
- * 이름/연락처는 applications.name/phone 컬럼으로 전달되는 필수 정보라 관리자가 삭제/키변경할 수 없다.
+ * 게더링 생성 시 신청폼을 만들고, 시스템 예약 질문(이름/연락처/이메일)을 자동으로 시드한다.
+ * 이름/연락처/이메일은 applications.name/phone/email 컬럼으로 전달되는 필수 정보라 관리자가 삭제/키변경할 수 없다.
+ * 이메일은 비회원 신청 알림 발송에 사용된다(회원은 계정 이메일 사용).
  * 나머지 질문은 관리자가 자유롭게 추가/삭제한다.
  */
 @Service
@@ -34,7 +35,8 @@ public class FormProvisionService {
 
         formQuestionRepository.saveAll(List.of(
                 reservedQuestion(form, "name", "이름", 0),
-                reservedQuestion(form, "phone", "연락처", 1)
+                reservedQuestion(form, "phone", "연락처", 1),
+                reservedQuestion(form, "email", "이메일", 2)
         ));
 
         return form;
