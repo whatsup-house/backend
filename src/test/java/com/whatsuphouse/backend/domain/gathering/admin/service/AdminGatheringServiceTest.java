@@ -69,7 +69,7 @@ class AdminGatheringServiceTest {
         location = Location.builder()
                 .name("재즈바 A")
                 .address("서울시 마포구 합정동 123")
-                .mapUrl("https://map.kakao.com/link/map/12345678")
+                .kakaoMapUrl("https://kko.kakao.com/xyz789")
                 .status(LocationStatus.ACTIVE)
                 .maxCapacity(30)
                 .build();

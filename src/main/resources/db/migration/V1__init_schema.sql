@@ -20,12 +20,13 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS locations (
     id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    name         VARCHAR(100) NOT NULL,
-    address      VARCHAR(255) NOT NULL,
-    map_url      VARCHAR(500),
-    status       VARCHAR(20)  NOT NULL,
-    max_capacity INTEGER      NOT NULL,
-    memo         TEXT,
+    name          VARCHAR(100) NOT NULL,
+    address       VARCHAR(255) NOT NULL,
+    naver_map_url VARCHAR(500),
+    kakao_map_url VARCHAR(500),
+    status        VARCHAR(20)  NOT NULL,
+    max_capacity  INTEGER      NOT NULL,
+    memo          TEXT,
     created_at   TIMESTAMP    NOT NULL,
     updated_at   TIMESTAMP    NOT NULL,
     deleted_at   TIMESTAMP

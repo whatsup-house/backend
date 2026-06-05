@@ -44,7 +44,8 @@ class AdminLocationServiceTest {
         location = Location.builder()
                 .name("재즈바 A")
                 .address("서울시 마포구 합정동 123")
-                .mapUrl("https://map.kakao.com/link/map/12345678")
+                .naverMapUrl("https://naver.me/abcd1234")
+                .kakaoMapUrl("https://kko.kakao.com/xyz789")
                 .status(LocationStatus.ACTIVE)
                 .maxCapacity(20)
                 .memo("주차 불가")
@@ -69,6 +70,25 @@ class AdminLocationServiceTest {
         assertThat(response.getAddress()).isEqualTo("서울 마포구 어울마당로 35");
     }
 
+    @Test
+    @DisplayName("장소 생성 시 네이버·카카오 지도 URL이 저장된다")
+    void createLocation_persistsProviderMapUrls() {
+        // GIVEN
+        LocationCreateRequest request = LocationCreateRequest.builder()
+                .name("홍대 카페").address("서울 마포구 어울마당로 35")
+                .naverMapUrl("https://naver.me/abcd1234")
+                .kakaoMapUrl("https://kko.kakao.com/xyz789")
+                .maxCapacity(20).status(LocationStatus.ACTIVE).build();
+        given(locationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        // WHEN
+        LocationDetailResponse response = adminLocationService.createLocation(request);
+
+        // THEN
+        assertThat(response.getNaverMapUrl()).isEqualTo("https://naver.me/abcd1234");
+        assertThat(response.getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/xyz789");
+    }
+
     // ── updateLocation() ─────────────────────────────────────────────────────
 
     @Test
@@ -84,6 +104,25 @@ class AdminLocationServiceTest {
         // THEN
         assertThat(response.getName()).isEqualTo("홍대 카페 (수정)");
         assertThat(response.getAddress()).isEqualTo("서울 마포구 어울마당로 99");
+    }
+
+    @Test
+    @DisplayName("장소 수정 시 네이버·카카오 지도 URL이 갱신된다")
+    void updateLocation_updatesProviderMapUrls() {
+        // GIVEN
+        LocationUpdateRequest request = LocationUpdateRequest.builder()
+                .name("홍대 카페 (수정)").address("서울 마포구 어울마당로 99")
+                .naverMapUrl("https://naver.me/newNaver")
+                .kakaoMapUrl("https://kko.kakao.com/newKakao")
+                .maxCapacity(20).status(LocationStatus.ACTIVE).build();
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+
+        // WHEN
+        LocationDetailResponse response = adminLocationService.updateLocation(locationId, request);
+
+        // THEN
+        assertThat(response.getNaverMapUrl()).isEqualTo("https://naver.me/newNaver");
+        assertThat(response.getKakaoMapUrl()).isEqualTo("https://kko.kakao.com/newKakao");
     }
 
     @Test
