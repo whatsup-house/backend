@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.user.entity;
 
+import com.whatsuphouse.backend.domain.user.enums.UserAccountStatus;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.common.enums.Mbti;
@@ -62,6 +63,11 @@ public class User extends BaseEntity {
     @Column(name = "mileage_balance", nullable = false)
     private Integer mileageBalance = 0;
 
+    // 계정 상태(정상/정지). 기존 데이터 호환을 위해 nullable이며, null은 ACTIVE로 간주한다. (KAN-188)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_status", length = 20)
+    private UserAccountStatus accountStatus = UserAccountStatus.ACTIVE;
+
     @Builder
     public User(String email, String password, String name, Gender gender, Integer age, String nickname, String phone) {
         this.email = email;
@@ -84,6 +90,15 @@ public class User extends BaseEntity {
         this.mbti = mbti;
         this.job = job;
         this.intro = intro;
+    }
+
+    public void changeAccountStatus(UserAccountStatus status) {
+        this.accountStatus = status;
+    }
+
+    /** 기존 데이터(null)는 ACTIVE로 간주한다. */
+    public UserAccountStatus getEffectiveAccountStatus() {
+        return accountStatus != null ? accountStatus : UserAccountStatus.ACTIVE;
     }
 
     public Integer addMileage(int amount) {
