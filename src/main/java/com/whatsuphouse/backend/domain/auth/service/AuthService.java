@@ -1,11 +1,18 @@
 package com.whatsuphouse.backend.domain.auth.service;
 
+import com.whatsuphouse.backend.domain.auth.dto.request.FindEmailRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.LoginRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetConfirmRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.RegisterRequest;
+import com.whatsuphouse.backend.domain.auth.dto.response.FindEmailResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.LoginResponse;
+import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetConfirmResponse;
+import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetRequestResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.RegisterResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.TokenRefreshResponse;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
+import com.whatsuphouse.backend.domain.notification.NotificationService;
 import com.whatsuphouse.backend.domain.notification.event.WelcomeEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
@@ -14,6 +21,7 @@ import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,6 +37,9 @@ import java.util.concurrent.TimeUnit;
 public class AuthService {
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh:";
+    private static final String PASSWORD_RESET_PREFIX = "password-reset:";
+    private static final String ACTIVE_USER = "N";
+    private static final long PASSWORD_RESET_TTL_MINUTES = 30L;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -36,6 +47,10 @@ public class AuthService {
     private final StringRedisTemplate redisTemplate;
     private final MileageService mileageService;
     private final ApplicationEventPublisher eventPublisher;
+    private final NotificationService notificationService;
+
+    @Value("${app.frontend-url:https://whatsup-house.vercel.app}")
+    private String frontendUrl;
 
     public RegisterResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -63,8 +78,8 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .filter(u -> u.getDeletedAt() == null)
+        User user = userRepository.findByEmailAndDeleteYn(request.getEmail(), ACTIVE_USER)
+                .filter(u -> u.getDeletedAt() == null && !u.isWithdrawn())
                 .orElseThrow(() -> new CustomException(ErrorCode.INVALID_CREDENTIALS));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
@@ -87,6 +102,61 @@ public class AuthService {
                         .isAdmin(user.isAdmin())
                         .mileage(user.getMileageBalance())
                         .build())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public FindEmailResponse findEmail(FindEmailRequest request) {
+        User user = userRepository.findFirstByNameAndPhoneAndDeleteYnOrderByCreatedAtDesc(
+                        request.getName(),
+                        request.getPhone(),
+                        ACTIVE_USER
+                )
+                .filter(u -> u.getDeletedAt() == null && !u.isWithdrawn())
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+
+        return FindEmailResponse.builder()
+                .maskedEmail(maskEmail(user.getEmail()))
+                .build();
+    }
+
+    public PasswordResetRequestResponse requestPasswordReset(PasswordResetRequest request) {
+        userRepository.findByEmailAndDeleteYn(request.getEmail(), ACTIVE_USER)
+                .filter(u -> u.getDeletedAt() == null && !u.isWithdrawn())
+                .ifPresent(user -> {
+                    String token = UUID.randomUUID().toString();
+                    redisTemplate.opsForValue().set(
+                            PASSWORD_RESET_PREFIX + token,
+                            user.getId().toString(),
+                            PASSWORD_RESET_TTL_MINUTES,
+                            TimeUnit.MINUTES
+                    );
+                    notificationService.sendPasswordReset(user, buildPasswordResetUrl(token));
+                });
+
+        return PasswordResetRequestResponse.builder()
+                .accepted(true)
+                .build();
+    }
+
+    public PasswordResetConfirmResponse confirmPasswordReset(PasswordResetConfirmRequest request) {
+        String redisKey = PASSWORD_RESET_PREFIX + request.getToken();
+        String userId = redisTemplate.opsForValue().get(redisKey);
+
+        if (userId == null) {
+            throw new CustomException(ErrorCode.INVALID_PASSWORD_RESET_TOKEN);
+        }
+
+        User user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(UUID.fromString(userId), ACTIVE_USER)
+                .filter(u -> !u.isWithdrawn())
+                .orElseThrow(() -> new CustomException(ErrorCode.INVALID_PASSWORD_RESET_TOKEN));
+
+        user.changePassword(passwordEncoder.encode(request.getNewPassword()));
+        redisTemplate.delete(redisKey);
+        logout(user.getId());
+
+        return PasswordResetConfirmResponse.builder()
+                .reset(true)
                 .build();
     }
 
@@ -114,8 +184,8 @@ public class AuthService {
             throw new CustomException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
-        User user = userRepository.findById(userId)
-                .filter(u -> u.getDeletedAt() == null)
+        User user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
+                .filter(u -> !u.isWithdrawn())
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
         UserPrincipal principal = new UserPrincipal(user.getId(), user.getEmail(), user.isAdmin());
@@ -137,5 +207,30 @@ public class AuthService {
                 jwtTokenProvider.getRefreshExpiration(),
                 TimeUnit.MILLISECONDS
         );
+    }
+
+    private String buildPasswordResetUrl(String token) {
+        String baseUrl = frontendUrl.endsWith("/")
+                ? frontendUrl.substring(0, frontendUrl.length() - 1)
+                : frontendUrl;
+        return baseUrl + "/password-reset/confirm?token=" + token;
+    }
+
+    private String maskEmail(String email) {
+        int atIndex = email.indexOf('@');
+        if (atIndex <= 0) {
+            return email;
+        }
+
+        String localPart = email.substring(0, atIndex);
+        String domain = email.substring(atIndex);
+        if (localPart.length() <= 2) {
+            return localPart.charAt(0) + "*" + domain;
+        }
+
+        return localPart.charAt(0)
+                + "*".repeat(localPart.length() - 2)
+                + localPart.charAt(localPart.length() - 1)
+                + domain;
     }
 }

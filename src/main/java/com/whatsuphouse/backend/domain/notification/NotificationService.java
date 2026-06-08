@@ -10,6 +10,8 @@ public interface NotificationService {
 
     void sendWelcome(User user);
 
+    void sendPasswordReset(User user, String resetUrl);
+
     void sendApplicationPending(Application application);
 
     void sendApplicationConfirmed(Application application);
