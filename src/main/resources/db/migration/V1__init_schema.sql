@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     intro           TEXT,
     is_admin        BOOLEAN      NOT NULL DEFAULT FALSE,
     mileage_balance INTEGER      NOT NULL DEFAULT 0,
+    account_status  VARCHAR(20),
     created_at      TIMESTAMP    NOT NULL,
     updated_at      TIMESTAMP    NOT NULL,
     deleted_at      TIMESTAMP,
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS gatherings (
     end_time      TIME,
     price         INTEGER,
     max_attendees INTEGER      NOT NULL,
+    gathering_type VARCHAR(20),
     status        VARCHAR(20)  NOT NULL,
     thumbnail_url VARCHAR(500),
     is_curated    BOOLEAN      NOT NULL DEFAULT FALSE,
@@ -60,6 +62,8 @@ CREATE TABLE IF NOT EXISTS applications (
     user_id        UUID        REFERENCES users(id),
     name           VARCHAR(50) NOT NULL,
     phone          VARCHAR(11) NOT NULL,
+    email          VARCHAR(255),
+    form_snapshot  JSONB,
     gender         VARCHAR(10),
     age            INTEGER,
     instagram_id   VARCHAR(100),
@@ -153,3 +157,87 @@ CREATE TABLE IF NOT EXISTS home_reviews (
     created_at      TIMESTAMP   NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP   NOT NULL DEFAULT NOW()
 );
+
+-- ================================================
+-- EAV 동적 신청폼 (우연한 식탁)
+-- ================================================
+CREATE TABLE IF NOT EXISTS forms (
+    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    gathering_id   UUID        REFERENCES gatherings(id),
+    is_template    BOOLEAN     NOT NULL DEFAULT FALSE,
+    gathering_type VARCHAR(20),
+    guide_text     TEXT,
+    created_at     TIMESTAMP   NOT NULL,
+    updated_at     TIMESTAMP   NOT NULL,
+    deleted_at     TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_forms_gathering_id ON forms(gathering_id);
+
+CREATE TABLE IF NOT EXISTS form_questions (
+    id                 UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    form_id            UUID         NOT NULL REFERENCES forms(id),
+    question_key       VARCHAR(100) NOT NULL,
+    type               VARCHAR(30)  NOT NULL,
+    label              TEXT         NOT NULL,
+    placeholder        TEXT,
+    required           BOOLEAN      NOT NULL DEFAULT TRUE,
+    display_order      INTEGER      NOT NULL DEFAULT 0,
+    options            JSONB,
+    validation         JSONB,
+    is_matching_field  BOOLEAN      NOT NULL DEFAULT FALSE,
+    is_system_reserved BOOLEAN      NOT NULL DEFAULT FALSE,
+    matching_strategy  VARCHAR(100),
+    matching_weight    NUMERIC(3,2),
+    created_at         TIMESTAMP    NOT NULL,
+    updated_at         TIMESTAMP    NOT NULL,
+    deleted_at         TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_form_questions_form_id ON form_questions(form_id);
+
+CREATE TABLE IF NOT EXISTS application_answers (
+    id             UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+    application_id UUID      NOT NULL REFERENCES applications(id),
+    question_id    UUID      NOT NULL REFERENCES form_questions(id),
+    value          JSONB     NOT NULL,
+    created_at     TIMESTAMP NOT NULL,
+    updated_at     TIMESTAMP NOT NULL,
+    deleted_at     TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_answers_application_id ON application_answers(application_id);
+CREATE INDEX IF NOT EXISTS idx_application_answers_question_id ON application_answers(question_id);
+
+-- ================================================
+-- 자동매칭 (rule-v1)
+-- ================================================
+CREATE TABLE IF NOT EXISTS matching_groups (
+    id                 UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    gathering_id       UUID         NOT NULL REFERENCES gatherings(id),
+    event_date         DATE         NOT NULL,
+    region             TEXT,
+    group_size         INTEGER      NOT NULL,
+    status             VARCHAR(20)  NOT NULL,
+    restaurant_name    TEXT,
+    restaurant_address TEXT,
+    matched_at         TIMESTAMP,
+    algorithm_version  VARCHAR(20)  NOT NULL DEFAULT 'rule-v1',
+    group_score        NUMERIC(5,4),
+    created_at         TIMESTAMP    NOT NULL,
+    updated_at         TIMESTAMP    NOT NULL,
+    deleted_at         TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_matching_groups_gathering_id ON matching_groups(gathering_id);
+
+CREATE TABLE IF NOT EXISTS matching_members (
+    id               UUID      PRIMARY KEY DEFAULT gen_random_uuid(),
+    application_id   UUID      NOT NULL UNIQUE REFERENCES applications(id),
+    group_id         UUID      NOT NULL REFERENCES matching_groups(id),
+    seat_order       INTEGER,
+    is_manual_assign BOOLEAN   NOT NULL DEFAULT FALSE,
+    created_at       TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_matching_members_group_id ON matching_members(group_id);
