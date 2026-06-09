@@ -118,7 +118,7 @@ class ApplicationServiceTest {
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -207,7 +207,7 @@ class ApplicationServiceTest {
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(true);
 
         assertThatThrownBy(() -> applicationService.apply(gatheringId, request, userId))

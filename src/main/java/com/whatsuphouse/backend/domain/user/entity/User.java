@@ -68,6 +68,9 @@ public class User extends BaseEntity {
     @Column(name = "account_status", length = 20)
     private UserAccountStatus accountStatus = UserAccountStatus.ACTIVE;
 
+    @Column(name = "\"delete\"", nullable = false, length = 1)
+    private String deleteYn = "N";
+
     @Builder
     public User(String email, String password, String name, Gender gender, Integer age, String nickname, String phone) {
         this.email = email;
@@ -77,6 +80,10 @@ public class User extends BaseEntity {
         this.age = age;
         this.nickname = nickname;
         this.phone = phone;
+    }
+
+    public boolean isWithdrawn() {
+        return "Y".equals(deleteYn);
     }
 
     public void updateProfile(String nickname, String phone, String name, Gender gender, Integer age,
@@ -111,4 +118,11 @@ public class User extends BaseEntity {
         return this.mileageBalance;
     }
 
+    public void changePassword(String encodedPassword) {
+        this.password = encodedPassword;
+    }
+
+    public void withdraw() {
+        this.deleteYn = "Y";
+    }
 }

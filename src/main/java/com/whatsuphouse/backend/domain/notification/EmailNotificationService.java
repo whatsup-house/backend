@@ -72,6 +72,23 @@ public class EmailNotificationService implements NotificationService {
         send(user.getEmail(), subject, body);
     }
 
+    @Override
+    @Async("emailTaskExecutor")
+    public void sendPasswordReset(User user, String resetUrl) {
+        String subject = "[Whats up House] 비밀번호 재설정 안내";
+        String body = String.format("""
+                안녕하세요, %s님!
+
+                아래 링크에서 비밀번호를 재설정해 주세요.
+                링크는 30분 동안 1회만 사용할 수 있습니다.
+
+                %s
+
+                본인이 요청하지 않았다면 이 메일을 무시해 주세요.
+                """, user.getNickname(), resetUrl);
+        send(user.getEmail(), subject, body);
+    }
+
     /**
      * 신청 접수(PENDING) 확인 이메일 (FR-NTF-01, 02).
      * 예약번호를 포함하며, 신청자가 나중에 상태 조회(/api/applications/check)에 사용할 수 있습니다.

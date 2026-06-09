@@ -9,6 +9,7 @@ import com.whatsuphouse.backend.domain.review.client.dto.request.ReviewUpdateReq
 import com.whatsuphouse.backend.domain.review.client.dto.response.HomeReviewResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewDeleteResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewLikeResponse;
+import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewLocateResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewPageResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewResponse;
 import com.whatsuphouse.backend.domain.review.entity.Review;
@@ -34,6 +35,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,6 +46,8 @@ import java.util.stream.IntStream;
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
 public class ReviewService {
+
+    private static final String ACTIVE_USER = "N";
 
     private final ApplicationRepository applicationRepository;
     private final GatheringRepository gatheringRepository;
@@ -107,7 +111,7 @@ public class ReviewService {
         Review review = reviewRepository.findByIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new CustomException(ErrorCode.REVIEW_NOT_FOUND));
 
-        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
+        User user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
         return reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)
@@ -151,6 +155,26 @@ public class ReviewService {
         Pageable pageable = PageRequest.of(page, size, toSort(sort));
         Page<Review> reviewPage = reviewRepository.findByUserIdAndDeletedAtIsNull(userId, pageable);
         return toReviewPageResponse(reviewPage, pageable);
+    }
+
+    public ReviewLocateResponse locateReview(UUID reviewId, ReviewSort sort, UUID gatheringId, int size) {
+        int effectiveSize = size > 0 ? size : 10;
+
+        Review review = reviewRepository.findByIdAndDeletedAtIsNull(reviewId)
+                .orElseThrow(() -> new CustomException(ErrorCode.REVIEW_NOT_FOUND));
+
+        if (gatheringId != null) {
+            if (!gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)) {
+                throw new CustomException(ErrorCode.GATHERING_NOT_FOUND);
+            }
+            if (!review.getGathering().getId().equals(gatheringId)) {
+                throw new CustomException(ErrorCode.REVIEW_NOT_FOUND);
+            }
+        }
+
+        long precedingCount = countPrecedingReviews(review, sort, gatheringId);
+        int page = (int) (precedingCount / effectiveSize);
+        return ReviewLocateResponse.of(page, effectiveSize, sort);
     }
 
     public List<HomeReviewResponse> listHomeReviews() {
@@ -233,6 +257,26 @@ public class ReviewService {
             return Sort.by(Sort.Order.desc("likeCount"), Sort.Order.desc("createdAt"));
         }
         return Sort.by(Sort.Order.desc("createdAt"));
+    }
+
+    // 목록 정렬 기준에서 대상 리뷰보다 앞서는 리뷰 수를 센다. (toSort 정렬과 동일한 규칙)
+    private long countPrecedingReviews(Review review, ReviewSort sort, UUID gatheringId) {
+        LocalDateTime createdAt = review.getCreatedAt();
+        Integer likeCount = review.getLikeCount();
+
+        if (gatheringId != null) {
+            if (sort == ReviewSort.LIKES) {
+                return reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountGreaterThan(gatheringId, likeCount)
+                        + reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(gatheringId, likeCount, createdAt);
+            }
+            return reviewRepository.countByGatheringIdAndDeletedAtIsNullAndCreatedAtAfter(gatheringId, createdAt);
+        }
+
+        if (sort == ReviewSort.LIKES) {
+            return reviewRepository.countByDeletedAtIsNullAndLikeCountGreaterThan(likeCount)
+                    + reviewRepository.countByDeletedAtIsNullAndLikeCountAndCreatedAtAfter(likeCount, createdAt);
+        }
+        return reviewRepository.countByDeletedAtIsNullAndCreatedAtAfter(createdAt);
     }
 
     private Map<UUID, List<ReviewImage>> findImageMap(List<Review> reviews) {

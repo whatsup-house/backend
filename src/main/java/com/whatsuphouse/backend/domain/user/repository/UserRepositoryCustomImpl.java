@@ -27,6 +27,7 @@ public class UserRepositoryCustomImpl implements UserRepositoryCustom {
 
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(user.deletedAt.isNull());
+        builder.and(user.deleteYn.eq("N"));
         if (search != null && !search.isBlank()) {
             builder.and(
                     user.nickname.containsIgnoreCase(search)

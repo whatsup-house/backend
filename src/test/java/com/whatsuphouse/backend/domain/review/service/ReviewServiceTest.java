@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.review.client.dto.request.ReviewUpdateReq
 import com.whatsuphouse.backend.domain.review.client.dto.response.HomeReviewResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewDeleteResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewLikeResponse;
+import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewLocateResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewPageResponse;
 import com.whatsuphouse.backend.domain.review.client.dto.response.ReviewResponse;
 import com.whatsuphouse.backend.domain.review.client.service.ReviewService;
@@ -40,6 +41,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -399,7 +401,7 @@ class ReviewServiceTest {
         Review review = buildReview(reviewId, "추천할 리뷰입니다.");
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)).willReturn(Optional.empty());
         given(reviewLikeRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -422,7 +424,7 @@ class ReviewServiceTest {
                 .build();
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)).willReturn(Optional.of(reviewLike));
 
         ReviewLikeResponse response = reviewService.toggleLike(reviewId, userId);
@@ -450,7 +452,7 @@ class ReviewServiceTest {
         Review review = buildReview(reviewId, "추천할 리뷰입니다.");
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.empty());
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> reviewService.toggleLike(reviewId, userId))
                 .isInstanceOf(CustomException.class)
@@ -530,6 +532,102 @@ class ReviewServiceTest {
         assertThat(response.get(0).getGatheringTitle()).isEqualTo(gathering.getTitle());
         assertThat(response.get(0).getThumbnailImageUrl()).isEqualTo("https://cdn.example.com/review/home.jpg");
         assertThat(response.get(0).getHomeDisplayOrder()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("전체 리뷰 추천순에서 대상 리뷰의 페이지 위치를 계산한다")
+    void locateReview_likesAllReviews_returnsPage() {
+        // given
+        UUID reviewId = UUID.randomUUID();
+        Review review = buildReview(reviewId, "추천순 위치를 찾을 리뷰입니다.");
+        LocalDateTime createdAt = LocalDateTime.now();
+        ReflectionTestUtils.setField(review, "likeCount", 5);
+        ReflectionTestUtils.setField(review, "createdAt", createdAt);
+
+        given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
+        given(reviewRepository.countByDeletedAtIsNullAndLikeCountGreaterThan(5)).willReturn(12L);
+        given(reviewRepository.countByDeletedAtIsNullAndLikeCountAndCreatedAtAfter(5, createdAt)).willReturn(3L);
+
+        // when
+        ReviewLocateResponse response = reviewService.locateReview(reviewId, ReviewSort.LIKES, null, 10);
+
+        // then
+        assertThat(response.getPage()).isEqualTo(1); // (12 + 3) / 10
+        assertThat(response.getSize()).isEqualTo(10);
+        assertThat(response.getSort()).isEqualTo(ReviewSort.LIKES);
+    }
+
+    @Test
+    @DisplayName("전체 리뷰 최신순에서 대상 리뷰의 페이지 위치를 계산한다")
+    void locateReview_latestAllReviews_returnsPage() {
+        // given
+        UUID reviewId = UUID.randomUUID();
+        Review review = buildReview(reviewId, "최신순 위치를 찾을 리뷰입니다.");
+        LocalDateTime createdAt = LocalDateTime.now();
+        ReflectionTestUtils.setField(review, "createdAt", createdAt);
+
+        given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
+        given(reviewRepository.countByDeletedAtIsNullAndCreatedAtAfter(createdAt)).willReturn(23L);
+
+        // when
+        ReviewLocateResponse response = reviewService.locateReview(reviewId, ReviewSort.LATEST, null, 10);
+
+        // then
+        assertThat(response.getPage()).isEqualTo(2); // 23 / 10
+        assertThat(response.getSort()).isEqualTo(ReviewSort.LATEST);
+    }
+
+    @Test
+    @DisplayName("게더링을 지정하면 해당 게더링 리뷰만 대상으로 추천순 위치를 계산한다")
+    void locateReview_likesGatheringScoped_returnsPage() {
+        // given
+        UUID gatheringId = gathering.getId();
+        UUID reviewId = UUID.randomUUID();
+        Review review = buildReview(reviewId, "게더링 추천순 위치를 찾을 리뷰입니다.");
+        LocalDateTime createdAt = LocalDateTime.now();
+        ReflectionTestUtils.setField(review, "likeCount", 2);
+        ReflectionTestUtils.setField(review, "createdAt", createdAt);
+
+        given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
+        given(gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)).willReturn(true);
+        given(reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountGreaterThan(gatheringId, 2)).willReturn(4L);
+        given(reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(gatheringId, 2, createdAt)).willReturn(1L);
+
+        // when
+        ReviewLocateResponse response = reviewService.locateReview(reviewId, ReviewSort.LIKES, gatheringId, 10);
+
+        // then
+        assertThat(response.getPage()).isZero(); // (4 + 1) / 10
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 리뷰의 위치 조회 시 예외 발생")
+    void locateReview_reviewNotFound_throwsException() {
+        // given
+        UUID reviewId = UUID.randomUUID();
+        given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> reviewService.locateReview(reviewId, ReviewSort.LIKES, null, 10))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REVIEW_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("지정한 게더링에 속하지 않은 리뷰의 위치 조회 시 예외 발생")
+    void locateReview_gatheringMismatch_throwsException() {
+        // given
+        UUID reviewId = UUID.randomUUID();
+        Review review = buildReview(reviewId, "다른 게더링 소속 리뷰입니다.");
+        UUID otherGatheringId = UUID.randomUUID();
+
+        given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
+        given(gatheringRepository.existsByIdAndDeletedAtIsNull(otherGatheringId)).willReturn(true);
+
+        // when & then
+        assertThatThrownBy(() -> reviewService.locateReview(reviewId, ReviewSort.LIKES, otherGatheringId, 10))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REVIEW_NOT_FOUND);
     }
 
     private Review buildReview(UUID reviewId, String content) {

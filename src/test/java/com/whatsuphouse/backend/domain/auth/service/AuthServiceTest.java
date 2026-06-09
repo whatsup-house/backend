@@ -1,11 +1,18 @@
 package com.whatsuphouse.backend.domain.auth.service;
 
+import com.whatsuphouse.backend.domain.auth.dto.request.FindEmailRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.LoginRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetConfirmRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.RegisterRequest;
+import com.whatsuphouse.backend.domain.auth.dto.response.FindEmailResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.LoginResponse;
+import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetConfirmResponse;
+import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetRequestResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.RegisterResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.TokenRefreshResponse;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
+import com.whatsuphouse.backend.domain.notification.NotificationService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
@@ -28,13 +35,12 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willDoNothing;
-import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -50,6 +56,7 @@ class AuthServiceTest {
     @Mock private ValueOperations<String, String> valueOperations;
     @Mock private MileageService mileageService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private NotificationService notificationService;
 
     @InjectMocks
     private AuthService authService;
@@ -71,6 +78,7 @@ class AuthServiceTest {
                 .phone("01012345678")
                 .build();
         ReflectionTestUtils.setField(user, "id", userId);
+        ReflectionTestUtils.setField(authService, "frontendUrl", "http://localhost:3000");
     }
 
     // ── register() ───────────────────────────────────────────────────────────
@@ -128,7 +136,7 @@ class AuthServiceTest {
     @DisplayName("정상 로그인")
     void login_success() {
         LoginRequest request = buildLoginRequest("test@example.com", "password123!");
-        given(userRepository.findByEmail("test@example.com")).willReturn(Optional.of(user));
+        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
         given(passwordEncoder.matches(any(), any())).willReturn(true);
         given(jwtTokenProvider.generateAccessToken(any())).willReturn("accessToken");
         given(jwtTokenProvider.generateRefreshToken(any())).willReturn("refreshToken");
@@ -146,7 +154,7 @@ class AuthServiceTest {
     @DisplayName("존재하지 않는 이메일로 로그인하면 예외 발생")
     void login_userNotFound_throwsException() {
         LoginRequest request = buildLoginRequest("none@example.com", "password123!");
-        given(userRepository.findByEmail("none@example.com")).willReturn(Optional.empty());
+        given(userRepository.findByEmailAndDeleteYn("none@example.com", "N")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(CustomException.class)
@@ -158,7 +166,7 @@ class AuthServiceTest {
     void login_deletedUser_throwsException() {
         user.delete();
         LoginRequest request = buildLoginRequest("test@example.com", "password123!");
-        given(userRepository.findByEmail("test@example.com")).willReturn(Optional.of(user));
+        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(CustomException.class)
@@ -169,7 +177,7 @@ class AuthServiceTest {
     @DisplayName("비밀번호가 틀리면 예외 발생")
     void login_wrongPassword_throwsException() {
         LoginRequest request = buildLoginRequest("test@example.com", "wrongPassword!");
-        given(userRepository.findByEmail("test@example.com")).willReturn(Optional.of(user));
+        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
         given(passwordEncoder.matches(any(), any())).willReturn(false);
 
         assertThatThrownBy(() -> authService.login(request))
@@ -195,7 +203,7 @@ class AuthServiceTest {
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn("validRefreshToken");
-        given(userRepository.findById(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(jwtTokenProvider.generateAccessToken(any(UserPrincipal.class))).willReturn("newAccessToken");
         given(jwtTokenProvider.generateRefreshToken(userId)).willReturn("newRefreshToken");
         given(jwtTokenProvider.getRefreshExpiration()).willReturn(86400000L);
@@ -248,11 +256,78 @@ class AuthServiceTest {
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn("validRefreshToken");
-        given(userRepository.findById(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refresh("validRefreshToken"))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_NOT_FOUND);
+    }
+
+    // ── findEmail() / password reset ────────────────────────────────────────
+
+    @Test
+    @DisplayName("이름과 전화번호로 마스킹된 이메일을 찾는다")
+    void findEmail_success() {
+        FindEmailRequest request = FindEmailRequest.builder()
+                .name("홍길동")
+                .phone("01012345678")
+                .build();
+        given(userRepository.findFirstByNameAndPhoneAndDeleteYnOrderByCreatedAtDesc("홍길동", "01012345678", "N"))
+                .willReturn(Optional.of(user));
+
+        FindEmailResponse response = authService.findEmail(request);
+
+        assertThat(response.getMaskedEmail()).isEqualTo("t**t@example.com");
+    }
+
+    @Test
+    @DisplayName("비밀번호 재설정 요청은 토큰 저장 후 이메일을 보낸다")
+    void requestPasswordReset_success() {
+        PasswordResetRequest request = PasswordResetRequest.builder()
+                .email("test@example.com")
+                .build();
+        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+
+        PasswordResetRequestResponse response = authService.requestPasswordReset(request);
+
+        assertThat(response.isAccepted()).isTrue();
+        verify(valueOperations).set(startsWith("password-reset:"), eq(userId.toString()), eq(30L), eq(TimeUnit.MINUTES));
+        verify(notificationService).sendPasswordReset(eq(user), contains("/password-reset/confirm?token="));
+    }
+
+    @Test
+    @DisplayName("없는 이메일의 재설정 요청도 accepted를 반환하고 메일은 보내지 않는다")
+    void requestPasswordReset_unknownEmail_returnsAccepted() {
+        PasswordResetRequest request = PasswordResetRequest.builder()
+                .email("none@example.com")
+                .build();
+        given(userRepository.findByEmailAndDeleteYn("none@example.com", "N")).willReturn(Optional.empty());
+
+        PasswordResetRequestResponse response = authService.requestPasswordReset(request);
+
+        assertThat(response.isAccepted()).isTrue();
+        verify(notificationService, never()).sendPasswordReset(any(), any());
+    }
+
+    @Test
+    @DisplayName("재설정 토큰으로 비밀번호를 변경하고 토큰을 무효화한다")
+    void confirmPasswordReset_success() {
+        PasswordResetConfirmRequest request = PasswordResetConfirmRequest.builder()
+                .token("reset-token")
+                .newPassword("newPassword123!")
+                .build();
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.get("password-reset:reset-token")).willReturn(userId.toString());
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(passwordEncoder.encode("newPassword123!")).willReturn("encodedNewPassword");
+
+        PasswordResetConfirmResponse response = authService.confirmPasswordReset(request);
+
+        assertThat(response.isReset()).isTrue();
+        assertThat(user.getPassword()).isEqualTo("encodedNewPassword");
+        verify(redisTemplate).delete("password-reset:reset-token");
+        verify(redisTemplate).delete("refresh:" + userId);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
