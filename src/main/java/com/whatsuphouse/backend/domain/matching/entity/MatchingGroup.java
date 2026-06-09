@@ -79,6 +79,10 @@ public class MatchingGroup extends BaseEntity {
         this.groupSize = groupSize;
     }
 
+    public void updateGroupScore(BigDecimal groupScore) {
+        this.groupScore = groupScore;
+    }
+
     public void confirm() {
         this.status = MatchingGroupStatus.CONFIRMED;
     }

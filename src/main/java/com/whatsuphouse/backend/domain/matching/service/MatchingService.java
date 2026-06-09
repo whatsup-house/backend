@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -239,6 +240,8 @@ public class MatchingService {
         matchingMemberRepository.flush();
         oldGroup.updateGroupSize(matchingMemberRepository.countByGroup_Id(oldGroup.getId()));
         target.updateGroupSize(matchingMemberRepository.countByGroup_Id(targetGroupId));
+        recalculateGroupScore(oldGroup);
+        recalculateGroupScore(target);
     }
 
     @Transactional
@@ -249,6 +252,7 @@ public class MatchingService {
         matchingMemberRepository.delete(member);
         matchingMemberRepository.flush();
         group.updateGroupSize(matchingMemberRepository.countByGroup_Id(group.getId()));
+        recalculateGroupScore(group);
     }
 
     @Transactional
@@ -269,6 +273,29 @@ public class MatchingService {
                 .build());
         matchingMemberRepository.flush();
         group.updateGroupSize(matchingMemberRepository.countByGroup_Id(groupId));
+        recalculateGroupScore(group);
+    }
+
+    private void recalculateGroupScore(MatchingGroup group) {
+        List<MatchingMember> members = matchingMemberRepository.findByGroupIdWithApplication(group.getId());
+        if (members.isEmpty()) {
+            group.updateGroupScore(BigDecimal.ZERO);
+            return;
+        }
+
+        List<UUID> applicationIds = members.stream()
+                .map(member -> member.getApplication().getId())
+                .toList();
+        Map<UUID, Map<String, Object>> answersByApp = loadAnswers(applicationIds);
+        List<MatchingEngine.Applicant> applicants = members.stream()
+                .map(member -> new MatchingEngine.Applicant(
+                        member.getApplication().getId(),
+                        answersByApp.getOrDefault(member.getApplication().getId(), Map.of())))
+                .toList();
+
+        group.updateGroupScore(matchingEngine.scoreGroup(
+                applicants,
+                loadMatchingFields(group.getGathering().getId())));
     }
 
     @Transactional

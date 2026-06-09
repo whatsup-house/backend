@@ -95,6 +95,10 @@ public class MatchingEngine {
         return results;
     }
 
+    public BigDecimal scoreGroup(List<Applicant> group, List<MatchingField> fields) {
+        return groupScore(group, fields);
+    }
+
     // ── Hard condition ────────────────────────────────────────────────────────
 
     private boolean compatibleWithAll(Applicant c, List<Applicant> group) {

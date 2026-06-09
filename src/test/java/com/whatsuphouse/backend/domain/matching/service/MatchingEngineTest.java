@@ -107,6 +107,19 @@ class MatchingEngineTest {
     }
 
     @Test
+    @DisplayName("현재 그룹 구성으로 group_score를 다시 계산할 수 있다")
+    void scoreGroup_recalculatesCurrentGroupScore() {
+        List<MatchingEngine.Applicant> group = List.of(
+                applicant(28, "MALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(28, "FEMALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(28, "MALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(28, "FEMALE", List.of("영화"), List.of("2026-08-01"))
+        );
+
+        assertThat(engine.scoreGroup(group, fields)).isEqualByComparingTo("0.8222");
+    }
+
+    @Test
     @DisplayName("5명이면 4명 한 그룹 + 1명 미배정")
     void match_fivePeople_oneGroupOneLeftover() {
         List<MatchingEngine.Applicant> applicants = List.of(

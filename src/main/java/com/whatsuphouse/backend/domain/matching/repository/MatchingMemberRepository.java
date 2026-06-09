@@ -20,6 +20,14 @@ public interface MatchingMemberRepository extends JpaRepository<MatchingMember, 
     @Query("""
             select m from MatchingMember m
             join fetch m.application a
+            where m.group.id = :groupId
+            order by m.seatOrder asc
+            """)
+    List<MatchingMember> findByGroupIdWithApplication(@Param("groupId") UUID groupId);
+
+    @Query("""
+            select m from MatchingMember m
+            join fetch m.application a
             where m.group.id in :groupIds
             order by m.seatOrder asc
             """)
