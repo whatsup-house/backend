@@ -49,7 +49,7 @@ public class AuthService {
     private final ApplicationEventPublisher eventPublisher;
     private final NotificationService notificationService;
 
-    @Value("${app.frontend-url:https://whatsup-house.vercel.app}")
+    @Value("${app.frontend-url:https://www.whatsup.house}")
     private String frontendUrl;
 
     public RegisterResponse register(RegisterRequest request) {

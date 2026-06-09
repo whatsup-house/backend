@@ -57,4 +57,4 @@ server:
   port: 8080
 
 app:
-  frontend-url: ${FRONTEND_URL:https://whatsup-house.vercel.app}
+  frontend-url: ${FRONTEND_URL:https://www.whatsup.house}
