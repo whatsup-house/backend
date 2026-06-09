@@ -28,6 +28,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MileageService {
 
+    private static final String ACTIVE_USER = "N";
+
     public static final int SIGNUP_REWARD_AMOUNT = 1000;
     public static final int ATTENDANCE_REWARD_AMOUNT = 1000;
     public static final int TEXT_REVIEW_REWARD_AMOUNT = 500;
@@ -126,7 +128,7 @@ public class MileageService {
     }
 
     private User findActiveUser(UUID userId) {
-        return userRepository.findByIdAndDeletedAtIsNull(userId)
+        return userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
     }
 }

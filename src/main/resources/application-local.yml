@@ -35,3 +35,6 @@ spring:
 notification:
   email:
     from: noreply@whatsuphouse.local
+
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}

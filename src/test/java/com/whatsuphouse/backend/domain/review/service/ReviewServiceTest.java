@@ -401,7 +401,7 @@ class ReviewServiceTest {
         Review review = buildReview(reviewId, "추천할 리뷰입니다.");
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)).willReturn(Optional.empty());
         given(reviewLikeRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -424,7 +424,7 @@ class ReviewServiceTest {
                 .build();
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)).willReturn(Optional.of(reviewLike));
 
         ReviewLikeResponse response = reviewService.toggleLike(reviewId, userId);
@@ -452,7 +452,7 @@ class ReviewServiceTest {
         Review review = buildReview(reviewId, "추천할 리뷰입니다.");
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.empty());
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> reviewService.toggleLike(reviewId, userId))
                 .isInstanceOf(CustomException.class)

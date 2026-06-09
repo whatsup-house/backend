@@ -32,6 +32,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ApplicationService {
 
+    private static final String ACTIVE_USER = "N";
     private final ApplicationRepository applicationRepository;
     private final GatheringRepository gatheringRepository;
     private final UserRepository userRepository;
@@ -67,7 +68,7 @@ public class ApplicationService {
 
         User user = null;
         if (userId != null) {
-            user = userRepository.findByIdAndDeletedAtIsNull(userId)
+            user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
             if (applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(gathering.getId(), userId)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);

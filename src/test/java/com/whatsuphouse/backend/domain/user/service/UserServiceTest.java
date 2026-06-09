@@ -1,7 +1,9 @@
 package com.whatsuphouse.backend.domain.user.service;
 
 import com.whatsuphouse.backend.domain.user.dto.request.ProfileUpdateRequest;
+import com.whatsuphouse.backend.domain.user.dto.request.UserWithdrawRequest;
 import com.whatsuphouse.backend.domain.user.dto.response.ProfileResponse;
+import com.whatsuphouse.backend.domain.user.dto.response.UserWithdrawResponse;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -22,12 +26,20 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private StringRedisTemplate redisTemplate;
 
     @InjectMocks
     private UserService userService;
@@ -56,7 +68,7 @@ class UserServiceTest {
     @Test
     @DisplayName("활성 유저 프로필 조회 성공")
     void getProfile_success() {
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
 
         ProfileResponse response = userService.getProfile(userId);
 
@@ -68,7 +80,7 @@ class UserServiceTest {
     @Test
     @DisplayName("존재하지 않는 유저 프로필 조회 시 예외 발생")
     void getProfile_userNotFound_throwsException() {
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.empty());
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.getProfile(userId))
                 .isInstanceOf(CustomException.class)
@@ -81,7 +93,7 @@ class UserServiceTest {
     @DisplayName("닉네임 변경 포함 프로필 수정 성공")
     void updateProfile_success() {
         ProfileUpdateRequest request = buildUpdateRequest("newgildong");
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("newgildong")).willReturn(false);
 
         ProfileResponse response = userService.updateProfile(userId, request);
@@ -94,7 +106,7 @@ class UserServiceTest {
     @DisplayName("동일 닉네임 유지 시 중복 확인 없이 수정 성공")
     void updateProfile_sameNickname_success() {
         ProfileUpdateRequest request = buildUpdateRequest("gildong");
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
 
         ProfileResponse response = userService.updateProfile(userId, request);
 
@@ -105,7 +117,7 @@ class UserServiceTest {
     @DisplayName("이미 사용 중인 닉네임으로 수정 시 예외 발생")
     void updateProfile_duplicateNickname_throwsException() {
         ProfileUpdateRequest request = buildUpdateRequest("taken");
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("taken")).willReturn(true);
 
         assertThatThrownBy(() -> userService.updateProfile(userId, request))
@@ -147,6 +159,40 @@ class UserServiceTest {
         given(userRepository.existsByNickname("gildong")).willReturn(true);
 
         assertThat(userService.isNicknameAvailable("gildong")).isFalse();
+    }
+
+    // ── withdraw() ───────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("회원탈퇴 성공 시 delete 값을 Y로 변경하고 refreshToken을 삭제한다")
+    void withdraw_success() {
+        UserWithdrawRequest request = UserWithdrawRequest.builder()
+                .password("password123!")
+                .build();
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(passwordEncoder.matches("password123!", "encoded")).willReturn(true);
+
+        UserWithdrawResponse response = userService.withdraw(userId, request);
+
+        assertThat(response.isWithdrawn()).isTrue();
+        assertThat(response.getDeleted()).isEqualTo("Y");
+        assertThat(user.getDeleteYn()).isEqualTo("Y");
+        verify(redisTemplate).delete("refresh:" + userId);
+    }
+
+    @Test
+    @DisplayName("회원탈퇴 비밀번호가 틀리면 예외 발생")
+    void withdraw_wrongPassword_throwsException() {
+        UserWithdrawRequest request = UserWithdrawRequest.builder()
+                .password("wrongPassword!")
+                .build();
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(passwordEncoder.matches("wrongPassword!", "encoded")).willReturn(false);
+
+        assertThatThrownBy(() -> userService.withdraw(userId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_PASSWORD);
+        verify(redisTemplate, never()).delete("refresh:" + userId);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
