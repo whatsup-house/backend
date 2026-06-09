@@ -19,6 +19,8 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     Page<Review> findByDeletedAtIsNull(Pageable pageable);
 
+    Page<Review> findByUserIdAndDeletedAtIsNull(UUID userId, Pageable pageable);
+
     Page<Review> findByIsHomeFeaturedAndDeletedAtIsNull(Boolean isHomeFeatured, Pageable pageable);
 
     List<Review> findAllByIdInAndDeletedAtIsNull(List<UUID> reviewIds);

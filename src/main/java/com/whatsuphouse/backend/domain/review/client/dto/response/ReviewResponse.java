@@ -16,8 +16,10 @@ public class ReviewResponse {
 
     private UUID reviewId;
     private UUID userId;
+    private String nickname;
     private UUID applicationId;
     private UUID gatheringId;
+    private String gatheringTitle;
     private ReviewType reviewType;
     private String reviewContent;
     private Integer likeCount;
@@ -28,8 +30,10 @@ public class ReviewResponse {
         return ReviewResponse.builder()
                 .reviewId(review.getId())
                 .userId(review.getUser().getId())
+                .nickname(review.getUser().getNickname())
                 .applicationId(review.getApplication().getId())
                 .gatheringId(review.getGathering().getId())
+                .gatheringTitle(review.getGathering().getTitle())
                 .reviewType(review.getReviewType())
                 .reviewContent(review.getReviewContent())
                 .likeCount(review.getLikeCount())

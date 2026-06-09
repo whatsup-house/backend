@@ -84,6 +84,21 @@ public class ReviewController {
         return ResponseEntity.ok(ApiResult.success(reviewService.getReviews(sort, page, size)));
     }
 
+    @Operation(summary = "내 리뷰 목록 조회", description = "로그인한 회원이 작성한 리뷰를 최신순 또는 추천순으로 조회합니다.")
+    @GetMapping("/api/reviews/me")
+    public ResponseEntity<ApiResult<ReviewPageResponse>> getMyReviews(
+            @Parameter(description = "정렬 기준", example = "LATEST")
+            @RequestParam(defaultValue = "LATEST") ReviewSort sort,
+            @Parameter(description = "페이지 번호 (0부터 시작)", example = "0")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "페이지 크기", example = "10")
+            @RequestParam(defaultValue = "10") int size,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResult.success(
+                reviewService.getMyReviews(principal.getUserId(), sort, page, size)));
+    }
+
     @Operation(summary = "게더링별 리뷰 목록 조회", description = "특정 게더링에 작성된 리뷰를 최신순 또는 추천순으로 조회합니다.")
     @GetMapping("/api/gatherings/{gatheringId}/reviews")
     public ResponseEntity<ApiResult<ReviewPageResponse>> getGatheringReviews(
