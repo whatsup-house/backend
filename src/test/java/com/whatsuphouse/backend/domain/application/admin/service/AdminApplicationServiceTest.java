@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
 
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
@@ -81,6 +82,9 @@ class AdminApplicationServiceTest {
                 .phone("01012345678")
                 .build();
         ReflectionTestUtils.setField(application, "id", applicationId);
+
+        lenient().when(applicationAnswerRepository.findByApplicationIds(any())).thenReturn(List.of());
+        lenient().when(applicationAnswerRepository.findDetailByApplicationId(any())).thenReturn(List.of());
     }
 
     // ── getAllApplications() ──────────────────────────────────────────────────

@@ -23,7 +23,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -36,9 +38,13 @@ public class AdminApplicationService {
     private final ApplicationEventPublisher eventPublisher;
 
     public List<AdminApplicationResponse> getAllApplications(UUID gatheringId, ApplicationStatus status) {
-        return applicationRepository.findApplications(gatheringId, status)
-                .stream()
-                .map(AdminApplicationResponse::from)
+        List<Application> applications = applicationRepository.findApplications(gatheringId, status);
+        Map<UUID, List<AnswerView>> answersByApplicationId = loadAnswersByApplicationId(applications);
+
+        return applications.stream()
+                .map(application -> AdminApplicationResponse.from(
+                        application,
+                        answersByApplicationId.getOrDefault(application.getId(), List.of())))
                 .toList();
     }
 
@@ -50,6 +56,21 @@ public class AdminApplicationService {
                 .map(AnswerView::from)
                 .toList();
         return AdminApplicationResponse.from(application, answers);
+    }
+
+    private Map<UUID, List<AnswerView>> loadAnswersByApplicationId(List<Application> applications) {
+        List<UUID> applicationIds = applications.stream()
+                .map(Application::getId)
+                .toList();
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return applicationAnswerRepository.findByApplicationIds(applicationIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        answer -> answer.getApplication().getId(),
+                        Collectors.mapping(AnswerView::from, Collectors.toList())));
     }
 
     @Transactional
