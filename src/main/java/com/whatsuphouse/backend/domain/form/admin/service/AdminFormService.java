@@ -91,9 +91,12 @@ public class AdminFormService {
                 ? request.getMatchingWeight()
                 : BigDecimal.ONE;
 
+        // 예약질문은 신청자 식별(이름/연락처/이메일)에 필요하므로 필수 응답을 강제한다. (KAN-207)
+        boolean required = question.isSystemReserved() || request.getRequired();
+
         question.update(
                 request.getQuestionKey(), request.getType(), request.getLabel(),
-                request.getPlaceholder(), request.getRequired(), request.getDisplayOrder(),
+                request.getPlaceholder(), required, request.getDisplayOrder(),
                 request.getOptions(), request.getValidation(), request.isMatchingField(),
                 request.getMatchingStrategy(), weight);
 
