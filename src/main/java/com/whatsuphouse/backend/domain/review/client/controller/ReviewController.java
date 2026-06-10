@@ -85,6 +85,21 @@ public class ReviewController {
         return ResponseEntity.ok(ApiResult.success(reviewService.getReviews(sort, page, size)));
     }
 
+    @Operation(summary = "내 리뷰 목록 조회", description = "로그인한 회원이 작성한 리뷰를 최신순 또는 추천순으로 조회합니다.")
+    @GetMapping("/api/reviews/me")
+    public ResponseEntity<ApiResult<ReviewPageResponse>> getMyReviews(
+            @Parameter(description = "정렬 기준", example = "LIKES")
+            @RequestParam(defaultValue = "LIKES") ReviewSort sort,
+            @Parameter(description = "페이지 번호 (0부터 시작)", example = "0")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "페이지 크기", example = "10")
+            @RequestParam(defaultValue = "10") int size,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResult.success(
+                reviewService.getMyReviews(principal.getUserId(), sort, page, size)));
+    }
+
     @Operation(summary = "리뷰 페이지 위치 조회", description = "전체 또는 게더링 리뷰 목록에서 특정 리뷰가 위치한 페이지 번호를 조회합니다. 프론트가 해당 페이지로 이동해 리뷰로 스크롤하는 데 사용합니다.")
     @GetMapping("/api/reviews/locate")
     public ResponseEntity<ApiResult<ReviewLocateResponse>> locateReview(

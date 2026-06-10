@@ -1,12 +1,21 @@
 package com.whatsuphouse.backend.domain.application.client.service;
 
+import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
+import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
+import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
+import com.whatsuphouse.backend.domain.form.entity.Form;
+import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
+import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
@@ -24,8 +33,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -36,10 +50,16 @@ public class ApplicationService {
     private final ApplicationRepository applicationRepository;
     private final GatheringRepository gatheringRepository;
     private final UserRepository userRepository;
+    private final FormRepository formRepository;
+    private final FormQuestionRepository formQuestionRepository;
+    private final ApplicationAnswerRepository applicationAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final FormProvisionService formProvisionService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final java.util.regex.Pattern EMAIL_PATTERN =
+            java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     @Transactional
     public ApplicationResponse apply(UUID gatheringId, ApplicationRequest request, UUID userId) {
@@ -66,6 +86,23 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.GATHERING_FULL);
         }
 
+        // 폼이 없는 게더링(시드/레거시)도 신청 가능하도록 기본 폼을 프로비저닝한다. (KAN-206)
+        Form form = formRepository
+                .findByGathering_IdAndDeletedAtIsNull(gatheringId)
+                .orElseGet(() -> formProvisionService.createDefaultForm(gathering));
+
+        List<FormQuestion> questions = formQuestionRepository
+                .findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form);
+
+        Map<UUID, FormQuestion> questionMap = questions.stream()
+                .collect(Collectors.toMap(FormQuestion::getId, q -> q));
+
+        // 회원은 이름/연락처를 계정에서 가져오므로 시스템 예약 질문은 필수 검증에서 제외한다.
+        validateAnswers(request.getAnswers(), questions, questionMap, userId != null);
+
+        // questionKey → value 맵
+        Map<String, Object> byKey = buildAnswersByKey(request.getAnswers(), questionMap);
+
         User user = null;
         if (userId != null) {
             user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
@@ -74,16 +111,25 @@ public class ApplicationService {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         } else {
-            if (request.getPhone() == null || request.getPhone().isBlank()) {
+            String guestPhone = extractString(byKey, "phone");
+            if (guestPhone == null || guestPhone.isBlank()) {
                 throw new CustomException(ErrorCode.GUEST_PHONE_REQUIRED);
             }
-            if (applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(gathering.getId(), request.getPhone())) {
+            if (applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(gathering.getId(), guestPhone)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
+            }
+            // 이메일 누락은 시스템 예약 질문(required)에서 REQUIRED_ANSWER_MISSING으로 처리된다.
+            // 여기서는 값이 있을 때 형식만 검증한다. (폼에 email 질문이 없는 구버전은 통과)
+            String guestEmail = extractString(byKey, "email");
+            if (guestEmail != null && !guestEmail.isBlank() && !EMAIL_PATTERN.matcher(guestEmail).matches()) {
+                throw new CustomException(ErrorCode.INVALID_EMAIL_FORMAT);
             }
         }
 
-        String name = (user != null) ? user.getName() : request.getName();
-        String phone = (user != null) ? user.getPhone() : request.getPhone();
+        String name = user != null ? user.getName() : extractString(byKey, "name");
+        String phone = user != null ? user.getPhone() : extractString(byKey, "phone");
+        // 알림 발송용 이메일: 회원=계정 이메일, 비회원=신청서 답변 이메일
+        String email = user != null ? user.getEmail() : extractString(byKey, "email");
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
@@ -91,26 +137,110 @@ public class ApplicationService {
                 .user(user)
                 .name(name)
                 .phone(phone)
-                .gender(request.getGender())
-                .age(request.getAge())
-                .instagramId(request.getInstagramId())
-                .job(request.getJob())
-                .mbti(request.getMbti())
-                .intro(request.getIntro())
-                .referrerName(request.getReferrerName())
+                .email(email)
+                .formSnapshot(buildFormSnapshot(questions))
                 .build();
 
         Application saved = applicationRepository.save(application);
-        // 트랜잭션 커밋 후 신청 확인 이메일 발송 (FR-NTF-01, 02)
-        // @TransactionalEventListener(AFTER_COMMIT)이 수신하므로 DB 저장 실패 시 이메일이 발송되지 않습니다.
+
+        saveAnswers(saved, request.getAnswers(), questionMap);
+
+        // 자동매칭 대상은 status = CONFIRMED인 신청만 포함한다. PENDING/CANCELLED/ATTENDED는 제외.
         eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
         return ApplicationResponse.from(saved);
+    }
+
+    private void validateAnswers(List<AnswerItem> answers, List<FormQuestion> questions,
+                                 Map<UUID, FormQuestion> questionMap, boolean skipReservedRequired) {
+        Set<UUID> submittedIds = answers.stream()
+                .map(AnswerItem::getQuestionId)
+                .collect(Collectors.toSet());
+
+        for (UUID id : submittedIds) {
+            if (!questionMap.containsKey(id)) {
+                throw new CustomException(ErrorCode.INVALID_QUESTION);
+            }
+        }
+
+        for (FormQuestion q : questions) {
+            if (skipReservedRequired && q.isSystemReserved()) {
+                continue;
+            }
+            if (q.isRequired() && !submittedIds.contains(q.getId())) {
+                throw new CustomException(ErrorCode.REQUIRED_ANSWER_MISSING);
+            }
+        }
+    }
+
+    private Map<String, Object> buildAnswersByKey(List<AnswerItem> answers, Map<UUID, FormQuestion> questionMap) {
+        Map<String, Object> result = new HashMap<>();
+        for (AnswerItem item : answers) {
+            FormQuestion q = questionMap.get(item.getQuestionId());
+            if (q != null) {
+                result.put(q.getQuestionKey(), item.getValue());
+            }
+        }
+        return result;
+    }
+
+    private void saveAnswers(Application application, List<AnswerItem> answers,
+                             Map<UUID, FormQuestion> questionMap) {
+        List<ApplicationAnswer> toSave = new ArrayList<>();
+        for (AnswerItem item : answers) {
+            FormQuestion q = questionMap.get(item.getQuestionId());
+            if (q != null) {
+                toSave.add(ApplicationAnswer.builder()
+                        .application(application)
+                        .question(q)
+                        .value(Map.of("value", item.getValue()))
+                        .build());
+            }
+        }
+        applicationAnswerRepository.saveAll(toSave);
+    }
+
+    private Map<String, Object> buildFormSnapshot(List<FormQuestion> questions) {
+        List<Map<String, Object>> list = questions.stream().map(q -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("questionId", q.getId().toString());
+            m.put("questionKey", q.getQuestionKey());
+            m.put("type", q.getType().name());
+            m.put("label", q.getLabel());
+            m.put("required", q.isRequired());
+            m.put("displayOrder", q.getDisplayOrder());
+            m.put("options", q.getOptions());
+            m.put("validation", q.getValidation());
+            m.put("isMatchingField", q.isMatchingField());
+            return m;
+        }).toList();
+        return Map.of("questions", list);
+    }
+
+    private String extractString(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        return val instanceof String s ? s : null;
     }
 
     public ApplicationCheckResponse checkApplication(String phone, String bookingNumber) {
         Application application = applicationRepository.findByPhoneAndBookingNumberAndDeletedAtIsNull(phone, bookingNumber)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        return ApplicationCheckResponse.from(application);
+        return ApplicationCheckResponse.from(application, loadAnswers(application.getId()));
+    }
+
+    public ApplicationCheckResponse getMyApplication(UUID applicationId, UUID userId) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        if (application.getUser() == null || !application.getUser().getId().equals(userId)) {
+            throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
+        }
+        return ApplicationCheckResponse.from(application, loadAnswers(applicationId));
+    }
+
+    private List<AnswerView> loadAnswers(UUID applicationId) {
+        return applicationAnswerRepository.findDetailByApplicationId(applicationId)
+                .stream()
+                .map(AnswerView::from)
+                .toList();
     }
 
     public List<ApplicationListResponse> getMyApplications(UUID userId) {
@@ -134,7 +264,6 @@ public class ApplicationService {
         }
 
         application.cancel();
-        // 트랜잭션 커밋 후 취소 알림 이메일 발송 (FR-NTF-04)
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }
 

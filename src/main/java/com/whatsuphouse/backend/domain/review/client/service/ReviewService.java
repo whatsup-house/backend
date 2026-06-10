@@ -151,6 +151,12 @@ public class ReviewService {
         return toReviewPageResponse(reviewPage, pageable);
     }
 
+    public ReviewPageResponse getMyReviews(UUID userId, ReviewSort sort, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, toSort(sort));
+        Page<Review> reviewPage = reviewRepository.findByUserIdAndDeletedAtIsNull(userId, pageable);
+        return toReviewPageResponse(reviewPage, pageable);
+    }
+
     public ReviewLocateResponse locateReview(UUID reviewId, ReviewSort sort, UUID gatheringId, int size) {
         int effectiveSize = size > 0 ? size : 10;
 

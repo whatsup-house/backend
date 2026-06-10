@@ -32,6 +32,22 @@ public enum ErrorCode {
     GATHERING_FULL("게더링 정원이 초과되었습니다.", HttpStatus.BAD_REQUEST),
     GATHERING_NOT_RECRUITING("모집중인 게더링이 아닙니다.", HttpStatus.BAD_REQUEST),
 
+    // Form
+    FORM_NOT_FOUND("신청폼이 존재하지 않습니다.", HttpStatus.NOT_FOUND),
+    QUESTION_NOT_FOUND("존재하지 않는 질문입니다.", HttpStatus.NOT_FOUND),
+    RESERVED_QUESTION_READONLY("시스템 예약 질문(이름/연락처)은 삭제하거나 질문 키를 변경할 수 없습니다.", HttpStatus.BAD_REQUEST),
+    OPTIONS_REQUIRED("선택형 질문은 options가 필수입니다.", HttpStatus.BAD_REQUEST),
+    MATCHING_STRATEGY_REQUIRED("매칭 필드는 matchingStrategy가 필수입니다.", HttpStatus.BAD_REQUEST),
+    REQUIRED_ANSWER_MISSING("필수 질문에 답변하지 않았습니다.", HttpStatus.BAD_REQUEST),
+    INVALID_QUESTION("해당 폼에 속하지 않는 질문입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_MBTI("유효하지 않은 MBTI 값입니다.", HttpStatus.BAD_REQUEST),
+
+    // Matching
+    MATCHING_NOT_ALLOWED("우연한 식탁(RANDOM_TABLE) 게더링만 자동매칭할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    MATCHING_GROUP_NOT_FOUND("존재하지 않는 매칭 그룹입니다.", HttpStatus.NOT_FOUND),
+    MATCHING_MEMBER_NOT_FOUND("존재하지 않는 매칭 멤버입니다.", HttpStatus.NOT_FOUND),
+    MATCHING_ALREADY_ASSIGNED("이미 다른 그룹에 배정된 신청입니다.", HttpStatus.BAD_REQUEST),
+
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("이미 신청한 게더링입니다.", HttpStatus.CONFLICT),
@@ -40,6 +56,7 @@ public enum ErrorCode {
     CANNOT_DELETE("출석 완료된 신청은 삭제할 수 없습니다.", HttpStatus.BAD_REQUEST),
     APPLICATION_FORBIDDEN("본인의 신청이 아닙니다.", HttpStatus.FORBIDDEN),
     GUEST_PHONE_REQUIRED("비회원 신청 시 전화번호는 필수입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_EMAIL_FORMAT("올바른 이메일 형식이 아닙니다.", HttpStatus.BAD_REQUEST),
     ALREADY_ATTENDED("이미 출석 처리된 신청입니다.", HttpStatus.CONFLICT),
 
     // Location

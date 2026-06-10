@@ -243,10 +243,13 @@ public class EmailNotificationService implements NotificationService {
 
     /**
      * 수신자 이메일 주소를 결정합니다.
-     * 회원 신청이면 users 테이블의 email을 사용하고,
-     * 비회원 신청(user == null)이면 null을 반환해 발송을 건너뜁니다.
+     * 신청서에 저장된 이메일(회원=계정 이메일, 비회원=신청서 답변 이메일)을 우선 사용합니다.
+     * 이메일이 없는 구버전 신청은 회원 계정 이메일로 폴백하고, 그래도 없으면 발송을 건너뜁니다.
      */
     private String resolveEmail(Application application) {
+        if (application.getEmail() != null && !application.getEmail().isBlank()) {
+            return application.getEmail();
+        }
         if (application.getUser() != null) {
             return application.getUser().getEmail();
         }

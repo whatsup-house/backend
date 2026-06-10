@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -19,6 +20,7 @@ public class ApplicationCheckResponse {
     private ApplicationStatus status;
     private GatheringInfo gathering;
     private LocalDateTime createdAt;
+    private List<AnswerView> answers;
 
     @Getter
     @Builder
@@ -29,7 +31,7 @@ public class ApplicationCheckResponse {
         private String startTime;
     }
 
-    public static ApplicationCheckResponse from(Application application) {
+    public static ApplicationCheckResponse from(Application application, List<AnswerView> answers) {
         return ApplicationCheckResponse.builder()
                 .id(application.getId())
                 .bookingNumber(application.getBookingNumber())
@@ -44,6 +46,7 @@ public class ApplicationCheckResponse {
                                 ? application.getGathering().getStartTime().toString() : null)
                         .build())
                 .createdAt(application.getCreatedAt())
+                .answers(answers)
                 .build();
     }
 }

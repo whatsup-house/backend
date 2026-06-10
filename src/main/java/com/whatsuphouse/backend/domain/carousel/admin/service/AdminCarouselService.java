@@ -93,9 +93,11 @@ public class AdminCarouselService {
                 ? request.getSortOrder()
                 : slide.getSortOrder();
 
+        // tempPath가 있으면 새 이미지로 교체하고, 없으면 기존 이미지를 유지한다. (KAN-182)
         // Storage move는 @Transactional 내부에서 호출됨. DB save 실패 시 파일은 롤백 불가.
-        // 소규모 어드민 API 특성상 현 구조를 유지하며 trade-off를 허용함 (Gathering과 동일 패턴).
-        String imageUrl = storageService.move(request.getTempPath(), "carousel");
+        String imageUrl = (request.getTempPath() != null && !request.getTempPath().isBlank())
+                ? storageService.move(request.getTempPath(), "carousel")
+                : slide.getImageUrl();
         slide.update(request.getType(), request.getTitle(), content, imageUrl, finalGathering, sortOrder);
 
         return AdminCarouselSlideResponse.from(slide);

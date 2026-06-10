@@ -4,9 +4,11 @@ import com.whatsuphouse.backend.domain.application.admin.dto.request.Application
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
+import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
@@ -21,7 +23,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -29,20 +33,44 @@ import java.util.UUID;
 public class AdminApplicationService {
 
     private final ApplicationRepository applicationRepository;
+    private final ApplicationAnswerRepository applicationAnswerRepository;
     private final MileageService mileageService;
     private final ApplicationEventPublisher eventPublisher;
 
     public List<AdminApplicationResponse> getAllApplications(UUID gatheringId, ApplicationStatus status) {
-        return applicationRepository.findApplications(gatheringId, status)
-                .stream()
-                .map(AdminApplicationResponse::from)
+        List<Application> applications = applicationRepository.findApplications(gatheringId, status);
+        Map<UUID, List<AnswerView>> answersByApplicationId = loadAnswersByApplicationId(applications);
+
+        return applications.stream()
+                .map(application -> AdminApplicationResponse.from(
+                        application,
+                        answersByApplicationId.getOrDefault(application.getId(), List.of())))
                 .toList();
     }
 
     public AdminApplicationResponse getApplication(UUID id) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        return AdminApplicationResponse.from(application);
+        List<AnswerView> answers = applicationAnswerRepository.findDetailByApplicationId(id)
+                .stream()
+                .map(AnswerView::from)
+                .toList();
+        return AdminApplicationResponse.from(application, answers);
+    }
+
+    private Map<UUID, List<AnswerView>> loadAnswersByApplicationId(List<Application> applications) {
+        List<UUID> applicationIds = applications.stream()
+                .map(Application::getId)
+                .toList();
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return applicationAnswerRepository.findByApplicationIds(applicationIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        answer -> answer.getApplication().getId(),
+                        Collectors.mapping(AnswerView::from, Collectors.toList())));
     }
 
     @Transactional

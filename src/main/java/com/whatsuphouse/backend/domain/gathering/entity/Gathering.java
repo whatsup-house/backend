@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.gathering.entity;
 
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import jakarta.persistence.*;
@@ -48,6 +49,10 @@ public class Gathering extends BaseEntity {
     private int maxAttendees;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "gathering_type", length = 20)
+    private GatheringType gatheringType;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private GatheringStatus status = GatheringStatus.OPEN;
 
@@ -62,7 +67,8 @@ public class Gathering extends BaseEntity {
 
     @Builder
     public Gathering(String title, String description, Location location, LocalDate eventDate,
-                     LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl) {
+                     LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl,
+                     GatheringType gatheringType) {
         this.title = title;
         this.description = description;
         this.location = location;
@@ -72,6 +78,7 @@ public class Gathering extends BaseEntity {
         this.price = price;
         this.maxAttendees = maxAttendees;
         this.thumbnailUrl = thumbnailUrl;
+        this.gatheringType = gatheringType != null ? gatheringType : GatheringType.REGULAR;
         this.status = GatheringStatus.OPEN;
     }
 
