@@ -9,6 +9,7 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.Applicati
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.entity.Form;
@@ -53,6 +54,7 @@ public class ApplicationService {
     private final FormQuestionRepository formQuestionRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final FormProvisionService formProvisionService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -84,9 +86,10 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.GATHERING_FULL);
         }
 
+        // 폼이 없는 게더링(시드/레거시)도 신청 가능하도록 기본 폼을 프로비저닝한다. (KAN-206)
         Form form = formRepository
                 .findByGathering_IdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.FORM_NOT_FOUND));
+                .orElseGet(() -> formProvisionService.createDefaultForm(gathering));
 
         List<FormQuestion> questions = formQuestionRepository
                 .findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form);

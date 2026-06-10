@@ -28,6 +28,7 @@ public class AdminFormService {
     private final GatheringRepository gatheringRepository;
     private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
+    private final FormProvisionService formProvisionService;
 
     // 관리자용 질문 목록 (매칭 설정 포함). 폼이 아직 없으면 빈 목록.
     public List<FormQuestionResponse> getQuestions(UUID gatheringId) {
@@ -46,13 +47,10 @@ public class AdminFormService {
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
+        // 폼 lazy 생성 시에도 예약질문(이름/연락처/이메일)을 함께 시드한다. (KAN-206)
         Form form = formRepository
                 .findByGathering_IdAndDeletedAtIsNull(gatheringId)
-                .orElseGet(() -> formRepository.save(
-                        Form.builder()
-                                .gathering(gathering)
-                                .isTemplate(false)
-                                .build()));
+                .orElseGet(() -> formProvisionService.createDefaultForm(gathering));
 
         BigDecimal weight = request.getMatchingWeight() != null
                 ? request.getMatchingWeight()
