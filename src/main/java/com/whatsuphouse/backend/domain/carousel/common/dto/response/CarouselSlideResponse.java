@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.carousel.common.dto.response;
 
 import com.whatsuphouse.backend.domain.carousel.entity.CarouselSlide;
 import com.whatsuphouse.backend.domain.carousel.enums.SlideType;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
@@ -33,6 +34,9 @@ public class CarouselSlideResponse {
     @Schema(description = "모임 날짜 레이블, GATHERING 타입인 경우에만 존재 (nullable)", example = "2026-06-15")
     private String dateLabel;
 
+    @Schema(description = "연결된 모임의 유효 상태. 과거 모집중 모임은 COMPLETED로 보정 (nullable)", example = "OPEN")
+    private GatheringStatus gatheringStatus;
+
     @Schema(description = "정렬 순서", example = "1")
     private int sortOrder;
 
@@ -45,6 +49,11 @@ public class CarouselSlideResponse {
                 ? slide.getGathering().getId()
                 : null;
 
+        // 완료/취소된 모임 슬라이드에 모집중 뱃지가 붙지 않도록 유효 상태를 내려준다. (KAN-211)
+        GatheringStatus gatheringStatus = slide.getGathering() != null
+                ? slide.getGathering().getEffectiveStatus()
+                : null;
+
         return CarouselSlideResponse.builder()
                 .id(slide.getId())
                 .type(slide.getType())
@@ -53,6 +62,7 @@ public class CarouselSlideResponse {
                 .imageUrl(slide.getImageUrl())
                 .gatheringId(gatheringId)
                 .dateLabel(dateLabel)
+                .gatheringStatus(gatheringStatus)
                 .sortOrder(slide.getSortOrder())
                 .build();
     }
