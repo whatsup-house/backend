@@ -90,14 +90,11 @@ public class AdminGatheringService {
                 : gatheringRepository.findByDeletedAtIsNull();
     }
 
-    // 게더링 날짜/시간 유효성 검증. 과거 날짜·시작≥종료를 차단한다. (KAN-221)
-    // 날짜 정책: 오늘 포함 이후 허용. 시간은 둘 다 입력된 경우에만 시작<종료를 검증한다.
+    // 게더링 날짜 유효성 검증. 날짜 정책은 오늘 포함 이후 허용한다. (KAN-221)
+    // 시간 순서 검증은 새벽 종료 케이스를 위해 적용하지 않는다.
     private void validateSchedule(LocalDate eventDate, LocalTime startTime, LocalTime endTime) {
         if (eventDate != null && eventDate.isBefore(LocalDate.now())) {
             throw new CustomException(ErrorCode.INVALID_GATHERING_DATE);
-        }
-        if (startTime != null && endTime != null && !startTime.isBefore(endTime)) {
-            throw new CustomException(ErrorCode.INVALID_GATHERING_TIME);
         }
     }
 
