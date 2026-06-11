@@ -51,12 +51,14 @@ public class MatchingService {
     private final MatchingEngine matchingEngine;
 
     @Transactional
-    public MatchingRunResponse runMatching(UUID gatheringId) {
+    public MatchingRunResponse runMatching(UUID gatheringId, int groupSize) {
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
         if (gathering.getGatheringType() != GatheringType.RANDOM_TABLE) {
             throw new CustomException(ErrorCode.MATCHING_NOT_ALLOWED);
         }
+        // 그룹 인원 수는 2~8 범위로 보정, 벗어나면 기본값 사용. (KAN-224)
+        int size = (groupSize >= 2 && groupSize <= 8) ? groupSize : MatchingEngine.DEFAULT_GROUP_SIZE;
 
         // 1. 기존 추천(PENDING) 결과 정리 — 확정(CONFIRMED) 그룹은 유지한다.
         clearPendingGroups(gatheringId);
@@ -86,7 +88,7 @@ public class MatchingService {
 
         // 7. 엔진 실행
         List<MatchingEngine.GroupResult> groups =
-                matchingEngine.match(applicants, fields, gathering.getEventDate());
+                matchingEngine.match(applicants, fields, gathering.getEventDate(), size);
 
         // 8. 저장
         Map<UUID, Application> appMap = new HashMap<>();

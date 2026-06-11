@@ -25,7 +25,7 @@ import java.util.UUID;
 @Component
 public class MatchingEngine {
 
-    private static final int GROUP_SIZE = 4;
+    public static final int DEFAULT_GROUP_SIZE = 4;
     private static final double AVG_WEIGHT = 0.7;
     private static final double MIN_WEIGHT = 0.3;
     private static final int AGE_LIMIT = 8;
@@ -43,19 +43,20 @@ public class MatchingEngine {
 
     public record GroupResult(List<UUID> applicationIds, BigDecimal score, LocalDate eventDate) {}
 
-    public List<GroupResult> match(List<Applicant> applicants, List<MatchingField> fields, LocalDate fallbackDate) {
+    // groupSize: 그룹당 인원 수(관리자 지정, 기본 DEFAULT_GROUP_SIZE). 잔여 인원은 미배정으로 남긴다. (KAN-224)
+    public List<GroupResult> match(List<Applicant> applicants, List<MatchingField> fields, LocalDate fallbackDate, int groupSize) {
         boolean datesUsed = applicants.stream().anyMatch(a -> !dates(a).isEmpty());
 
         List<Applicant> pool = new ArrayList<>(applicants);
         List<GroupResult> results = new ArrayList<>();
 
-        while (pool.size() >= GROUP_SIZE) {
+        while (pool.size() >= groupSize) {
             Applicant seed = hardestToPlace(pool);
             List<Applicant> group = new ArrayList<>();
             group.add(seed);
             Set<String> groupDates = datesUsed ? new LinkedHashSet<>(dates(seed)) : null;
 
-            while (group.size() < GROUP_SIZE) {
+            while (group.size() < groupSize) {
                 Applicant best = null;
                 double bestScore = -1;
                 Set<String> bestDates = null;
@@ -81,14 +82,14 @@ public class MatchingEngine {
                 groupDates = bestDates;
             }
 
-            if (group.size() == GROUP_SIZE) {
+            if (group.size() == groupSize) {
                 BigDecimal score = groupScore(group, fields);
                 LocalDate eventDate = pickEventDate(groupDates, fallbackDate);
                 results.add(new GroupResult(
                         group.stream().map(Applicant::applicationId).toList(), score, eventDate));
                 pool.removeAll(group);
             } else {
-                // 4명을 못 채우는 seed는 미배정으로 남긴다 (관리자가 수동 처리)
+                // groupSize를 못 채우는 seed는 미배정으로 남긴다 (관리자가 수동 처리)
                 pool.remove(seed);
             }
         }
@@ -204,10 +205,11 @@ public class MatchingEngine {
         // 성별 쏠림
         long male = group.stream().map(a -> stringValue(a, KEY_GENDER)).filter("MALE"::equals).count();
         long known = group.stream().map(a -> stringValue(a, KEY_GENDER)).filter(v -> v != null).count();
-        if (known == GROUP_SIZE) {
+        // 그룹 인원 기준으로 성별 쏠림을 평가한다(가변 그룹 크기 대응, 4인 점수는 불변). (KAN-224)
+        if (known == group.size()) {
             long female = known - male;
-            if (male == 0 || female == 0) penalty += 0.30;          // 4명 동성
-            else if (male == 1 || female == 1) penalty += 0.10;     // 3:1
+            if (male == 0 || female == 0) penalty += 0.30;          // 전원 동성
+            else if (male == 1 || female == 1) penalty += 0.10;     // 1명만 소수 성별
         }
         // 동일 직군 3명 이상
         if (maxSameCount(group, KEY_JOB) >= 3) penalty += 0.05;

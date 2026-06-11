@@ -125,5 +125,9 @@ public class AdminFormService {
         if (isMatchingField && matchingStrategy == null) {
             throw new CustomException(ErrorCode.MATCHING_STRATEGY_REQUIRED);
         }
+        // 주관식(단답/장문)은 자유 텍스트라 매칭 점수 계산이 불가능하므로 매칭 사용을 막는다. (KAN-226)
+        if (isMatchingField && (type == QuestionType.SHORT_TEXT || type == QuestionType.LONG_TEXT)) {
+            throw new CustomException(ErrorCode.MATCHING_FIELD_TYPE_NOT_ALLOWED);
+        }
     }
 }

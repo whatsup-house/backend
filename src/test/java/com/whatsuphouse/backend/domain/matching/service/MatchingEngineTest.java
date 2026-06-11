@@ -42,7 +42,7 @@ class MatchingEngineTest {
                 applicant(26, "FEMALE", List.of("여행", "독서"), List.of("2026-08-01"))
         );
 
-        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback);
+        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback, 4);
 
         assertThat(groups).hasSize(1);
         assertThat(groups.get(0).applicationIds()).hasSize(4);
@@ -61,7 +61,7 @@ class MatchingEngineTest {
                 applicant(60, "FEMALE", List.of("여행"), List.of("2026-08-01")) // 격차 30+
         );
 
-        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback);
+        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback, 4);
 
         assertThat(groups).isEmpty();
     }
@@ -76,7 +76,7 @@ class MatchingEngineTest {
                 applicant(26, "FEMALE", List.of("여행"), List.of("2026-08-04"))
         );
 
-        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback);
+        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback, 4);
 
         assertThat(groups).isEmpty();
     }
@@ -97,8 +97,8 @@ class MatchingEngineTest {
                 applicant(28, "MALE", List.of("영화"), List.of("2026-08-01"))
         );
 
-        var balancedGroup = engine.match(balanced, fields, fallback);
-        var maleGroup = engine.match(allMale, fields, fallback);
+        var balancedGroup = engine.match(balanced, fields, fallback, 4);
+        var maleGroup = engine.match(allMale, fields, fallback, 4);
 
         assertThat(balancedGroup).hasSize(1);
         assertThat(maleGroup).hasSize(1);
@@ -130,9 +130,43 @@ class MatchingEngineTest {
                 applicant(29, "MALE", List.of("독서"), List.of("2026-08-01"))
         );
 
-        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback);
+        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback, 4);
 
         assertThat(groups).hasSize(1);
         assertThat(groups.get(0).applicationIds()).hasSize(4);
+    }
+
+    @Test
+    @DisplayName("groupSize=3이면 3명씩 그룹을 만든다 (KAN-224)")
+    void match_groupSizeThree_formsThreePersonGroups() {
+        List<MatchingEngine.Applicant> applicants = List.of(
+                applicant(28, "MALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(27, "FEMALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(30, "MALE", List.of("음악"), List.of("2026-08-01"))
+        );
+
+        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback, 3);
+
+        assertThat(groups).hasSize(1);
+        assertThat(groups.get(0).applicationIds()).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("groupSize=6, 7명이면 6인 그룹 1개 + 1명 미배정 (KAN-224)")
+    void match_groupSizeSix_sevenPeople_oneGroupOneLeftover() {
+        List<MatchingEngine.Applicant> applicants = List.of(
+                applicant(28, "MALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(27, "FEMALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(30, "MALE", List.of("음악"), List.of("2026-08-01")),
+                applicant(26, "FEMALE", List.of("여행"), List.of("2026-08-01")),
+                applicant(29, "MALE", List.of("독서"), List.of("2026-08-01")),
+                applicant(25, "FEMALE", List.of("영화"), List.of("2026-08-01")),
+                applicant(31, "MALE", List.of("음악"), List.of("2026-08-01"))
+        );
+
+        List<MatchingEngine.GroupResult> groups = engine.match(applicants, fields, fallback, 6);
+
+        assertThat(groups).hasSize(1);
+        assertThat(groups.get(0).applicationIds()).hasSize(6);
     }
 }
