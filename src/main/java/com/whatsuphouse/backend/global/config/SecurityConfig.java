@@ -31,7 +31,8 @@ public class SecurityConfig {
     private static final String[] PERMIT_ALL = {
         "/api/auth/**",
         "/swagger-ui/**",
-        "/api-docs/**"
+        "/api-docs/**",
+        "/actuator/health"
     };
 
     //GET 요청만 허용
