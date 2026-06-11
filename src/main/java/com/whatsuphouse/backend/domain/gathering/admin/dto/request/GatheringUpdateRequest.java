@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -25,6 +26,9 @@ public class GatheringUpdateRequest {
 
     @Schema(example = "편안하게 대화 나누는 소규모 모임입니다.")
     private String description;
+
+    @Schema(example = "[\"아이스브레이킹\", \"식사와 대화\", \"마무리 인사\"]")
+    private List<String> howToRun;
 
     @Schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     @NotNull

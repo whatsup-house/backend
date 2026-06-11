@@ -32,19 +32,23 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- 3. 게더링 (완료 2개 + 오픈 2개)
-INSERT INTO gatherings (id, title, description, location_id, event_date, start_time, end_time, price, max_attendees, status, thumbnail_url, is_curated, curated_rank, created_at, updated_at)
+INSERT INTO gatherings (id, title, description, how_to_run, location_id, event_date, start_time, end_time, price, max_attendees, status, thumbnail_url, is_curated, curated_rank, created_at, updated_at)
 VALUES
     ('c2000000-0000-0000-0000-000000000001', '퇴근 게더링',
      '퇴근 후 가볍게. 팜팜발리에서 하루의 피로를 풀고 새로운 사람들과 솔직한 이야기를 나눠요. 음료와 간단한 안주가 포함됩니다.',
+     '["웰컴 드링크와 체크인", "가벼운 자기소개", "음료와 함께 자유 대화"]',
      'a2000000-0000-0000-0000-000000000001', '2026-05-14', '19:30', '21:30', 20000, 16, 'COMPLETED', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-2.png', TRUE, 1, NOW(), NOW()),
     ('c2000000-0000-0000-0000-000000000002', '대학생 게더링',
      '서울대입구역 근처에서 만나는 대학생 소셜 모임. 전공 불문, 학교 불문. 같은 시대를 사는 청년들과 편하게 어울려요.',
+     '["전공과 관심사로 아이스브레이킹", "소그룹 대화", "다음 만남을 위한 연락처 교환"]',
      'a2000000-0000-0000-0000-000000000002', '2026-05-17', '15:00', '17:30', 15000, 20, 'COMPLETED', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-4.png', TRUE, 2, NOW(), NOW()),
     ('c2000000-0000-0000-0000-000000000003', '썬데이 러닝 클럽 (SRC)',
      '매주 일요일 아침 한강공원에서 함께 달려요. 페이스는 각자 맞게, 러닝 후 간단한 브런치 타임까지.',
+     '["가벼운 스트레칭", "페이스별 러닝", "러닝 후 브런치"]',
      'a2000000-0000-0000-0000-000000000003', '2026-06-01', '08:00', '10:00', 10000, 20, 'OPEN', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-6.png', FALSE, 0, NOW(), NOW()),
     ('c2000000-0000-0000-0000-000000000004', '경찰과 도둑',
      '보라매공원에서 펼쳐지는 팀 대항 야외 게임. 경찰팀과 도둑팀으로 나뉘어 공원을 누벼요. 운동화 필수!',
+     '["팀 나누기와 룰 설명", "공원 미션 게임", "팀별 회고와 마무리"]',
      'a2000000-0000-0000-0000-000000000004', '2026-06-08', '14:00', '17:00', 15000, 20, 'OPEN', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-3.png', FALSE, 0, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
@@ -254,10 +258,11 @@ WHERE id IN (
 ) AND gathering_type IS NULL;
 
 -- 우연한 식탁 게더링 1개 (오픈)
-INSERT INTO gatherings (id, title, description, location_id, event_date, start_time, end_time, price, max_attendees, gathering_type, status, thumbnail_url, is_curated, curated_rank, created_at, updated_at)
+INSERT INTO gatherings (id, title, description, how_to_run, location_id, event_date, start_time, end_time, price, max_attendees, gathering_type, status, thumbnail_url, is_curated, curated_rank, created_at, updated_at)
 VALUES
     ('c2000000-0000-0000-0000-000000000005', '우연한 식탁 — 금요일 저녁',
      '혼자 와도 좋아요. 비슷한 취향의 사람들과 자동으로 매칭되어 같은 테이블에서 저녁을 나눕니다. 신청서를 작성하면 호스트가 그룹을 구성해 드려요.',
+     '["신청서 기반 자동매칭", "테이블별 저녁 식사", "큐레이터 마무리 안내"]',
      'a2000000-0000-0000-0000-000000000001', '2026-06-26', '19:00', '21:30', 25000, 16, 'RANDOM_TABLE', 'OPEN',
      'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-2.png', FALSE, 0, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;

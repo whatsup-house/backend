@@ -31,6 +31,8 @@ public enum ErrorCode {
     GATHERING_NOT_FOUND("존재하지 않는 게더링입니다.", HttpStatus.NOT_FOUND),
     GATHERING_FULL("게더링 정원이 초과되었습니다.", HttpStatus.BAD_REQUEST),
     GATHERING_NOT_RECRUITING("모집중인 게더링이 아닙니다.", HttpStatus.BAD_REQUEST),
+    INVALID_GATHERING_DATE("게더링 날짜는 오늘 이후로 선택해주세요.", HttpStatus.BAD_REQUEST),
+    INVALID_GATHERING_TIME("시작 시간은 종료 시간보다 빨라야 합니다.", HttpStatus.BAD_REQUEST),
 
     // Form
     FORM_NOT_FOUND("신청폼이 존재하지 않습니다.", HttpStatus.NOT_FOUND),

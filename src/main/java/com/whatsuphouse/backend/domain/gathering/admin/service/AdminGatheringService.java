@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -89,8 +90,27 @@ public class AdminGatheringService {
                 : gatheringRepository.findByDeletedAtIsNull();
     }
 
+    // 게더링 날짜/시간 유효성 검증. 과거 날짜·시작≥종료를 차단한다. (KAN-221)
+    // 날짜 정책: 오늘 포함 이후 허용. 시간은 둘 다 입력된 경우에만 시작<종료를 검증한다.
+    private void validateSchedule(LocalDate eventDate, LocalTime startTime, LocalTime endTime) {
+        if (eventDate != null && eventDate.isBefore(LocalDate.now())) {
+            throw new CustomException(ErrorCode.INVALID_GATHERING_DATE);
+        }
+        if (startTime != null && endTime != null && !startTime.isBefore(endTime)) {
+            throw new CustomException(ErrorCode.INVALID_GATHERING_TIME);
+        }
+    }
+
+    // 관리자 수정 패널 prefill용 상세 조회. 목록 응답에 없는 소개/장소/시간/썸네일까지 포함한다. (KAN-220)
+    public GatheringDetailResponse getGathering(UUID id) {
+        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        return GatheringDetailResponse.from(gathering);
+    }
+
     @Transactional
     public GatheringDetailResponse createGathering(GatheringCreateRequest request) {
+        validateSchedule(request.getEventDate(), request.getStartTime(), request.getEndTime());
         Location location = locationRepository.findByIdAndDeletedAtIsNull(request.getLocationId())
                 .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
         // Storage move는 @Transactional 내부에서 호출됨. DB save 실패 시 파일은 롤백 불가.
@@ -101,6 +121,7 @@ public class AdminGatheringService {
         Gathering gathering = Gathering.builder()
                 .title(request.getTitle())
                 .description(request.getDescription())
+                .howToRun(request.getHowToRun())
                 .location(location)
                 .eventDate(request.getEventDate())
                 .startTime(request.getStartTime())
@@ -118,6 +139,7 @@ public class AdminGatheringService {
 
     @Transactional
     public GatheringDetailResponse updateGathering(UUID id, GatheringUpdateRequest request) {
+        validateSchedule(request.getEventDate(), request.getStartTime(), request.getEndTime());
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
         Location location = locationRepository.findByIdAndDeletedAtIsNull(request.getLocationId())
@@ -129,7 +151,7 @@ public class AdminGatheringService {
                 : gathering.getThumbnailUrl();
         gathering.update(request.getTitle(), request.getDescription(), location,
                 request.getEventDate(), request.getStartTime(), request.getEndTime(),
-                request.getPrice(), request.getMaxAttendees(), thumbnailUrl);
+                request.getPrice(), request.getMaxAttendees(), thumbnailUrl, request.getHowToRun());
         return GatheringDetailResponse.from(gathering);
     }
 

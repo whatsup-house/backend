@@ -43,6 +43,12 @@ public class AdminGatheringController {
         return ResponseEntity.ok(ApiResult.success(adminGatheringService.listGatherings(status, eventDate, from, to)));
     }
 
+    @Operation(summary = "모임 상세 조회 (관리자)", description = "수정 패널 prefill용. 소개/장소/시간/썸네일 등 전체 필드를 반환합니다.")
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResult<GatheringDetailResponse>> getGathering(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(adminGatheringService.getGathering(id)));
+    }
+
     @Operation(summary = "모임 생성", description = "관리자 권한이 필요합니다.")
     @PostMapping
     public ResponseEntity<ApiResult<GatheringDetailResponse>> createGathering(
