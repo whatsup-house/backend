@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/whatsup-house/whatsup-house-backend:latest
+    image: ghcr.io/whatsup-house/backend:latest
     container_name: whatsup-app
     environment:
       SPRING_PROFILES_ACTIVE: prod
