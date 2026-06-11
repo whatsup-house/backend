@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.user.service;
 
+import com.whatsuphouse.backend.domain.user.dto.request.PasswordChangeRequest;
 import com.whatsuphouse.backend.domain.user.dto.request.ProfileUpdateRequest;
 import com.whatsuphouse.backend.domain.user.dto.request.UserWithdrawRequest;
 import com.whatsuphouse.backend.domain.user.dto.response.ProfileResponse;
@@ -61,6 +62,35 @@ class UserServiceTest {
                 .phone("01012345678")
                 .build();
         ReflectionTestUtils.setField(user, "id", userId);
+    }
+
+    // ── changePassword() ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("현재 비밀번호가 맞으면 새 비밀번호로 변경된다")
+    void changePassword_success() {
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(passwordEncoder.matches("currentPw1!", "encoded")).willReturn(true);
+        given(passwordEncoder.encode("newPw1234!")).willReturn("newEncoded");
+
+        userService.changePassword(userId, PasswordChangeRequest.builder()
+                .currentPassword("currentPw1!").newPassword("newPw1234!").build());
+
+        assertThat(user.getPassword()).isEqualTo("newEncoded");
+    }
+
+    @Test
+    @DisplayName("현재 비밀번호가 틀리면 INVALID_PASSWORD 예외")
+    void changePassword_wrongCurrent_throwsException() {
+        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(passwordEncoder.matches("wrong", "encoded")).willReturn(false);
+
+        assertThatThrownBy(() -> userService.changePassword(userId, PasswordChangeRequest.builder()
+                .currentPassword("wrong").newPassword("newPw1234!").build()))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_PASSWORD);
+
+        assertThat(user.getPassword()).isEqualTo("encoded");
     }
 
     // ── getProfile() ─────────────────────────────────────────────────────────
