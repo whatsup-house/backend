@@ -8,6 +8,7 @@ import lombok.Getter;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -17,6 +18,7 @@ public class GatheringDetailResponse {
     private UUID id;
     private String title;
     private String description;
+    private List<String> howToRun;
     private LocalDate eventDate;
     private LocalTime startTime;
     private LocalTime endTime;
@@ -43,6 +45,7 @@ public class GatheringDetailResponse {
                 .id(gathering.getId())
                 .title(gathering.getTitle())
                 .description(gathering.getDescription())
+                .howToRun(gathering.getHowToRun())
                 .eventDate(gathering.getEventDate())
                 .startTime(gathering.getStartTime())
                 .endTime(gathering.getEndTime())

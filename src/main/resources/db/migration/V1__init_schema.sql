@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS gatherings (
     id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     title         VARCHAR(200) NOT NULL,
     description   TEXT,
+    how_to_run    JSONB,
     location_id   UUID         REFERENCES locations(id),
     event_date    DATE         NOT NULL,
     start_time    TIME,

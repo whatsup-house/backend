@@ -9,9 +9,12 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -29,6 +32,10 @@ public class Gathering extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "how_to_run", columnDefinition = "jsonb")
+    private List<String> howToRun = List.of();
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "location_id")
@@ -68,9 +75,10 @@ public class Gathering extends BaseEntity {
     @Builder
     public Gathering(String title, String description, Location location, LocalDate eventDate,
                      LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl,
-                     GatheringType gatheringType) {
+                     GatheringType gatheringType, List<String> howToRun) {
         this.title = title;
         this.description = description;
+        this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
         this.location = location;
         this.eventDate = eventDate;
         this.startTime = startTime;
@@ -106,9 +114,11 @@ public class Gathering extends BaseEntity {
     }
 
     public void update(String title, String description, Location location, LocalDate eventDate,
-                       LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl) {
+                       LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl,
+                       List<String> howToRun) {
         this.title = title;
         this.description = description;
+        this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
         this.location = location;
         this.eventDate = eventDate;
         this.startTime = startTime;

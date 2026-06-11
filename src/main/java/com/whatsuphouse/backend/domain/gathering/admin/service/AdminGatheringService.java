@@ -121,6 +121,7 @@ public class AdminGatheringService {
         Gathering gathering = Gathering.builder()
                 .title(request.getTitle())
                 .description(request.getDescription())
+                .howToRun(request.getHowToRun())
                 .location(location)
                 .eventDate(request.getEventDate())
                 .startTime(request.getStartTime())
@@ -150,7 +151,7 @@ public class AdminGatheringService {
                 : gathering.getThumbnailUrl();
         gathering.update(request.getTitle(), request.getDescription(), location,
                 request.getEventDate(), request.getStartTime(), request.getEndTime(),
-                request.getPrice(), request.getMaxAttendees(), thumbnailUrl);
+                request.getPrice(), request.getMaxAttendees(), thumbnailUrl, request.getHowToRun());
         return GatheringDetailResponse.from(gathering);
     }
 
