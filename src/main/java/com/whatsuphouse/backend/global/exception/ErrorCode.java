@@ -38,6 +38,7 @@ public enum ErrorCode {
     RESERVED_QUESTION_READONLY("시스템 예약 질문(이름/연락처)은 삭제하거나 질문 키를 변경할 수 없습니다.", HttpStatus.BAD_REQUEST),
     OPTIONS_REQUIRED("선택형 질문은 options가 필수입니다.", HttpStatus.BAD_REQUEST),
     MATCHING_STRATEGY_REQUIRED("매칭 필드는 matchingStrategy가 필수입니다.", HttpStatus.BAD_REQUEST),
+    MATCHING_FIELD_TYPE_NOT_ALLOWED("주관식 질문은 매칭에 사용할 수 없습니다.", HttpStatus.BAD_REQUEST),
     REQUIRED_ANSWER_MISSING("필수 질문에 답변하지 않았습니다.", HttpStatus.BAD_REQUEST),
     INVALID_QUESTION("해당 폼에 속하지 않는 질문입니다.", HttpStatus.BAD_REQUEST),
     INVALID_MBTI("유효하지 않은 MBTI 값입니다.", HttpStatus.BAD_REQUEST),
