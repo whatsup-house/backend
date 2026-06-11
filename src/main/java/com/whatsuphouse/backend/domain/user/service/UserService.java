@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.user.service;
 
+import com.whatsuphouse.backend.domain.user.dto.request.PasswordChangeRequest;
 import com.whatsuphouse.backend.domain.user.dto.request.ProfileUpdateRequest;
 import com.whatsuphouse.backend.domain.user.dto.request.UserWithdrawRequest;
 import com.whatsuphouse.backend.domain.user.dto.response.ProfileResponse;
@@ -46,6 +47,17 @@ public class UserService {
         user.updateProfile(request.getNickname(), request.getPhone(), request.getName(), request.getGender(), request.getAge(),
                 request.getInstagramId(), request.getMbti(), request.getJob(), request.getIntro());
         return ProfileResponse.from(user);
+    }
+
+    // 현재 비밀번호 검증 후 새 비밀번호로 변경한다. (KAN-223)
+    public void changePassword(UUID userId, PasswordChangeRequest request) {
+        User user = findActiveUser(userId);
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new CustomException(ErrorCode.INVALID_PASSWORD);
+        }
+
+        user.changePassword(passwordEncoder.encode(request.getNewPassword()));
     }
 
     @Transactional(readOnly = true)
