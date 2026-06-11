@@ -395,6 +395,31 @@ class AdminGatheringServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("과거 날짜로 생성하면 INVALID_GATHERING_DATE 예외 (KAN-221)")
+    void createGathering_pastDate_throwsException() {
+        GatheringCreateRequest request = GatheringCreateRequest.builder()
+                .title("과거 게더링").locationId(locationId)
+                .eventDate(LocalDate.now().minusDays(1)).maxAttendees(10).build();
+
+        assertThatThrownBy(() -> adminGatheringService.createGathering(request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_GATHERING_DATE);
+    }
+
+    @Test
+    @DisplayName("시작 시간이 종료 시간보다 늦거나 같으면 INVALID_GATHERING_TIME 예외 (KAN-221)")
+    void createGathering_startNotBeforeEnd_throwsException() {
+        GatheringCreateRequest request = GatheringCreateRequest.builder()
+                .title("시간역전 게더링").locationId(locationId)
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(10)
+                .startTime(LocalTime.of(20, 0)).endTime(LocalTime.of(19, 0)).build();
+
+        assertThatThrownBy(() -> adminGatheringService.createGathering(request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_GATHERING_TIME);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private GatheringCreateRequest buildCreateRequest(String title, String thumbnailUrl) {
