@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_at      TIMESTAMP    NOT NULL,
     updated_at      TIMESTAMP    NOT NULL,
     deleted_at      TIMESTAMP,
-    "delete"        CHAR(1)      NOT NULL DEFAULT 'N',
+    "delete"        VARCHAR(1)   NOT NULL DEFAULT 'N',
     CONSTRAINT chk_users_delete_yn CHECK ("delete" IN ('Y', 'N'))
 );
 
