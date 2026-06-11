@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.form.admin.dto.request.FormQuestionUpdate
 import com.whatsuphouse.backend.domain.form.admin.dto.response.FormQuestionResponse;
 import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
+import com.whatsuphouse.backend.domain.form.enums.MatchingStrategy;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
@@ -117,7 +118,7 @@ public class AdminFormService {
     }
 
     private void validate(QuestionType type, java.util.Map<String, Object> options,
-                          boolean isMatchingField, com.whatsuphouse.backend.domain.form.enums.MatchingStrategy matchingStrategy) {
+                          boolean isMatchingField, MatchingStrategy matchingStrategy) {
         if ((type == QuestionType.SINGLE_CHOICE || type == QuestionType.MULTI_CHOICE)
                 && (options == null || options.isEmpty())) {
             throw new CustomException(ErrorCode.OPTIONS_REQUIRED);
@@ -129,5 +130,16 @@ public class AdminFormService {
         if (isMatchingField && (type == QuestionType.SHORT_TEXT || type == QuestionType.LONG_TEXT)) {
             throw new CustomException(ErrorCode.MATCHING_FIELD_TYPE_NOT_ALLOWED);
         }
+        if (isMatchingField && !isAllowedMatchingStrategy(type, matchingStrategy)) {
+            throw new CustomException(ErrorCode.MATCHING_STRATEGY_NOT_ALLOWED);
+        }
+    }
+
+    private boolean isAllowedMatchingStrategy(QuestionType type, MatchingStrategy strategy) {
+        return switch (type) {
+            case MULTI_CHOICE -> strategy == MatchingStrategy.OVERLAP || strategy == MatchingStrategy.DIVERSE;
+            case SINGLE_CHOICE, NUMBER, MBTI_INPUT -> strategy == MatchingStrategy.SAME || strategy == MatchingStrategy.DIVERSE;
+            default -> false;
+        };
     }
 }
