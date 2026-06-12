@@ -60,8 +60,8 @@ class AdminMailTemplateServiceTest {
         MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("APPLICATION_PENDING");
 
         assertThat(result.getTemplateKey()).isEqualTo("APPLICATION_PENDING");
-        assertThat(result.getVariables()).contains("name", "gatheringTitle", "bookingNumber");
-        assertThat(result.getBody()).contains("{{bookingNumber}}");
+        assertThat(result.getVariables()).contains("이름", "모임명", "예약번호");
+        assertThat(result.getBody()).contains("{{예약번호}}");
     }
 
     @Test
@@ -78,12 +78,12 @@ class AdminMailTemplateServiceTest {
         given(mailTemplateRepository.findByTemplateKey("WELCOME")).willReturn(Optional.empty());
         given(mailTemplateRepository.save(any(MailTemplate.class))).willAnswer(inv -> inv.getArgument(0));
         MailTemplateUpdateRequest request = MailTemplateUpdateRequest.builder()
-                .subject("새 제목").body("새 본문 {{nickname}}").build();
+                .subject("새 제목").body("새 본문 {{닉네임}}").build();
 
         MailTemplateDetailResponse result = adminMailTemplateService.updateTemplate("WELCOME", request);
 
         assertThat(result.getSubject()).isEqualTo("새 제목");
-        assertThat(result.getBody()).isEqualTo("새 본문 {{nickname}}");
+        assertThat(result.getBody()).isEqualTo("새 본문 {{닉네임}}");
     }
 
     @Test
@@ -110,7 +110,7 @@ class AdminMailTemplateServiceTest {
         MailTemplatePreviewResponse result = adminMailTemplateService.preview(
                 "APPLICATION_PENDING", new MailTemplatePreviewRequest());
 
-        assertThat(result.getBody()).doesNotContain("{{");
+        assertThat(result.getBody()).doesNotContain("{{이름}}");
         assertThat(result.getBody()).contains("홍길동");
     }
 
@@ -119,9 +119,9 @@ class AdminMailTemplateServiceTest {
     void preview_usesDraftContent() {
         given(mailTemplateRepository.findByTemplateKey("WELCOME")).willReturn(Optional.empty());
         MailTemplatePreviewRequest request = MailTemplatePreviewRequest.builder()
-                .subject("초안 {{nickname}}")
-                .body("초안 본문 {{nickname}}")
-                .variables(Map.of("nickname", "테스터"))
+                .subject("초안 {{닉네임}}")
+                .body("초안 본문 {{닉네임}}")
+                .variables(Map.of("닉네임", "테스터"))
                 .build();
 
         MailTemplatePreviewResponse result = adminMailTemplateService.preview("WELCOME", request);

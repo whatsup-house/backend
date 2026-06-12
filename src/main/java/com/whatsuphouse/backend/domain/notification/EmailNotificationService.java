@@ -71,7 +71,7 @@ public class EmailNotificationService implements NotificationService {
     @Async("emailTaskExecutor")
     public void sendWelcome(User user) {
         MailContent mail = mailTemplateRenderer.render(MailTemplateType.WELCOME,
-                Map.of("nickname", user.getNickname()));
+                Map.of("닉네임", user.getNickname()));
         send(user.getEmail(), mail.subject(), mail.body());
     }
 
@@ -79,7 +79,7 @@ public class EmailNotificationService implements NotificationService {
     @Async("emailTaskExecutor")
     public void sendPasswordReset(User user, String resetUrl) {
         MailContent mail = mailTemplateRenderer.render(MailTemplateType.PASSWORD_RESET,
-                Map.of("nickname", user.getNickname(), "resetUrl", resetUrl));
+                Map.of("닉네임", user.getNickname(), "재설정링크", resetUrl));
         send(user.getEmail(), mail.subject(), mail.body());
     }
 
@@ -127,9 +127,9 @@ public class EmailNotificationService implements NotificationService {
         if (email == null) return;
 
         MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_CANCELLED, Map.of(
-                "name", application.getName(),
-                "gatheringTitle", application.getGathering().getTitle(),
-                "bookingNumber", application.getBookingNumber()));
+                "이름", application.getName(),
+                "모임명", application.getGathering().getTitle(),
+                "예약번호", application.getBookingNumber()));
         send(email, mail.subject(), mail.body());
     }
 
@@ -148,10 +148,10 @@ public class EmailNotificationService implements NotificationService {
         if (email == null) return;
 
         MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_ATTENDED, Map.of(
-                "name", application.getName(),
-                "gatheringTitle", application.getGathering().getTitle(),
-                "mileageEarned", String.format("%,d", mileageEarned),
-                "mileageBalance", String.format("%,d", mileageBalance)));
+                "이름", application.getName(),
+                "모임명", application.getGathering().getTitle(),
+                "적립마일리지", String.format("%,d", mileageEarned),
+                "마일리지잔액", String.format("%,d", mileageBalance)));
         send(email, mail.subject(), mail.body());
     }
 
@@ -171,9 +171,9 @@ public class EmailNotificationService implements NotificationService {
             if (email == null) continue;
 
             MailContent mail = mailTemplateRenderer.render(MailTemplateType.GATHERING_CANCELLED, Map.of(
-                    "name", application.getName(),
-                    "gatheringTitle", gathering.getTitle(),
-                    "bookingNumber", application.getBookingNumber()));
+                    "이름", application.getName(),
+                    "모임명", gathering.getTitle(),
+                    "예약번호", application.getBookingNumber()));
             send(email, mail.subject(), mail.body());
         }
     }
@@ -184,11 +184,11 @@ public class EmailNotificationService implements NotificationService {
      */
     private Map<String, String> applicationVariables(Application application) {
         Map<String, String> variables = new HashMap<>();
-        variables.put("name", application.getName());
-        variables.put("gatheringTitle", application.getGathering().getTitle());
-        variables.put("eventDate", formatDate(application));
-        variables.put("startTime", formatTime(application));
-        variables.put("bookingNumber", application.getBookingNumber());
+        variables.put("이름", application.getName());
+        variables.put("모임명", application.getGathering().getTitle());
+        variables.put("모임날짜", formatDate(application));
+        variables.put("시작시간", formatTime(application));
+        variables.put("예약번호", application.getBookingNumber());
         return variables;
     }
 

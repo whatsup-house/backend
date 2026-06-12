@@ -16,7 +16,7 @@ public class MailTemplateUpdateRequest {
 
     @NotBlank(message = "제목은 필수입니다.")
     @Size(max = 255, message = "제목은 255자 이하여야 합니다.")
-    @Schema(example = "[Whats up House] 신청이 접수되었습니다 - {{gatheringTitle}}")
+    @Schema(example = "[Whats up House] 신청이 접수되었습니다 - {{모임명}}")
     private String subject;
 
     @NotBlank(message = "본문은 필수입니다.")

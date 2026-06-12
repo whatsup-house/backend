@@ -38,6 +38,7 @@ public class MailTemplateRenderer {
 
     /**
      * {{key}} 형태의 플레이스홀더를 변수 값으로 단순 치환한다.
+     * 등록된 변수명만 치환하므로, 본문 내 다른 텍스트(예: 브랜드 [Whats up House])는 그대로 유지된다.
      */
     public static String substitute(String text, Map<String, String> variables) {
         if (text == null) {
