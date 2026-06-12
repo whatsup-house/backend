@@ -2,6 +2,9 @@ package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
+import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
+import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,10 +16,16 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * NotificationService의 이메일(SMTP) 구현체.
+ *
+ * [템플릿 - KAN-244]
+ * 제목/본문은 mail_templates 테이블의 관리자 오버라이드(없으면 MailTemplateType 기본값)를
+ * MailTemplateRenderer로 해석·치환합니다. 각 메서드는 {{변수}}에 채울 값 Map만 구성합니다.
  *
  * [비동기 처리 전략 - FR-NTF-09]
  * 모든 public 메서드에 @Async를 붙여 별도 스레드풀에서 실행됩니다.
@@ -43,6 +52,7 @@ import java.util.List;
 public class EmailNotificationService implements NotificationService {
 
     private final JavaMailSender mailSender;
+    private final MailTemplateRenderer mailTemplateRenderer;
 
     /**
      * 발신자 이메일 주소.
@@ -60,33 +70,17 @@ public class EmailNotificationService implements NotificationService {
     @Override
     @Async("emailTaskExecutor")
     public void sendWelcome(User user) {
-        String subject = "[Whats up House] 가입을 환영합니다!";
-        String body = String.format("""
-                안녕하세요, %s님!
-
-                Whats up House에 가입해 주셔서 감사합니다.
-                가입 축하 마일리지 1,000P가 적립되었습니다.
-
-                다양한 모임에서 새로운 사람들을 만나보세요.
-                """, user.getNickname());
-        send(user.getEmail(), subject, body);
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.WELCOME,
+                Map.of("nickname", user.getNickname()));
+        send(user.getEmail(), mail.subject(), mail.body());
     }
 
     @Override
     @Async("emailTaskExecutor")
     public void sendPasswordReset(User user, String resetUrl) {
-        String subject = "[Whats up House] 비밀번호 재설정 안내";
-        String body = String.format("""
-                안녕하세요, %s님!
-
-                아래 링크에서 비밀번호를 재설정해 주세요.
-                링크는 30분 동안 1회만 사용할 수 있습니다.
-
-                %s
-
-                본인이 요청하지 않았다면 이 메일을 무시해 주세요.
-                """, user.getNickname(), resetUrl);
-        send(user.getEmail(), subject, body);
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.PASSWORD_RESET,
+                Map.of("nickname", user.getNickname(), "resetUrl", resetUrl));
+        send(user.getEmail(), mail.subject(), mail.body());
     }
 
     /**
@@ -100,24 +94,9 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
-        String subject = "[Whats up House] 신청이 접수되었습니다 - " + application.getGathering().getTitle();
-        String body = String.format("""
-                안녕하세요, %s님!
-
-                모임 신청이 정상적으로 접수되었습니다.
-
-                모임명: %s
-                일시: %s %s
-                예약번호: %s
-
-                신청 결과는 별도 이메일로 안내해 드리겠습니다.
-                """,
-                application.getName(),
-                application.getGathering().getTitle(),
-                formatDate(application),
-                formatTime(application),
-                application.getBookingNumber());
-        send(email, subject, body);
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_PENDING,
+                applicationVariables(application));
+        send(email, mail.subject(), mail.body());
     }
 
     /**
@@ -130,22 +109,9 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
-        String subject = "[Whats up House] 신청이 확정되었습니다 - " + application.getGathering().getTitle();
-        String body = String.format("""
-                안녕하세요, %s님!
-
-                모임 참가가 확정되었습니다. 당일 꼭 참석해 주세요!
-
-                모임명: %s
-                일시: %s %s
-                예약번호: %s
-                """,
-                application.getName(),
-                application.getGathering().getTitle(),
-                formatDate(application),
-                formatTime(application),
-                application.getBookingNumber());
-        send(email, subject, body);
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_CONFIRMED,
+                applicationVariables(application));
+        send(email, mail.subject(), mail.body());
     }
 
     /**
@@ -160,21 +126,11 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
-        String subject = "[Whats up House] 신청이 취소되었습니다 - " + application.getGathering().getTitle();
-        String body = String.format("""
-                안녕하세요, %s님!
-
-                아래 신청이 취소 처리되었습니다.
-
-                모임명: %s
-                예약번호: %s
-
-                다음 모임에서 만나뵐 수 있기를 기대합니다.
-                """,
-                application.getName(),
-                application.getGathering().getTitle(),
-                application.getBookingNumber());
-        send(email, subject, body);
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_CANCELLED, Map.of(
+                "name", application.getName(),
+                "gatheringTitle", application.getGathering().getTitle(),
+                "bookingNumber", application.getBookingNumber()));
+        send(email, mail.subject(), mail.body());
     }
 
     /**
@@ -191,21 +147,12 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
-        String subject = "[Whats up House] 참석이 확인되었습니다 - " + application.getGathering().getTitle();
-        String body = String.format("""
-                안녕하세요, %s님!
-
-                모임 참석이 확인되어 마일리지가 적립되었습니다.
-
-                모임명: %s
-                적립 마일리지: +%,dP
-                현재 잔액: %,dP
-                """,
-                application.getName(),
-                application.getGathering().getTitle(),
-                mileageEarned,
-                mileageBalance);
-        send(email, subject, body);
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_ATTENDED, Map.of(
+                "name", application.getName(),
+                "gatheringTitle", application.getGathering().getTitle(),
+                "mileageEarned", String.format("%,d", mileageEarned),
+                "mileageBalance", String.format("%,d", mileageBalance)));
+        send(email, mail.subject(), mail.body());
     }
 
     /**
@@ -223,22 +170,26 @@ public class EmailNotificationService implements NotificationService {
             String email = resolveEmail(application);
             if (email == null) continue;
 
-            String subject = "[Whats up House] 모임이 취소되었습니다 - " + gathering.getTitle();
-            String body = String.format("""
-                    안녕하세요, %s님!
-
-                    신청하셨던 모임이 취소되었습니다.
-
-                    모임명: %s
-                    예약번호: %s
-
-                    불편을 드려 죄송합니다. 다른 모임도 많이 확인해 보세요.
-                    """,
-                    application.getName(),
-                    gathering.getTitle(),
-                    application.getBookingNumber());
-            send(email, subject, body);
+            MailContent mail = mailTemplateRenderer.render(MailTemplateType.GATHERING_CANCELLED, Map.of(
+                    "name", application.getName(),
+                    "gatheringTitle", gathering.getTitle(),
+                    "bookingNumber", application.getBookingNumber()));
+            send(email, mail.subject(), mail.body());
         }
+    }
+
+    /**
+     * 신청 접수/확정 메일이 공유하는 변수 Map을 구성합니다.
+     * startTime은 없을 수 있으므로 빈 문자열로 채워 포맷을 유지합니다.
+     */
+    private Map<String, String> applicationVariables(Application application) {
+        Map<String, String> variables = new HashMap<>();
+        variables.put("name", application.getName());
+        variables.put("gatheringTitle", application.getGathering().getTitle());
+        variables.put("eventDate", formatDate(application));
+        variables.put("startTime", formatTime(application));
+        variables.put("bookingNumber", application.getBookingNumber());
+        return variables;
     }
 
     /**

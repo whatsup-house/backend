@@ -240,3 +240,17 @@ CREATE TABLE IF NOT EXISTS matching_members (
 );
 
 CREATE INDEX IF NOT EXISTS idx_matching_members_group_id ON matching_members(group_id);
+
+-- ================================================
+-- 알림 메일 템플릿 (관리자 운영 수정용 오버라이드)
+-- 행이 없으면 코드의 MailTemplateType 기본값을 사용하므로 시드는 필요 없다.
+-- ================================================
+CREATE TABLE IF NOT EXISTS mail_templates (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_key VARCHAR(50)  NOT NULL UNIQUE,
+    description  VARCHAR(100),
+    subject      VARCHAR(255) NOT NULL,
+    body         TEXT         NOT NULL,
+    created_at   TIMESTAMP    NOT NULL,
+    updated_at   TIMESTAMP    NOT NULL
+);
