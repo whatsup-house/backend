@@ -23,7 +23,6 @@ import java.util.UUID;
 public class UserService {
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh:";
-    private static final String ACTIVE_USER = "N";
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -82,12 +81,11 @@ public class UserService {
 
         return UserWithdrawResponse.builder()
                 .withdrawn(true)
-                .deleted(user.getDeleteYn())
                 .build();
     }
 
     private User findActiveUser(UUID userId) {
-        return userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
+        return userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
     }
 }

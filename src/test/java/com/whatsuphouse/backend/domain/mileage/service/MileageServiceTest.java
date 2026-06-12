@@ -185,7 +185,7 @@ class MileageServiceTest {
     @DisplayName("내 마일리지 잔액을 조회한다")
     void getMyMileage_success() {
         user.addMileage(1000);
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
 
         MileageBalanceResponse response = mileageService.getMyMileage(userId);
 
@@ -197,7 +197,7 @@ class MileageServiceTest {
     @DisplayName("내 마일리지 이력을 최신순으로 조회한다")
     void getMyMileageHistory_success() {
         MileageHistory history = createHistory(MileageType.SIGNUP, 1000, 1000, userId);
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(mileageHistoryRepository.findByUserId(any(UUID.class), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(history)));
 
@@ -216,7 +216,7 @@ class MileageServiceTest {
     void getMyMileageHistory_withType_success() {
         UUID reviewId = UUID.randomUUID();
         MileageHistory history = createHistory(MileageType.REVIEW_REWARD, 500, 1500, reviewId);
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(mileageHistoryRepository.findByUserIdAndType(any(UUID.class), any(MileageType.class), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(history)));
 

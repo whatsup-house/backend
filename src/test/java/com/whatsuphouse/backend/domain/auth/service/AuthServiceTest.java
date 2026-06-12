@@ -136,7 +136,7 @@ class AuthServiceTest {
     @DisplayName("정상 로그인")
     void login_success() {
         LoginRequest request = buildLoginRequest("test@example.com", "password123!");
-        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
+        given(userRepository.findByEmailAndDeletedAtIsNull("test@example.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches(any(), any())).willReturn(true);
         given(jwtTokenProvider.generateAccessToken(any())).willReturn("accessToken");
         given(jwtTokenProvider.generateRefreshToken(any())).willReturn("refreshToken");
@@ -154,7 +154,7 @@ class AuthServiceTest {
     @DisplayName("존재하지 않는 이메일로 로그인하면 예외 발생")
     void login_userNotFound_throwsException() {
         LoginRequest request = buildLoginRequest("none@example.com", "password123!");
-        given(userRepository.findByEmailAndDeleteYn("none@example.com", "N")).willReturn(Optional.empty());
+        given(userRepository.findByEmailAndDeletedAtIsNull("none@example.com")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(CustomException.class)
@@ -166,7 +166,7 @@ class AuthServiceTest {
     void login_deletedUser_throwsException() {
         user.delete();
         LoginRequest request = buildLoginRequest("test@example.com", "password123!");
-        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
+        given(userRepository.findByEmailAndDeletedAtIsNull("test@example.com")).willReturn(Optional.of(user));
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(CustomException.class)
@@ -177,7 +177,7 @@ class AuthServiceTest {
     @DisplayName("비밀번호가 틀리면 예외 발생")
     void login_wrongPassword_throwsException() {
         LoginRequest request = buildLoginRequest("test@example.com", "wrongPassword!");
-        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
+        given(userRepository.findByEmailAndDeletedAtIsNull("test@example.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches(any(), any())).willReturn(false);
 
         assertThatThrownBy(() -> authService.login(request))
@@ -203,7 +203,7 @@ class AuthServiceTest {
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn("validRefreshToken");
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(jwtTokenProvider.generateAccessToken(any(UserPrincipal.class))).willReturn("newAccessToken");
         given(jwtTokenProvider.generateRefreshToken(userId)).willReturn("newRefreshToken");
         given(jwtTokenProvider.getRefreshExpiration()).willReturn(86400000L);
@@ -256,7 +256,7 @@ class AuthServiceTest {
         given(jwtTokenProvider.getUserIdFromToken("validRefreshToken")).willReturn(userId);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("refresh:" + userId)).willReturn("validRefreshToken");
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.empty());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refresh("validRefreshToken"))
                 .isInstanceOf(CustomException.class)
@@ -272,7 +272,7 @@ class AuthServiceTest {
                 .name("홍길동")
                 .phone("01012345678")
                 .build();
-        given(userRepository.findFirstByNameAndPhoneAndDeleteYnOrderByCreatedAtDesc("홍길동", "01012345678", "N"))
+        given(userRepository.findFirstByNameAndPhoneAndDeletedAtIsNullOrderByCreatedAtDesc("홍길동", "01012345678"))
                 .willReturn(Optional.of(user));
 
         FindEmailResponse response = authService.findEmail(request);
@@ -286,7 +286,7 @@ class AuthServiceTest {
         PasswordResetRequest request = PasswordResetRequest.builder()
                 .email("test@example.com")
                 .build();
-        given(userRepository.findByEmailAndDeleteYn("test@example.com", "N")).willReturn(Optional.of(user));
+        given(userRepository.findByEmailAndDeletedAtIsNull("test@example.com")).willReturn(Optional.of(user));
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
 
         PasswordResetRequestResponse response = authService.requestPasswordReset(request);
@@ -302,7 +302,7 @@ class AuthServiceTest {
         PasswordResetRequest request = PasswordResetRequest.builder()
                 .email("none@example.com")
                 .build();
-        given(userRepository.findByEmailAndDeleteYn("none@example.com", "N")).willReturn(Optional.empty());
+        given(userRepository.findByEmailAndDeletedAtIsNull("none@example.com")).willReturn(Optional.empty());
 
         PasswordResetRequestResponse response = authService.requestPasswordReset(request);
 
@@ -319,7 +319,7 @@ class AuthServiceTest {
                 .build();
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get("password-reset:reset-token")).willReturn(userId.toString());
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(passwordEncoder.encode("newPassword123!")).willReturn("encodedNewPassword");
 
         PasswordResetConfirmResponse response = authService.confirmPasswordReset(request);

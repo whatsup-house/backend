@@ -16,9 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     account_status  VARCHAR(20),
     created_at      TIMESTAMP    NOT NULL,
     updated_at      TIMESTAMP    NOT NULL,
-    deleted_at      TIMESTAMP,
-    "delete"        VARCHAR(1)   NOT NULL DEFAULT 'N',
-    CONSTRAINT chk_users_delete_yn CHECK ("delete" IN ('Y', 'N'))
+    deleted_at      TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS locations (

@@ -38,7 +38,6 @@ public class AuthService {
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh:";
     private static final String PASSWORD_RESET_PREFIX = "password-reset:";
-    private static final String ACTIVE_USER = "N";
     private static final long PASSWORD_RESET_TTL_MINUTES = 30L;
 
     private final UserRepository userRepository;
@@ -78,8 +77,7 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmailAndDeleteYn(request.getEmail(), ACTIVE_USER)
-                .filter(u -> u.getDeletedAt() == null && !u.isWithdrawn())
+        User user = userRepository.findByEmailAndDeletedAtIsNull(request.getEmail())
                 .orElseThrow(() -> new CustomException(ErrorCode.INVALID_CREDENTIALS));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
@@ -107,12 +105,10 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public FindEmailResponse findEmail(FindEmailRequest request) {
-        User user = userRepository.findFirstByNameAndPhoneAndDeleteYnOrderByCreatedAtDesc(
+        User user = userRepository.findFirstByNameAndPhoneAndDeletedAtIsNullOrderByCreatedAtDesc(
                         request.getName(),
-                        request.getPhone(),
-                        ACTIVE_USER
+                        request.getPhone()
                 )
-                .filter(u -> u.getDeletedAt() == null && !u.isWithdrawn())
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
         return FindEmailResponse.builder()
@@ -121,8 +117,7 @@ public class AuthService {
     }
 
     public PasswordResetRequestResponse requestPasswordReset(PasswordResetRequest request) {
-        userRepository.findByEmailAndDeleteYn(request.getEmail(), ACTIVE_USER)
-                .filter(u -> u.getDeletedAt() == null && !u.isWithdrawn())
+        userRepository.findByEmailAndDeletedAtIsNull(request.getEmail())
                 .ifPresent(user -> {
                     String token = UUID.randomUUID().toString();
                     redisTemplate.opsForValue().set(
@@ -147,8 +142,7 @@ public class AuthService {
             throw new CustomException(ErrorCode.INVALID_PASSWORD_RESET_TOKEN);
         }
 
-        User user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(UUID.fromString(userId), ACTIVE_USER)
-                .filter(u -> !u.isWithdrawn())
+        User user = userRepository.findByIdAndDeletedAtIsNull(UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.INVALID_PASSWORD_RESET_TOKEN));
 
         user.changePassword(passwordEncoder.encode(request.getNewPassword()));
@@ -184,8 +178,7 @@ public class AuthService {
             throw new CustomException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
-        User user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
-                .filter(u -> !u.isWithdrawn())
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
         UserPrincipal principal = new UserPrincipal(user.getId(), user.getEmail(), user.isAdmin());
