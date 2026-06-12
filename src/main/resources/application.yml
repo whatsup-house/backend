@@ -1,6 +1,13 @@
 spring:
   profiles:
-    active: local
+    # 활성 프로파일은 환경변수 SPRING_PROFILES_ACTIVE로 결정한다.
+    # - 운영(EC2): docker-compose가 SPRING_PROFILES_ACTIVE=prod 주입 → prod
+    # - CI 테스트: test 프로파일 지정
+    # - 로컬 개발: 환경변수 미설정 시 아래 기본값(local)이 적용된다.
+    #   ※ 기본값을 비우지 않는 이유: 비우면 로컬에서 base 설정의 ${DB_URL} 등이
+    #     .env(운영 Supabase)로 해석되어 로컬 실행이 운영 DB에 붙는 사고가 난다.
+    #     local 프로파일이 로컬 DB/메일로 오버라이드하므로 안전한 기본값으로 유지한다.
+    active: ${SPRING_PROFILES_ACTIVE:local}
 
   datasource:
     url: ${DB_URL}
