@@ -8,5 +8,4 @@ import lombok.Getter;
 public class UserWithdrawResponse {
 
     private boolean withdrawn;
-    private String deleted;
 }

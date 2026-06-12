@@ -68,9 +68,6 @@ public class User extends BaseEntity {
     @Column(name = "account_status", length = 20)
     private UserAccountStatus accountStatus = UserAccountStatus.ACTIVE;
 
-    @Column(name = "\"delete\"", nullable = false, length = 1)
-    private String deleteYn = "N";
-
     @Builder
     public User(String email, String password, String name, Gender gender, Integer age, String nickname, String phone) {
         this.email = email;
@@ -82,8 +79,9 @@ public class User extends BaseEntity {
         this.phone = phone;
     }
 
+    // 탈퇴 여부는 소프트delete 단일 기준(deletedAt)으로 판단한다. (KAN-235)
     public boolean isWithdrawn() {
-        return "Y".equals(deleteYn);
+        return getDeletedAt() != null;
     }
 
     public void updateProfile(String nickname, String phone, String name, Gender gender, Integer age,
@@ -123,6 +121,6 @@ public class User extends BaseEntity {
     }
 
     public void withdraw() {
-        this.deleteYn = "Y";
+        delete();
     }
 }

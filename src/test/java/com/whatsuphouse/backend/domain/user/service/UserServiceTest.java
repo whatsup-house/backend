@@ -69,7 +69,7 @@ class UserServiceTest {
     @Test
     @DisplayName("현재 비밀번호가 맞으면 새 비밀번호로 변경된다")
     void changePassword_success() {
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(passwordEncoder.matches("currentPw1!", "encoded")).willReturn(true);
         given(passwordEncoder.encode("newPw1234!")).willReturn("newEncoded");
 
@@ -82,7 +82,7 @@ class UserServiceTest {
     @Test
     @DisplayName("현재 비밀번호가 틀리면 INVALID_PASSWORD 예외")
     void changePassword_wrongCurrent_throwsException() {
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(passwordEncoder.matches("wrong", "encoded")).willReturn(false);
 
         assertThatThrownBy(() -> userService.changePassword(userId, PasswordChangeRequest.builder()
@@ -98,7 +98,7 @@ class UserServiceTest {
     @Test
     @DisplayName("활성 유저 프로필 조회 성공")
     void getProfile_success() {
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
 
         ProfileResponse response = userService.getProfile(userId);
 
@@ -110,7 +110,7 @@ class UserServiceTest {
     @Test
     @DisplayName("존재하지 않는 유저 프로필 조회 시 예외 발생")
     void getProfile_userNotFound_throwsException() {
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.empty());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.getProfile(userId))
                 .isInstanceOf(CustomException.class)
@@ -123,7 +123,7 @@ class UserServiceTest {
     @DisplayName("닉네임 변경 포함 프로필 수정 성공")
     void updateProfile_success() {
         ProfileUpdateRequest request = buildUpdateRequest("newgildong");
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("newgildong")).willReturn(false);
 
         ProfileResponse response = userService.updateProfile(userId, request);
@@ -136,7 +136,7 @@ class UserServiceTest {
     @DisplayName("동일 닉네임 유지 시 중복 확인 없이 수정 성공")
     void updateProfile_sameNickname_success() {
         ProfileUpdateRequest request = buildUpdateRequest("gildong");
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
 
         ProfileResponse response = userService.updateProfile(userId, request);
 
@@ -147,7 +147,7 @@ class UserServiceTest {
     @DisplayName("이미 사용 중인 닉네임으로 수정 시 예외 발생")
     void updateProfile_duplicateNickname_throwsException() {
         ProfileUpdateRequest request = buildUpdateRequest("taken");
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("taken")).willReturn(true);
 
         assertThatThrownBy(() -> userService.updateProfile(userId, request))
@@ -199,14 +199,14 @@ class UserServiceTest {
         UserWithdrawRequest request = UserWithdrawRequest.builder()
                 .password("password123!")
                 .build();
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(passwordEncoder.matches("password123!", "encoded")).willReturn(true);
 
         UserWithdrawResponse response = userService.withdraw(userId, request);
 
         assertThat(response.isWithdrawn()).isTrue();
-        assertThat(response.getDeleted()).isEqualTo("Y");
-        assertThat(user.getDeleteYn()).isEqualTo("Y");
+        assertThat(user.isWithdrawn()).isTrue();
+        assertThat(user.getDeletedAt()).isNotNull();
         verify(redisTemplate).delete("refresh:" + userId);
     }
 
@@ -216,7 +216,7 @@ class UserServiceTest {
         UserWithdrawRequest request = UserWithdrawRequest.builder()
                 .password("wrongPassword!")
                 .build();
-        given(userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, "N")).willReturn(Optional.of(user));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(passwordEncoder.matches("wrongPassword!", "encoded")).willReturn(false);
 
         assertThatThrownBy(() -> userService.withdraw(userId, request))

@@ -47,7 +47,6 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 public class ReviewService {
 
-    private static final String ACTIVE_USER = "N";
 
     private final ApplicationRepository applicationRepository;
     private final GatheringRepository gatheringRepository;
@@ -111,7 +110,7 @@ public class ReviewService {
         Review review = reviewRepository.findByIdAndDeletedAtIsNull(reviewId)
                 .orElseThrow(() -> new CustomException(ErrorCode.REVIEW_NOT_FOUND));
 
-        User user = userRepository.findByIdAndDeletedAtIsNullAndDeleteYn(userId, ACTIVE_USER)
+        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
         return reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)
