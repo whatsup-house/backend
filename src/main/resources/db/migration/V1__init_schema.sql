@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS applications (
     intro          TEXT,
     referrer_name  VARCHAR(50),
     status         VARCHAR(20) NOT NULL,
+    payment_confirmed_at TIMESTAMP,
     created_at     TIMESTAMP   NOT NULL,
     updated_at     TIMESTAMP   NOT NULL,
     deleted_at     TIMESTAMP

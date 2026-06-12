@@ -1,8 +1,10 @@
 package com.whatsuphouse.backend.domain.application.admin.service;
 
+import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationPaymentRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
+import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationPaymentResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
@@ -393,6 +395,70 @@ class AdminApplicationServiceTest {
         assertThatThrownBy(() -> adminApplicationService.deleteApplication(applicationId))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CANNOT_DELETE);
+    }
+
+    // ── changePayment() ──────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("입금 확인 처리 시 입금 완료 상태가 된다 (KAN-242)")
+    void changePayment_confirm_success() {
+        // GIVEN — 유료 게더링
+        ReflectionTestUtils.setField(gathering, "price", 10000);
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(true).build();
+
+        // WHEN
+        ApplicationPaymentResponse response = adminApplicationService.changePayment(applicationId, request);
+
+        // THEN
+        assertThat(response.isPaid()).isTrue();
+        assertThat(response.isPaymentConfirmed()).isTrue();
+        assertThat(response.getPaymentConfirmedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("입금 확인 해제 시 입금 확인 중 상태로 돌아간다 (KAN-242)")
+    void changePayment_cancel_success() {
+        // GIVEN — 이미 입금 확인된 신청
+        ReflectionTestUtils.setField(gathering, "price", 10000);
+        application.confirmPayment();
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(false).build();
+
+        // WHEN
+        ApplicationPaymentResponse response = adminApplicationService.changePayment(applicationId, request);
+
+        // THEN
+        assertThat(response.isPaymentConfirmed()).isFalse();
+        assertThat(response.getPaymentConfirmedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("입금 확인은 신청 상태를 변경하지 않는다 (독립 토글)")
+    void changePayment_doesNotChangeApplicationStatus() {
+        // GIVEN
+        ReflectionTestUtils.setField(gathering, "price", 10000);
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(true).build();
+
+        // WHEN
+        adminApplicationService.changePayment(applicationId, request);
+
+        // THEN — 입금 확인이 확정을 자동 트리거하지 않음
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 신청 입금 확인 시 예외 발생")
+    void changePayment_notFound_throwsException() {
+        // GIVEN
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.empty());
+        ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(true).build();
+
+        // WHEN & THEN
+        assertThatThrownBy(() -> adminApplicationService.changePayment(applicationId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.APPLICATION_NOT_FOUND);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

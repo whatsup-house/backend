@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.client.dto.response;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -15,6 +16,8 @@ public class ApplicationListResponse {
     private UUID id;
     private String bookingNumber;
     private ApplicationStatus status;
+    // 입금 상태. 무료 게더링은 null(표시하지 않음). (KAN-242)
+    private PaymentStatus paymentStatus;
     private GatheringInfo gathering;
     private LocalDateTime createdAt;
 
@@ -32,6 +35,7 @@ public class ApplicationListResponse {
                 .id(application.getId())
                 .bookingNumber(application.getBookingNumber())
                 .status(application.getStatus())
+                .paymentStatus(application.getPaymentStatus())
                 .gathering(GatheringInfo.builder()
                         .id(application.getGathering().getId())
                         .title(application.getGathering().getTitle())

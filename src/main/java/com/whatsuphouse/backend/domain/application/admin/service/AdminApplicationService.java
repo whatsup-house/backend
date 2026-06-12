@@ -1,8 +1,10 @@
 package com.whatsuphouse.backend.domain.application.admin.service;
 
+import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationPaymentRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
+import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationPaymentResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
@@ -115,6 +117,20 @@ public class AdminApplicationService {
         }
 
         return ApplicationStatusResponse.of(application.getId(), application.getStatus(), null, null);
+    }
+
+    // 입금 확인/해제 토글. 신청 상태(status)와 독립적으로 동작하며 확정을 자동 트리거하지 않는다. (KAN-242)
+    @Transactional
+    public ApplicationPaymentResponse changePayment(UUID id, ApplicationPaymentRequest request) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+
+        if (Boolean.TRUE.equals(request.getConfirmed())) {
+            application.confirmPayment();
+        } else {
+            application.cancelPayment();
+        }
+        return ApplicationPaymentResponse.from(application);
     }
 
     /**
