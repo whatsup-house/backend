@@ -84,6 +84,7 @@ public enum ErrorCode {
 
     // Image
     INVALID_IMAGE_FORMAT("허용되지 않는 이미지 형식입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_UPLOAD_FOLDER("허용되지 않는 업로드 폴더입니다.", HttpStatus.BAD_REQUEST),
     IMAGE_UPLOAD_FAILED("이미지 업로드에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
     // Rate Limit
