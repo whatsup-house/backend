@@ -31,7 +31,8 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
 
     boolean existsByGatheringIdAndPhoneAndDeletedAtIsNull(UUID gatheringId, String phone);
 
-    int countByGatheringIdAndStatusNotAndDeletedAtIsNull(UUID gatheringId, ApplicationStatus status);
+    // 정원을 차지하는 인원: 관리자 승인(CONFIRMED) + 출석(ATTENDED). PENDING/CANCELLED 제외. (KAN-236)
+    int countByGatheringIdAndStatusInAndDeletedAtIsNull(UUID gatheringId, List<ApplicationStatus> statuses);
 
     @EntityGraph(attributePaths = {"gathering", "user"})
     Optional<Application> findByIdAndDeletedAtIsNull(UUID id);

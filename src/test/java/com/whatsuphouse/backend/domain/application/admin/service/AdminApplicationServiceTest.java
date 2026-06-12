@@ -221,6 +221,36 @@ class AdminApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("확정 시 이미 정원(CONFIRMED+ATTENDED)이 가득 차 있으면 GATHERING_FULL 예외 (KAN-236)")
+    void changeStatus_toConfirmed_capacityFull_throwsException() {
+        // GIVEN: 확정/출석 인원이 이미 정원(10)에 도달
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
+                gatheringId, ApplicationStatus.SEAT_OCCUPYING)).willReturn(10);
+        ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.CONFIRMED);
+
+        // WHEN & THEN
+        assertThatThrownBy(() -> adminApplicationService.changeStatus(applicationId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_FULL);
+    }
+
+    @Test
+    @DisplayName("PENDING을 CONFIRMED 없이 바로 ATTENDED로 처리할 때도 정원이 가득 차 있으면 GATHERING_FULL (KAN-236)")
+    void changeStatus_pendingToAttended_capacityFull_throwsException() {
+        // GIVEN: PENDING 신청을 바로 출석 처리하려 하지만 좌석이 이미 가득 참
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
+                gatheringId, ApplicationStatus.SEAT_OCCUPYING)).willReturn(10);
+        ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.ATTENDED);
+
+        // WHEN & THEN
+        assertThatThrownBy(() -> adminApplicationService.changeStatus(applicationId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_FULL);
+    }
+
+    @Test
     @DisplayName("CANCELLED로 상태 변경 시도 시 예외 발생")
     void changeStatus_toCancelled_throwsException() {
         // GIVEN

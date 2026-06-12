@@ -96,6 +96,7 @@ public class AdminApplicationService {
         ApplicationStatus newStatus = request.getStatus();
         switch (newStatus) {
             case CONFIRMED -> {
+                enforceCapacityForNewSeat(application);
                 application.confirm();
                 // 확정 알림 이메일 (FR-NTF-03)
                 eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
@@ -104,6 +105,9 @@ public class AdminApplicationService {
                 if (application.getStatus() == ApplicationStatus.ATTENDED) {
                     throw new CustomException(ErrorCode.ALREADY_ATTENDED);
                 }
+                // PENDING에서 CONFIRMED를 건너뛰고 바로 출석 처리하면 새로 좌석을 차지하므로 정원을 검사한다.
+                // 이미 CONFIRMED(좌석 보유)였다면 검사에서 통과된다.
+                enforceCapacityForNewSeat(application);
                 application.attend();
                 return rewardAttendanceMileage(application);
             }
@@ -111,6 +115,21 @@ public class AdminApplicationService {
         }
 
         return ApplicationStatusResponse.of(application.getId(), application.getStatus(), null, null);
+    }
+
+    /**
+     * 새로 좌석을 차지하는 상태 변경(PENDING→CONFIRMED, PENDING→ATTENDED) 시점에 정원을 검사한다.
+     * 정원은 CONFIRMED+ATTENDED만 차지하므로, 이미 좌석을 가진 신청의 재확정/출석 처리는 통과시킨다. (KAN-236)
+     */
+    private void enforceCapacityForNewSeat(Application application) {
+        if (ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus())) {
+            return;
+        }
+        int occupiedSeats = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
+                application.getGathering().getId(), ApplicationStatus.SEAT_OCCUPYING);
+        if (occupiedSeats >= application.getGathering().getMaxAttendees()) {
+            throw new CustomException(ErrorCode.GATHERING_FULL);
+        }
     }
 
     private ApplicationStatusResponse rewardAttendanceMileage(Application application) {

@@ -68,18 +68,23 @@ class ApplicationRepositoryTest {
     }
 
     @Test
-    @DisplayName("삭제되지 않은 신청 수를 CANCELLED 제외하고 카운트")
-    void countByGatheringIdAndStatusNotAndDeletedAtIsNull() {
-        saveApplication("WH001", gathering, user, null);
-        Application cancelled = saveApplication("WH002", gathering, null, "01011111111");
-        cancelled.cancel();
+    @DisplayName("정원 차지 인원(CONFIRMED+ATTENDED)만 카운트하고 PENDING/CANCELLED는 제외 (KAN-236)")
+    void countByGatheringIdAndStatusInAndDeletedAtIsNull() {
+        saveApplication("WH001", gathering, user, null); // PENDING — 제외
+        Application confirmed = saveApplication("WH002", gathering, null, "01011111111");
+        confirmed.confirm(); // CONFIRMED — 포함
+        Application attended = saveApplication("WH003", gathering, null, "01022222222");
+        attended.confirm();
+        attended.attend(); // ATTENDED — 포함
+        Application cancelled = saveApplication("WH004", gathering, null, "01033333333");
+        cancelled.cancel(); // CANCELLED — 제외
         em.flush();
         em.clear();
 
-        int count = applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(
-                gathering.getId(), ApplicationStatus.CANCELLED);
+        int count = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
+                gathering.getId(), ApplicationStatus.SEAT_OCCUPYING);
 
-        assertThat(count).isEqualTo(1);
+        assertThat(count).isEqualTo(2);
     }
 
     @Test
