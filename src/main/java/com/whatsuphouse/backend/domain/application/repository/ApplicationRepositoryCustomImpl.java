@@ -36,6 +36,8 @@ public class ApplicationRepositoryCustomImpl implements ApplicationRepositoryCus
                 .join(application.gathering).fetchJoin()
                 .leftJoin(application.user).fetchJoin()
                 .where(builder)
+                // 정렬을 고정해 상태/입금 토글 후 재조회 시 행 순서가 흔들리지 않게 한다. 최신 신청 우선. (KAN-242)
+                .orderBy(application.createdAt.desc())
                 .fetch();
     }
 }
