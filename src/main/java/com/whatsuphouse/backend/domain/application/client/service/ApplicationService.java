@@ -80,9 +80,10 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.GATHERING_NOT_RECRUITING);
         }
 
-        int currentCount = applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(
-                gathering.getId(), ApplicationStatus.CANCELLED);
-        if (currentCount >= gathering.getMaxAttendees()) {
+        // 정원은 관리자가 승인(CONFIRMED)·출석(ATTENDED) 처리한 인원만 차지한다. PENDING 신청은 정원과 무관. (KAN-236)
+        int occupiedSeats = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
+                gathering.getId(), ApplicationStatus.SEAT_OCCUPYING);
+        if (occupiedSeats >= gathering.getMaxAttendees()) {
             throw new CustomException(ErrorCode.GATHERING_FULL);
         }
 

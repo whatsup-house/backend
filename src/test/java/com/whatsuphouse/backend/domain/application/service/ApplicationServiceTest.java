@@ -114,7 +114,7 @@ class ApplicationServiceTest {
     @DisplayName("회원 정상 신청")
     void apply_member_success() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
@@ -136,7 +136,7 @@ class ApplicationServiceTest {
         setAnswers(request, List.of(answerItem(phoneQuestion.getId(), "01098765432")));
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
@@ -191,7 +191,7 @@ class ApplicationServiceTest {
     @DisplayName("정원이 초과된 게더링에 신청하면 예외 발생")
     void apply_gatheringFull_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any()))
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any()))
                 .willReturn(gathering.getMaxAttendees());
 
         assertThatThrownBy(() -> applicationService.apply(gatheringId, request, userId))
@@ -203,7 +203,7 @@ class ApplicationServiceTest {
     @DisplayName("회원이 이미 신청한 게더링에 재신청하면 예외 발생")
     void apply_memberAlreadyApplied_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
@@ -219,7 +219,7 @@ class ApplicationServiceTest {
     @DisplayName("비회원 신청 시 전화번호가 없으면 예외 발생")
     void apply_guestPhoneMissing_throwsException() {
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
@@ -236,7 +236,7 @@ class ApplicationServiceTest {
         setAnswers(request, List.of(answerItem(phoneQuestion.getId(), "01098765432")));
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(applicationRepository.countByGatheringIdAndStatusNotAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
