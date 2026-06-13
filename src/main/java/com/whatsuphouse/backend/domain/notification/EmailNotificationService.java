@@ -109,8 +109,27 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
-        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_CONFIRMED,
-                applicationVariables(application));
+        // 확정 메일은 입금 요청서 역할을 겸하므로 입금 금액(게더링 참가비)을 함께 채운다. (KAN-242)
+        Map<String, String> variables = applicationVariables(application);
+        variables.put("입금금액", formatPrice(application));
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_CONFIRMED, variables);
+        send(email, mail.subject(), mail.body());
+    }
+
+    /**
+     * 입금 완료 안내 이메일 (KAN-242).
+     * 관리자가 입금을 확인(체크)하면 ApplicationPaymentConfirmedEvent를 통해 호출됩니다.
+     */
+    @Override
+    @Async("emailTaskExecutor")
+    public void sendPaymentConfirmed(Application application) {
+        String email = resolveEmail(application);
+        if (email == null) return;
+
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.PAYMENT_CONFIRMED, Map.of(
+                "이름", application.getName(),
+                "모임명", application.getGathering().getTitle(),
+                "예약번호", application.getBookingNumber()));
         send(email, mail.subject(), mail.body());
     }
 
@@ -223,6 +242,14 @@ public class EmailNotificationService implements NotificationService {
         if (application.getGathering().getStartTime() == null) return "";
         return application.getGathering().getStartTime()
                 .format(DateTimeFormatter.ofPattern("HH:mm"));
+    }
+
+    /**
+     * 게더링 참가비를 천 단위 구분 문자열로 포맷합니다. 가격이 없으면 "0"을 반환합니다.
+     */
+    private String formatPrice(Application application) {
+        Integer price = application.getGathering().getPrice();
+        return String.format("%,d", price != null ? price : 0);
     }
 
     /**

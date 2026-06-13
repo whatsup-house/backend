@@ -65,6 +65,28 @@ class AdminMailTemplateServiceTest {
     }
 
     @Test
+    @DisplayName("확정 메일에는 입금금액 변수와 입금 안내가 포함된다 (KAN-242)")
+    void getTemplate_confirmed_hasPaymentInfo() {
+        given(mailTemplateRepository.findByTemplateKey("APPLICATION_CONFIRMED")).willReturn(Optional.empty());
+
+        MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("APPLICATION_CONFIRMED");
+
+        assertThat(result.getVariables()).contains("입금금액");
+        assertThat(result.getBody()).contains("{{입금금액}}");
+    }
+
+    @Test
+    @DisplayName("입금 완료 안내 템플릿(PAYMENT_CONFIRMED)을 조회할 수 있다 (KAN-242)")
+    void getTemplate_paymentConfirmed_exists() {
+        given(mailTemplateRepository.findByTemplateKey("PAYMENT_CONFIRMED")).willReturn(Optional.empty());
+
+        MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("PAYMENT_CONFIRMED");
+
+        assertThat(result.getTemplateKey()).isEqualTo("PAYMENT_CONFIRMED");
+        assertThat(result.getVariables()).contains("이름", "모임명", "예약번호");
+    }
+
+    @Test
     @DisplayName("존재하지 않는 템플릿 키 조회 시 예외 발생")
     void getTemplate_unknownKey_throwsException() {
         assertThatThrownBy(() -> adminMailTemplateService.getTemplate("UNKNOWN_KEY"))
