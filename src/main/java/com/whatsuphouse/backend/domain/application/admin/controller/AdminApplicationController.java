@@ -1,8 +1,10 @@
 package com.whatsuphouse.backend.domain.application.admin.controller;
 
+import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationPaymentRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
+import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationPaymentResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
@@ -58,5 +60,14 @@ public class AdminApplicationController {
             @Valid @RequestBody ApplicationStatusRequest request
     ) {
         return ResponseEntity.ok(ApiResult.success(adminApplicationService.changeStatus(id, request)));
+    }
+
+    @Operation(summary = "입금 확인 토글", description = "유료 게더링 신청의 입금 확인/해제. 신청 상태와 독립적으로 동작한다.")
+    @PatchMapping("/{id}/payment")
+    public ResponseEntity<ApiResult<ApplicationPaymentResponse>> changePayment(
+            @PathVariable UUID id,
+            @Valid @RequestBody ApplicationPaymentRequest request
+    ) {
+        return ResponseEntity.ok(ApiResult.success(adminApplicationService.changePayment(id, request)));
     }
 }

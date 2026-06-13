@@ -1,8 +1,10 @@
 package com.whatsuphouse.backend.domain.application.admin.service;
 
+import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationPaymentRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.request.ApplicationStatusRequest;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationDeleteResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.AdminApplicationResponse;
+import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationPaymentResponse;
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
@@ -14,6 +16,7 @@ import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -115,6 +118,25 @@ public class AdminApplicationService {
         }
 
         return ApplicationStatusResponse.of(application.getId(), application.getStatus(), null, null);
+    }
+
+    // 입금 확인/해제 토글. 신청 상태(status)와 독립적으로 동작하며 확정을 자동 트리거하지 않는다. (KAN-242)
+    @Transactional
+    public ApplicationPaymentResponse changePayment(UUID id, ApplicationPaymentRequest request) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+
+        boolean alreadyConfirmed = application.isPaymentConfirmed();
+        if (Boolean.TRUE.equals(request.getConfirmed())) {
+            application.confirmPayment();
+            // 입금 확인 중 → 완료로 처음 넘어가는 순간에만 입금 완료 안내 메일 발송 (재확인/해제는 제외)
+            if (!alreadyConfirmed) {
+                eventPublisher.publishEvent(new ApplicationPaymentConfirmedEvent(application));
+            }
+        } else {
+            application.cancelPayment();
+        }
+        return ApplicationPaymentResponse.from(application);
     }
 
     /**
