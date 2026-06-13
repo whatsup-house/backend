@@ -16,6 +16,8 @@ public interface NotificationService {
 
     void sendApplicationConfirmed(Application application);
 
+    void sendPaymentConfirmed(Application application);
+
     void sendApplicationCancelled(Application application);
 
     void sendApplicationAttended(Application application, int mileageEarned, int mileageBalance);

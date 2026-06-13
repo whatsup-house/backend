@@ -60,6 +60,15 @@ public class NotificationEventListener {
     }
 
     /**
+     * 입금 완료 이벤트 처리 (KAN-242).
+     * 관리자가 입금을 확인(체크)하면 신청자에게 입금 완료 안내를 발송합니다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onApplicationPaymentConfirmed(ApplicationPaymentConfirmedEvent event) {
+        notificationService.sendPaymentConfirmed(event.getApplication());
+    }
+
+    /**
      * 신청 취소(CANCELLED) 이벤트 처리 (FR-NTF-04).
      * 사용자 직접 취소와 관리자 삭제 모두 이 이벤트를 발행합니다.
      */
