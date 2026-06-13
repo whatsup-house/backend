@@ -40,7 +40,10 @@ import static org.mockito.Mockito.lenient;
 
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
 import org.springframework.context.ApplicationEventPublisher;
+
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class AdminApplicationServiceTest {
@@ -414,6 +417,24 @@ class AdminApplicationServiceTest {
         assertThat(response.isPaid()).isTrue();
         assertThat(response.isPaymentConfirmed()).isTrue();
         assertThat(response.getPaymentConfirmedAt()).isNotNull();
+        // 입금 확인 중 → 완료로 처음 넘어가면 입금 완료 안내 이벤트 발행
+        then(eventPublisher).should().publishEvent(any(ApplicationPaymentConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("이미 입금 확인된 신청을 재확인하면 이벤트를 발행하지 않는다 (중복 방지)")
+    void changePayment_reconfirm_doesNotPublishEvent() {
+        // GIVEN — 이미 입금 확인된 신청
+        ReflectionTestUtils.setField(gathering, "price", 10000);
+        application.confirmPayment();
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+        ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(true).build();
+
+        // WHEN
+        adminApplicationService.changePayment(applicationId, request);
+
+        // THEN
+        then(eventPublisher).should(never()).publishEvent(any(ApplicationPaymentConfirmedEvent.class));
     }
 
     @Test

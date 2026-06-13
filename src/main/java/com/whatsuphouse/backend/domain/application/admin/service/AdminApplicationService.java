@@ -16,6 +16,7 @@ import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -125,8 +126,13 @@ public class AdminApplicationService {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
 
+        boolean alreadyConfirmed = application.isPaymentConfirmed();
         if (Boolean.TRUE.equals(request.getConfirmed())) {
             application.confirmPayment();
+            // 입금 확인 중 → 완료로 처음 넘어가는 순간에만 입금 완료 안내 메일 발송 (재확인/해제는 제외)
+            if (!alreadyConfirmed) {
+                eventPublisher.publishEvent(new ApplicationPaymentConfirmedEvent(application));
+            }
         } else {
             application.cancelPayment();
         }
