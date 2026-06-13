@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.entity;
 
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
@@ -12,6 +13,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -54,6 +56,10 @@ public class Application extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ApplicationStatus status = ApplicationStatus.PENDING;
 
+    // 관리자가 입금을 확인한 시각. NULL=입금 확인 중, 값 있으면 입금 완료. 유료 게더링에서만 의미를 가진다. (KAN-242)
+    @Column(name = "payment_confirmed_at")
+    private LocalDateTime paymentConfirmedAt;
+
     @Builder
     public Application(String bookingNumber, Gathering gathering, User user, String name, String phone,
                        String email, Map<String, Object> formSnapshot) {
@@ -78,5 +84,32 @@ public class Application extends BaseEntity {
 
     public void attend() {
         this.status = ApplicationStatus.ATTENDED;
+    }
+
+    // 입금 확인 처리. 신청 상태(status)와 독립적으로 토글된다. (KAN-242)
+    public void confirmPayment() {
+        this.paymentConfirmedAt = LocalDateTime.now();
+    }
+
+    public void cancelPayment() {
+        this.paymentConfirmedAt = null;
+    }
+
+    // 유료 게더링 여부. 참가비가 양수일 때만 입금 개념을 적용한다.
+    public boolean isPaidGathering() {
+        Integer price = gathering.getPrice();
+        return price != null && price > 0;
+    }
+
+    public boolean isPaymentConfirmed() {
+        return paymentConfirmedAt != null;
+    }
+
+    // 신청자 노출용 입금 상태. 무료 게더링은 null(표시하지 않음)을 반환한다.
+    public PaymentStatus getPaymentStatus() {
+        if (!isPaidGathering()) {
+            return null;
+        }
+        return paymentConfirmedAt != null ? PaymentStatus.CONFIRMED : PaymentStatus.PENDING;
     }
 }
