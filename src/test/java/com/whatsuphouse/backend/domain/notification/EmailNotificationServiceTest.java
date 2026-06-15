@@ -8,9 +8,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import org.springframework.mail.MailSendException;
@@ -21,9 +23,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
@@ -50,6 +56,29 @@ class EmailNotificationServiceTest {
     }
 
     // ── sendWelcome() ─────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("환영 이메일 - 렌더된 제목/본문이 수신자·발신자와 함께 메시지에 담겨 발송된다 (KAN-244)")
+    void sendWelcome_rendersAndSendsContent() {
+        // given: 렌더러가 특정 제목/본문을 반환하도록 지정
+        given(mailTemplateRenderer.render(eq(MailTemplateType.WELCOME), any()))
+                .willReturn(new MailContent("가입을 환영합니다", "안녕하세요 testnick님"));
+        User user = buildUser("welcome@test.com");
+
+        // when
+        emailNotificationService.sendWelcome(user);
+
+        // then: 렌더러는 WELCOME 타입 + 닉네임 변수로 호출되고,
+        then(mailTemplateRenderer).should().render(MailTemplateType.WELCOME, Map.of("닉네임", "testnick"));
+        // 렌더 결과가 그대로 발송 메시지의 제목/본문/수신자/발신자에 반영된다.
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        then(mailSender).should().send(captor.capture());
+        SimpleMailMessage sent = captor.getValue();
+        assertThat(sent.getFrom()).isEqualTo("noreply@test.com");
+        assertThat(sent.getTo()).containsExactly("welcome@test.com");
+        assertThat(sent.getSubject()).isEqualTo("가입을 환영합니다");
+        assertThat(sent.getText()).isEqualTo("안녕하세요 testnick님");
+    }
 
     @Test
     @DisplayName("환영 이메일 - JavaMailSender.send()가 호출된다")
