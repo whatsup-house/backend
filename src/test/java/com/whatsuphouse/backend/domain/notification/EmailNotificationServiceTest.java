@@ -11,6 +11,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
+import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -24,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,12 +35,18 @@ class EmailNotificationServiceTest {
     @Mock
     private JavaMailSender mailSender;
 
+    @Mock
+    private MailTemplateRenderer mailTemplateRenderer;
+
     @InjectMocks
     private EmailNotificationService emailNotificationService;
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(emailNotificationService, "from", "noreply@test.com");
+        // 템플릿 렌더링은 별도 단위 테스트에서 검증한다. 여기서는 발송(send) 동작만 보므로 렌더 결과를 고정한다.
+        lenient().when(mailTemplateRenderer.render(any(), any()))
+                .thenReturn(new MailContent("제목", "본문"));
     }
 
     // ── sendWelcome() ─────────────────────────────────────────────────────────
