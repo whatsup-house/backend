@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,6 +34,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -103,6 +105,25 @@ class AuthServiceTest {
         assertThat(response.getMileageRewarded()).isEqualTo(1000);
         assertThat(response.getMileageBalance()).isEqualTo(1000);
         verify(mileageService).rewardSignup(any(User.class));
+    }
+
+    @Test
+    @DisplayName("회원가입 시 생년월일이 저장된다")
+    void register_persistsBirthDate() {
+        RegisterRequest request = RegisterRequest.builder()
+                .email("birth@example.com").password("password123!").name("홍길동")
+                .gender(Gender.MALE).age(25).nickname("birthnick")
+                .birthDate(LocalDate.of(1999, 3, 15)).build();
+        given(userRepository.existsByEmail("birth@example.com")).willReturn(false);
+        given(userRepository.existsByNickname("birthnick")).willReturn(false);
+        given(passwordEncoder.encode(any())).willReturn("encodedPassword");
+        given(userRepository.save(any())).willReturn(user);
+
+        authService.register(request);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getBirthDate()).isEqualTo(LocalDate.of(1999, 3, 15));
     }
 
     @Test

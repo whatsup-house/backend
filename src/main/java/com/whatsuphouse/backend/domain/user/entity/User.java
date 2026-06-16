@@ -10,6 +10,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.UUID;
 
 @Entity
@@ -37,6 +39,11 @@ public class User extends BaseEntity {
 
     @Column(nullable = false)
     private Integer age;
+
+    // 생년월일. 나이가 필요한 응답에서 만 나이를 계산하는 기준이다. (KAN-257)
+    // 기존 회원은 미보유(null)일 수 있어 nullable로 둔다.
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
 
     @Column(nullable = false, unique = true, length = 50)
     private String nickname;
@@ -69,14 +76,26 @@ public class User extends BaseEntity {
     private UserAccountStatus accountStatus = UserAccountStatus.ACTIVE;
 
     @Builder
-    public User(String email, String password, String name, Gender gender, Integer age, String nickname, String phone) {
+    public User(String email, String password, String name, Gender gender, Integer age, LocalDate birthDate, String nickname, String phone) {
         this.email = email;
         this.password = password;
         this.name = name;
         this.gender = gender;
         this.age = age;
+        this.birthDate = birthDate;
         this.nickname = nickname;
         this.phone = phone;
+    }
+
+    /**
+     * 나이가 필요한 응답에서 사용할 만 나이를 반환한다. (KAN-257)
+     * 생년월일이 있으면 오늘 기준으로 계산하고, 없으면(레거시 회원) 저장된 age로 폴백한다.
+     */
+    public Integer getCurrentAge() {
+        if (birthDate != null) {
+            return Period.between(birthDate, LocalDate.now()).getYears();
+        }
+        return age;
     }
 
     // 탈퇴 여부는 소프트delete 단일 기준(deletedAt)으로 판단한다. (KAN-235)

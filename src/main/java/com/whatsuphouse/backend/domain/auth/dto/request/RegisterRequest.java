@@ -8,6 +8,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 @Getter
 @Builder
 @NoArgsConstructor
@@ -47,4 +49,10 @@ public class RegisterRequest {
     @NotNull(message = "나이를 입력해주세요.")
     @Min(value = 1, message = "나이는 1 이상이어야 합니다.")
     private Integer age;
+
+    // 생년월일. 저장 후 나이가 필요한 응답에서 만 나이 계산 기준으로 사용한다. (KAN-257)
+    // 기존 클라이언트 호환을 위해 선택값으로 두며, 미전송 시 age로만 처리한다.
+    @Schema(example = "1999-03-15", description = "생년월일 (YYYY-MM-DD)")
+    @Past(message = "생년월일은 과거 날짜여야 합니다.")
+    private LocalDate birthDate;
 }

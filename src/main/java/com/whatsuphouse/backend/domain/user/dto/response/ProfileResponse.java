@@ -31,7 +31,7 @@ public class ProfileResponse {
                 .id(user.getId())
                 .email(user.getEmail())
                 .name(user.getName())
-                .age(user.getAge())
+                .age(user.getCurrentAge())
                 .nickname(user.getNickname())
                 .phone(user.getPhone())
                 .instagramId(user.getInstagramId())

@@ -65,6 +65,7 @@ public class AuthService {
                 .name(request.getName())
                 .gender(request.getGender())
                 .age(request.getAge())
+                .birthDate(request.getBirthDate())
                 .nickname(request.getNickname())
                 .phone(request.getPhone())
                 .build();
