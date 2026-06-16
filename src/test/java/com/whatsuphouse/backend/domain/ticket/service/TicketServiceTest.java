@@ -1,0 +1,138 @@
+package com.whatsuphouse.backend.domain.ticket.service;
+
+import com.whatsuphouse.backend.domain.ticket.dto.response.MyTicketsResponse;
+import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
+import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.user.repository.UserRepository;
+import com.whatsuphouse.backend.global.common.enums.Gender;
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+
+@ExtendWith(MockitoExtension.class)
+class TicketServiceTest {
+
+    @Mock private TicketPassRepository ticketPassRepository;
+    @Mock private UserRepository userRepository;
+
+    @InjectMocks private TicketService ticketService;
+
+    private UUID userId;
+    private User user;
+
+    @BeforeEach
+    void setUp() {
+        userId = UUID.randomUUID();
+        user = User.builder()
+                .email("t@example.com").password("p").name("홍길동")
+                .gender(Gender.MALE).age(25).nickname("nick").phone("01012345678")
+                .build();
+        ReflectionTestUtils.setField(user, "id", userId);
+    }
+
+    private TicketPass activePass(int remaining) {
+        TicketPass pass = TicketPass.builder().user(user).product(TicketProduct.RANDOM_TABLE_FOUR).build();
+        pass.activate();
+        int toDeduct = pass.getTotalCount() - remaining;
+        for (int i = 0; i < toDeduct; i++) {
+            pass.deductOne();
+        }
+        return pass;
+    }
+
+    @Test
+    @DisplayName("구매하면 PENDING 이용권이 저장된다")
+    void purchase_createsPendingPass() {
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+
+        TicketPassResponse response = ticketService.purchase(userId, TicketProduct.RANDOM_TABLE_FOUR);
+
+        then(ticketPassRepository).should().save(any(TicketPass.class));
+        assertThat(response.getStatus()).isEqualTo(TicketPassStatus.PENDING);
+        assertThat(response.getRemainingCount()).isZero();
+        assertThat(response.getTotalCount()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 회원이 구매하면 예외")
+    void purchase_userNotFound_throws() {
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.purchase(userId, TicketProduct.RANDOM_TABLE_FOUR))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("내 이용권 조회 시 ACTIVE 잔여만 합산한다")
+    void getMyTickets_sumsActiveRemaining() {
+        TicketPass active = activePass(3);
+        TicketPass usedUp = activePass(0);   // USED_UP
+        given(ticketPassRepository.findByUser_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId))
+                .willReturn(List.of(active, usedUp));
+
+        MyTicketsResponse response = ticketService.getMyTickets(userId);
+
+        assertThat(response.getTotalRemaining()).isEqualTo(3);
+        assertThat(response.getPasses()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 신청 시 사용 가능한 이용권을 1회 차감한다")
+    void useOneTicket_deducts() {
+        TicketPass active = activePass(2);
+        given(ticketPassRepository.findUsableForUpdate(eq(userId), eq(TicketPassStatus.ACTIVE), any(Pageable.class)))
+                .willReturn(List.of(active));
+
+        ticketService.useOneTicket(user);
+
+        assertThat(active.getRemainingCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("사용 가능한 이용권이 없으면 신청 차단 예외")
+    void useOneTicket_whenNone_throws() {
+        given(ticketPassRepository.findUsableForUpdate(eq(userId), eq(TicketPassStatus.ACTIVE), any(Pageable.class)))
+                .willReturn(List.of());
+
+        assertThatThrownBy(() -> ticketService.useOneTicket(user))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NO_AVAILABLE_TICKET);
+    }
+
+    @Test
+    @DisplayName("취소 시 USED_UP 이용권을 환불해 ACTIVE로 복구한다")
+    void refundOneTicket_restoresUsedUp() {
+        TicketPass usedUp = activePass(0);   // USED_UP, remaining 0
+        given(ticketPassRepository.findByUser_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId))
+                .willReturn(List.of(usedUp));
+
+        ticketService.refundOneTicket(user);
+
+        assertThat(usedUp.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
+        assertThat(usedUp.getRemainingCount()).isEqualTo(1);
+    }
+}

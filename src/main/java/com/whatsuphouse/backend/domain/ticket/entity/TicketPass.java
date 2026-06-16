@@ -1,0 +1,93 @@
+package com.whatsuphouse.backend.domain.ticket.entity;
+
+import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
+import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.global.common.BaseEntity;
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "ticket_passes")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class TicketPass extends BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 40)
+    private TicketProduct product;
+
+    @Column(name = "total_count", nullable = false)
+    private int totalCount;
+
+    @Column(name = "remaining_count", nullable = false)
+    private int remainingCount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TicketPassStatus status;
+
+    @Column(name = "activated_at")
+    private LocalDateTime activatedAt;
+
+    @Builder
+    public TicketPass(User user, TicketProduct product) {
+        this.user = user;
+        this.product = product;
+        this.totalCount = product.getSessionCount();
+        this.remainingCount = 0;            // 입금 확인 전까지 사용 불가
+        this.status = TicketPassStatus.PENDING;
+    }
+
+    /** 관리자 입금 확인 시 활성화하고 잔여를 충전한다. PENDING이 아니면 예외. */
+    public void activate() {
+        if (this.status != TicketPassStatus.PENDING) {
+            throw new CustomException(ErrorCode.TICKET_ALREADY_PROCESSED);
+        }
+        this.status = TicketPassStatus.ACTIVE;
+        this.remainingCount = this.totalCount;
+        this.activatedAt = LocalDateTime.now();
+    }
+
+    /** 우연한 식탁 신청 시 1회 차감한다. 사용 가능 상태가 아니면 예외. */
+    public void deductOne() {
+        if (this.status != TicketPassStatus.ACTIVE || this.remainingCount <= 0) {
+            throw new CustomException(ErrorCode.NO_AVAILABLE_TICKET);
+        }
+        this.remainingCount -= 1;
+        if (this.remainingCount == 0) {
+            this.status = TicketPassStatus.USED_UP;
+        }
+    }
+
+    /** 신청 취소 시 1회 환불한다. 이미 가득 차 있으면 무시. */
+    public void refundOne() {
+        if (this.remainingCount >= this.totalCount) {
+            return;
+        }
+        this.remainingCount += 1;
+        if (this.status == TicketPassStatus.USED_UP) {
+            this.status = TicketPassStatus.ACTIVE;
+        }
+    }
+
+    public boolean isUsable() {
+        return this.status == TicketPassStatus.ACTIVE && this.remainingCount > 0;
+    }
+}
