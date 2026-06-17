@@ -4,6 +4,9 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
+import com.whatsuphouse.backend.domain.notification.enums.NotificationLink;
+import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
+import com.whatsuphouse.backend.domain.notification.service.UserNotificationService;
 import com.whatsuphouse.backend.domain.review.client.dto.request.ReviewCreateRequest;
 import com.whatsuphouse.backend.domain.review.client.dto.request.ReviewUpdateRequest;
 import com.whatsuphouse.backend.domain.review.client.dto.response.HomeReviewResponse;
@@ -38,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -56,6 +60,10 @@ public class ReviewService {
     private final ReviewLikeRepository reviewLikeRepository;
     private final StorageService storageService;
     private final MileageService mileageService;
+    private final UserNotificationService userNotificationService;
+
+    // 후기 좋아요 마일스톤 — 이 값에 도달하면 작성자에게 알림. (KAN-263)
+    private static final Set<Integer> LIKE_MILESTONES = Set.of(10, 50, 100, 500, 1000);
 
     @Transactional
     public ReviewResponse createReview(ReviewCreateRequest request, UUID userId) {
@@ -201,6 +209,18 @@ public class ReviewService {
                 .user(user)
                 .build());
         review.increaseLikeCount();
+
+        // 좋아요 수가 마일스톤에 도달하면 후기 작성자에게 알림을 발행한다. (KAN-263)
+        int likeCount = review.getLikeCount();
+        if (LIKE_MILESTONES.contains(likeCount)) {
+            userNotificationService.create(
+                    review.getUser(),
+                    NotificationType.REVIEW_LIKE_MILESTONE,
+                    "후기 좋아요 " + likeCount + "개 달성!",
+                    "작성하신 후기가 좋아요 " + likeCount + "개를 받았어요.",
+                    NotificationLink.REVIEWS);
+        }
+
         return ReviewLikeResponse.of(review.getId(), true, review.getLikeCount());
     }
 

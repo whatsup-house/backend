@@ -6,6 +6,9 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationReposit
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
+import com.whatsuphouse.backend.domain.notification.enums.NotificationLink;
+import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
+import com.whatsuphouse.backend.domain.notification.service.UserNotificationService;
 import com.whatsuphouse.backend.domain.review.client.dto.request.ReviewCreateRequest;
 import com.whatsuphouse.backend.domain.review.client.dto.request.ReviewUpdateRequest;
 import com.whatsuphouse.backend.domain.review.client.dto.response.HomeReviewResponse;
@@ -80,6 +83,9 @@ class ReviewServiceTest {
 
     @Mock
     private MileageService mileageService;
+
+    @Mock
+    private UserNotificationService userNotificationService;
 
     @InjectMocks
     private ReviewService reviewService;
@@ -410,6 +416,27 @@ class ReviewServiceTest {
         assertThat(response.isLiked()).isTrue();
         assertThat(response.getLikeCount()).isEqualTo(1);
         verify(reviewLikeRepository).save(any(ReviewLike.class));
+        verify(userNotificationService, never()).create(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("좋아요가 마일스톤(10개)에 도달하면 작성자에게 알림이 발행된다 (KAN-263)")
+    void toggleLike_milestone_notifiesAuthor() {
+        UUID reviewId = UUID.randomUUID();
+        Review review = buildReview(reviewId, "마일스톤 리뷰입니다.");
+        for (int i = 0; i < 9; i++) {
+            review.increaseLikeCount();   // 현재 9개
+        }
+
+        given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)).willReturn(Optional.empty());
+        given(reviewLikeRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        reviewService.toggleLike(reviewId, userId);   // 10개 도달
+
+        verify(userNotificationService).create(
+                any(), eq(NotificationType.REVIEW_LIKE_MILESTONE), any(), any(), eq(NotificationLink.REVIEWS));
     }
 
     @Test
