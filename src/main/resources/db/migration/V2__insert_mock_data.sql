@@ -20,6 +20,11 @@ VALUES
     ('b1000000-0000-0000-0000-000000000011', 'user10@test.com',       '$2a$10$kPkrhFO659b9o0ss/2ADPeC4yteXKw.rm6MQ7ZpTeySHqZG7mxxEG', '송재원',   'MALE',   30, '재원송',  '01010101010', 'jaewon_s',  'ENTJ', '스타트업 창업자', '연결과 확장이 삶의 테마예요',    FALSE, 0, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
+-- 생년월일(birth_date) 반영 (KAN-257): 목업 회원은 age와 일치하도록 정확히 age년 전 날짜로 설정한다.
+UPDATE users
+SET birth_date = (CURRENT_DATE - make_interval(years => age))::date
+WHERE birth_date IS NULL;
+
 
 -- 2. 장소 (4곳)
 INSERT INTO locations (id, name, address, naver_map_url, kakao_map_url, status, max_capacity, memo, created_at, updated_at)
