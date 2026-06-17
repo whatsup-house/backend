@@ -50,7 +50,7 @@ public class AdminApplicationResponse {
                 .name(application.getName())
                 .phone(application.getPhone())
                 .gender(firstString(answers, "gender", user != null && user.getGender() != null ? user.getGender().name() : null))
-                .age(firstInteger(answers, "age", user != null ? user.getAge() : null))
+                .age(firstInteger(answers, "age", user != null ? user.getCurrentAge() : null))
                 .job(firstString(answers, "job", firstString(answers, "job_category", user != null ? user.getJob() : null)))
                 .mbti(firstString(answers, "mbti", user != null && user.getMbti() != null ? user.getMbti().name() : null))
                 .intro(firstString(answers, "intro", user != null ? user.getIntro() : null))

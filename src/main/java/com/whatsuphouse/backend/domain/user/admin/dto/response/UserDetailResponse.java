@@ -71,7 +71,7 @@ public class UserDetailResponse {
                 .nickname(user.getNickname())
                 .phone(user.getPhone())
                 .gender(user.getGender())
-                .age(user.getAge())
+                .age(user.getCurrentAge())
                 .job(user.getJob())
                 .mbti(user.getMbti())
                 .intro(user.getIntro())

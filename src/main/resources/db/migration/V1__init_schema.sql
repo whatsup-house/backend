@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
     name            VARCHAR(50)  NOT NULL,
     gender          VARCHAR(10)  NOT NULL,
     age             INTEGER      NOT NULL,
+    birth_date      DATE,
     nickname        VARCHAR(50)  NOT NULL UNIQUE,
     phone           VARCHAR(11),
     instagram_id    VARCHAR(100),
