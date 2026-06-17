@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.gathering.common.dto.response;
 
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,6 +26,7 @@ public class GatheringDetailResponse {
     private Integer price;
     private int maxAttendees;
     private GatheringStatus status;
+    private GatheringType gatheringType;   // REGULAR / RANDOM_TABLE(우연한 식탁)
     private String thumbnailUrl;
     private LocationDetail location;
 
@@ -52,6 +54,7 @@ public class GatheringDetailResponse {
                 .price(gathering.getPrice())
                 .maxAttendees(gathering.getMaxAttendees())
                 .status(gathering.getEffectiveStatus())
+                .gatheringType(gathering.getGatheringType())
                 .thumbnailUrl(gathering.getThumbnailUrl())
                 .location(locationDetail)
                 .build();

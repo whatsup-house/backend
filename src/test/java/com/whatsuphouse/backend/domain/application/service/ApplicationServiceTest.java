@@ -17,7 +17,9 @@ import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -70,6 +72,9 @@ class ApplicationServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private TicketService ticketService;
 
     @InjectMocks
     private ApplicationService applicationService;
@@ -127,6 +132,30 @@ class ApplicationServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PENDING);
         then(eventPublisher).should().publishEvent(any(ApplicationPendingEvent.class));
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 회원 신청 시 이용권을 차감한다 (KAN-261)")
+    void apply_randomTable_member_deductsTicket() {
+        Gathering randomTable = Gathering.builder()
+                .title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(4)
+                .build();
+        ReflectionTestUtils.setField(randomTable, "gatheringType", GatheringType.RANDOM_TABLE);
+
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
+                .willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        applicationService.apply(gatheringId, request, userId);
+
+        then(ticketService).should().useOneTicket(user);
     }
 
     @Test

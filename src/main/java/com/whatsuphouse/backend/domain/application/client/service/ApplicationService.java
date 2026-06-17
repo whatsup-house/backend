@@ -18,9 +18,11 @@ import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -54,6 +56,7 @@ public class ApplicationService {
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final FormProvisionService formProvisionService;
+    private final TicketService ticketService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -124,6 +127,11 @@ public class ApplicationService {
             if (guestEmail != null && !guestEmail.isBlank() && !EMAIL_PATTERN.matcher(guestEmail).matches()) {
                 throw new CustomException(ErrorCode.INVALID_EMAIL_FORMAT);
             }
+        }
+
+        // 우연한 식탁(RANDOM_TABLE) 회원 신청은 이용권을 1회 차감한다. 잔여가 없으면 차단. (KAN-261)
+        if (user != null && gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
+            ticketService.useOneTicket(user);
         }
 
         String name = user != null ? user.getName() : extractString(byKey, "name");
@@ -264,6 +272,13 @@ public class ApplicationService {
         }
 
         application.cancel();
+
+        // 우연한 식탁 회원 신청 취소 시 차감했던 이용권을 환불한다. (KAN-261)
+        if (application.getUser() != null
+                && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE) {
+            ticketService.refundOneTicket(application.getUser());
+        }
+
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }
 
