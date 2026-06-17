@@ -16,3 +16,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read);
+
+-- 후기 좋아요 마일스톤 알림 중복 발행 방지용 컬럼 (KAN-263)
+-- 마지막으로 발행한 마일스톤 값을 저장해, unlike→relike로 같은 마일스톤을 재교차해도 재발행하지 않는다.
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS notified_like_milestone INTEGER NOT NULL DEFAULT 0;

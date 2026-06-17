@@ -440,6 +440,26 @@ class ReviewServiceTest {
     }
 
     @Test
+    @DisplayName("이미 발행한 마일스톤을 재교차(unlike→relike)하면 중복 발행하지 않는다 (KAN-263)")
+    void toggleLike_milestoneRecross_doesNotNotify() {
+        UUID reviewId = UUID.randomUUID();
+        Review review = buildReview(reviewId, "재교차 리뷰입니다.");
+        for (int i = 0; i < 9; i++) {
+            review.increaseLikeCount();   // 10에서 unlike되어 현재 9개라고 가정
+        }
+        ReflectionTestUtils.setField(review, "notifiedLikeMilestone", 10);   // 이미 10개 알림 발행함
+
+        given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(reviewLikeRepository.findByReviewIdAndUserId(reviewId, userId)).willReturn(Optional.empty());
+        given(reviewLikeRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        reviewService.toggleLike(reviewId, userId);   // 다시 10개 도달
+
+        verify(userNotificationService, never()).create(any(), any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("이미 추천한 리뷰를 다시 요청하면 추천이 취소되고 추천 수가 감소한다")
     void toggleLike_unlike_success() {
         UUID reviewId = UUID.randomUUID();

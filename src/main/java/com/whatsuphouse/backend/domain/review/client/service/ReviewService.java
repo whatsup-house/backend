@@ -210,9 +210,11 @@ public class ReviewService {
                 .build());
         review.increaseLikeCount();
 
-        // 좋아요 수가 마일스톤에 도달하면 후기 작성자에게 알림을 발행한다. (KAN-263)
+        // 좋아요 수가 새 마일스톤에 도달하면 후기 작성자에게 알림을 발행한다. (KAN-263)
+        // 이미 발행한 마일스톤보다 클 때만 발행해, unlike→relike로 같은 값을 재교차해도 중복 발행하지 않는다.
         int likeCount = review.getLikeCount();
-        if (LIKE_MILESTONES.contains(likeCount)) {
+        if (LIKE_MILESTONES.contains(likeCount) && likeCount > review.getNotifiedLikeMilestone()) {
+            review.markLikeMilestoneNotified(likeCount);
             userNotificationService.create(
                     review.getUser(),
                     NotificationType.REVIEW_LIKE_MILESTONE,
