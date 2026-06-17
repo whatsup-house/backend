@@ -87,16 +87,16 @@ public enum ErrorCode {
     INVALID_UPLOAD_FOLDER("허용되지 않는 업로드 폴더입니다.", HttpStatus.BAD_REQUEST),
     IMAGE_UPLOAD_FAILED("이미지 업로드에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
+    // Ticket Pass
+    TICKET_PASS_NOT_FOUND("존재하지 않는 이용권입니다.", HttpStatus.NOT_FOUND),
+    TICKET_ALREADY_PROCESSED("이미 처리된 이용권입니다.", HttpStatus.BAD_REQUEST),
+    NO_AVAILABLE_TICKET("사용 가능한 이용권이 없습니다. 이용권을 먼저 구매해주세요.", HttpStatus.BAD_REQUEST),
+
     // Rate Limit
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
 
     // Mail Template
-    MAIL_TEMPLATE_NOT_FOUND("존재하지 않는 메일 템플릿입니다.", HttpStatus.NOT_FOUND),
-
-    // Ticket Pass
-    TICKET_PASS_NOT_FOUND("존재하지 않는 이용권입니다.", HttpStatus.NOT_FOUND),
-    TICKET_ALREADY_PROCESSED("이미 처리된 이용권입니다.", HttpStatus.BAD_REQUEST),
-    NO_AVAILABLE_TICKET("사용 가능한 이용권이 없습니다. 이용권을 먼저 구매해주세요.", HttpStatus.BAD_REQUEST);
+    MAIL_TEMPLATE_NOT_FOUND("존재하지 않는 메일 템플릿입니다.", HttpStatus.NOT_FOUND);
 
     private final String message;
     private final HttpStatus status;
