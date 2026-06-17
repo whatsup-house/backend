@@ -61,6 +61,10 @@ public class Review extends BaseEntity {
     @Column(name = "home_display_order", nullable = false)
     private Integer homeDisplayOrder = 0;
 
+    // 마지막으로 좋아요 마일스톤 알림을 발행한 값. 같은 마일스톤 재교차 시 중복 발행을 막는다. (KAN-263)
+    @Column(name = "notified_like_milestone", nullable = false)
+    private Integer notifiedLikeMilestone = 0;
+
     @Builder
     public Review(User user, Application application, Gathering gathering, ReviewType reviewType,
                   String reviewContent) {
@@ -79,6 +83,10 @@ public class Review extends BaseEntity {
         if (this.likeCount > 0) {
             this.likeCount--;
         }
+    }
+
+    public void markLikeMilestoneNotified(int milestone) {
+        this.notifiedLikeMilestone = milestone;
     }
 
     public void updateHomeFeatured(boolean isHomeFeatured, Integer homeDisplayOrder) {

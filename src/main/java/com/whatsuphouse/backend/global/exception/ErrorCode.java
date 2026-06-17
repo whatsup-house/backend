@@ -96,7 +96,10 @@ public enum ErrorCode {
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
 
     // Mail Template
-    MAIL_TEMPLATE_NOT_FOUND("존재하지 않는 메일 템플릿입니다.", HttpStatus.NOT_FOUND);
+    MAIL_TEMPLATE_NOT_FOUND("존재하지 않는 메일 템플릿입니다.", HttpStatus.NOT_FOUND),
+
+    // Notification
+    NOTIFICATION_NOT_FOUND("존재하지 않는 알림입니다.", HttpStatus.NOT_FOUND);
 
     private final String message;
     private final HttpStatus status;
