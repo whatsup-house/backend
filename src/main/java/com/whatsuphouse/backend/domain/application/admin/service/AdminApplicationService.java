@@ -11,12 +11,15 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -38,6 +41,7 @@ public class AdminApplicationService {
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final MileageService mileageService;
+    private final TicketService ticketService;
     private final ApplicationEventPublisher eventPublisher;
 
     public List<AdminApplicationResponse> getAllApplications(UUID gatheringId, ApplicationStatus status) {
@@ -86,6 +90,15 @@ public class AdminApplicationService {
         }
 
         application.cancel();
+
+        // 우연한 식탁 회원 신청을 관리자가 취소하면 차감했던 이용권을 환불한다. (KAN-261)
+        // 게더링이 이미 취소된 경우엔 게더링 취소 시점에 일괄 환불되므로 중복 환불하지 않는다.
+        if (application.getUser() != null
+                && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
+                && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
+            ticketService.refundOneTicket(application.getUser());
+        }
+
         // 관리자 직접 삭제도 취소 알림 대상 (FR-NTF-04)
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
         return ApplicationDeleteResponse.from(application);

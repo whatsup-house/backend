@@ -10,6 +10,8 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.enums.MileageType;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
@@ -56,6 +58,9 @@ class AdminApplicationServiceTest {
 
     @Mock
     private MileageService mileageService;
+
+    @Mock
+    private com.whatsuphouse.backend.domain.ticket.service.TicketService ticketService;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -398,6 +403,71 @@ class AdminApplicationServiceTest {
         assertThatThrownBy(() -> adminApplicationService.deleteApplication(applicationId))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CANNOT_DELETE);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 회원 신청을 관리자가 삭제하면 이용권을 환불한다 (KAN-261)")
+    void deleteApplication_randomTableMember_refundsTicket() {
+        // GIVEN
+        User member = buildMember();
+        Application randomTableApp = buildRandomTableApplication(member, GatheringStatus.OPEN);
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
+
+        // WHEN
+        adminApplicationService.deleteApplication(applicationId);
+
+        // THEN
+        then(ticketService).should().refundOneTicket(member);
+    }
+
+    @Test
+    @DisplayName("게더링이 이미 취소된 경우엔 개별 삭제 시 이용권을 중복 환불하지 않는다 (KAN-261)")
+    void deleteApplication_cancelledGathering_skipsRefund() {
+        // GIVEN
+        User member = buildMember();
+        Application randomTableApp = buildRandomTableApplication(member, GatheringStatus.CANCELLED);
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
+
+        // WHEN
+        adminApplicationService.deleteApplication(applicationId);
+
+        // THEN
+        then(ticketService).should(never()).refundOneTicket(any());
+    }
+
+    private User buildMember() {
+        User member = User.builder()
+                .email("member@example.com")
+                .password("encoded")
+                .name("김회원")
+                .gender(Gender.FEMALE)
+                .age(28)
+                .nickname("member1")
+                .phone("01099998888")
+                .build();
+        ReflectionTestUtils.setField(member, "id", UUID.randomUUID());
+        return member;
+    }
+
+    private Application buildRandomTableApplication(User member, GatheringStatus status) {
+        Gathering randomTable = Gathering.builder()
+                .title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(8)
+                .gatheringType(GatheringType.RANDOM_TABLE)
+                .build();
+        ReflectionTestUtils.setField(randomTable, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(randomTable, "status", status);
+
+        Application app = Application.builder()
+                .bookingNumber("WH260618-RT0001")
+                .gathering(randomTable)
+                .user(member)
+                .name(member.getName())
+                .phone(member.getPhone())
+                .build();
+        ReflectionTestUtils.setField(app, "id", applicationId);
+        return app;
     }
 
     // ── changePayment() ──────────────────────────────────────────────────────

@@ -14,10 +14,12 @@ import com.whatsuphouse.backend.domain.gathering.admin.dto.response.AdminGatheri
 import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringDetailResponse;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
@@ -46,6 +48,7 @@ public class AdminGatheringService {
     private final ApplicationRepository applicationRepository;
     private final StorageService storageService;
     private final FormProvisionService formProvisionService;
+    private final TicketService ticketService;
     private final ApplicationEventPublisher eventPublisher;
 
     public List<AdminGatheringResponse> listGatherings(
@@ -166,6 +169,15 @@ public class AdminGatheringService {
         if (request.getStatus() == GatheringStatus.CANCELLED) {
             List<Application> targets = applicationRepository.findByGatheringIdAndStatusInWithUser(
                     id, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED));
+
+            // 우연한 식탁 게더링이 취소되면 신청한 회원들에게 차감했던 이용권을 환불한다. (KAN-261)
+            // 신청 상태는 그대로 두되, 이후 개별 취소 시 게더링이 CANCELLED면 중복 환불하지 않는다.
+            if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
+                targets.stream()
+                        .filter(target -> target.getUser() != null)
+                        .forEach(target -> ticketService.refundOneTicket(target.getUser()));
+            }
+
             if (!targets.isEmpty()) {
                 eventPublisher.publishEvent(new GatheringCancelledEvent(gathering, targets));
             }
