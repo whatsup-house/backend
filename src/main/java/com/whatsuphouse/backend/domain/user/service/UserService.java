@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.user.dto.request.UserWithdrawRequest;
 import com.whatsuphouse.backend.domain.user.dto.response.ProfileResponse;
 import com.whatsuphouse.backend.domain.user.dto.response.UserWithdrawResponse;
 import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.user.enums.Job;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -27,11 +28,12 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redisTemplate;
+    private final CharacterAssetResolver characterAssetResolver;
 
     @Transactional(readOnly = true)
     public ProfileResponse getProfile(UUID userId) {
         User user = findActiveUser(userId);
-        return ProfileResponse.from(user);
+        return ProfileResponse.from(user, characterAssetResolver.resolve(user.getJob()));
     }
 
     public ProfileResponse updateProfile(UUID userId, ProfileUpdateRequest request) {
@@ -42,10 +44,13 @@ public class UserService {
                 && userRepository.existsByNickname(request.getNickname())) {
             throw new CustomException(ErrorCode.DUPLICATE_NICKNAME);
         }
+        if (!Job.isAcceptable(request.getJob())) {
+            throw new CustomException(ErrorCode.INVALID_JOB);
+        }
 
         user.updateProfile(request.getNickname(), request.getPhone(), request.getName(), request.getGender(), request.getAge(),
                 request.getInstagramId(), request.getMbti(), request.getJob(), request.getIntro());
-        return ProfileResponse.from(user);
+        return ProfileResponse.from(user, characterAssetResolver.resolve(user.getJob()));
     }
 
     // 현재 비밀번호 검증 후 새 비밀번호로 변경한다. (KAN-223)

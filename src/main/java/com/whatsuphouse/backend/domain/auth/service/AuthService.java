@@ -15,6 +15,7 @@ import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.NotificationService;
 import com.whatsuphouse.backend.domain.notification.event.WelcomeEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.user.enums.Job;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
@@ -58,6 +59,9 @@ public class AuthService {
         if (userRepository.existsByNickname(request.getNickname())) {
             throw new CustomException(ErrorCode.DUPLICATE_NICKNAME);
         }
+        if (!Job.isAcceptable(request.getJob())) {
+            throw new CustomException(ErrorCode.INVALID_JOB);
+        }
 
         User user = User.builder()
                 .email(request.getEmail())
@@ -68,6 +72,7 @@ public class AuthService {
                 .birthDate(request.getBirthDate())
                 .nickname(request.getNickname())
                 .phone(request.getPhone())
+                .job(request.getJob())
                 .build();
 
         userRepository.save(user);

@@ -44,6 +44,7 @@ public enum ErrorCode {
     REQUIRED_ANSWER_MISSING("필수 질문에 답변하지 않았습니다.", HttpStatus.BAD_REQUEST),
     INVALID_QUESTION("해당 폼에 속하지 않는 질문입니다.", HttpStatus.BAD_REQUEST),
     INVALID_MBTI("유효하지 않은 MBTI 값입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_JOB("유효하지 않은 직업 코드입니다.", HttpStatus.BAD_REQUEST),
 
     // Matching
     MATCHING_NOT_ALLOWED("우연한 식탁(RANDOM_TABLE) 게더링만 자동매칭할 수 있습니다.", HttpStatus.BAD_REQUEST),
