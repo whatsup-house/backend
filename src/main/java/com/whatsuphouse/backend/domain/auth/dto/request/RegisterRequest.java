@@ -55,4 +55,8 @@ public class RegisterRequest {
     @Schema(example = "1999-03-15", description = "생년월일 (YYYY-MM-DD)")
     @Past(message = "생년월일은 과거 날짜여야 합니다.")
     private LocalDate birthDate;
+
+    @Schema(example = "SOFTWARE_DEVELOPER", description = "직업 코드 (GET /api/jobs 목록 중 하나)")
+    @Size(max = 30, message = "직업 코드는 30자 이하여야 합니다.")
+    private String job;
 }

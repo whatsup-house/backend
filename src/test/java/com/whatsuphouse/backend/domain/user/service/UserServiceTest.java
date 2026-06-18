@@ -42,6 +42,9 @@ class UserServiceTest {
     @Mock
     private StringRedisTemplate redisTemplate;
 
+    @Mock
+    private CharacterAssetResolver characterAssetResolver;
+
     @InjectMocks
     private UserService userService;
 

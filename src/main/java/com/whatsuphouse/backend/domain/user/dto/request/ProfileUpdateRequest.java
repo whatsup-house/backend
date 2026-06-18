@@ -47,7 +47,8 @@ public class ProfileUpdateRequest {
     @Schema(example = "ENFP")
     private Mbti mbti;
 
-    @Schema(example = "개발자")
+    @Schema(example = "SOFTWARE_DEVELOPER", description = "직업 코드 (GET /api/jobs 목록 중 하나)")
+    @Size(max = 30, message = "직업 코드는 30자 이하여야 합니다.")
     private String job;
 
     @Schema(example = "재즈와 커피를 좋아합니다")
