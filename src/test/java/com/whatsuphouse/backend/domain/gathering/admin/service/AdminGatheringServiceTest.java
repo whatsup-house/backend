@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.gathering.admin.service;
 
+import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCreateRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringStatusRequest;
@@ -8,11 +9,14 @@ import com.whatsuphouse.backend.domain.gathering.admin.dto.response.AdminGatheri
 import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringDetailResponse;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.enums.LocationStatus;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
+import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
@@ -56,6 +60,12 @@ class AdminGatheringServiceTest {
 
     @Mock
     private FormProvisionService formProvisionService;
+
+    @Mock
+    private com.whatsuphouse.backend.domain.ticket.service.TicketService ticketService;
+
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private AdminGatheringService adminGatheringService;
@@ -380,6 +390,61 @@ class AdminGatheringServiceTest {
 
         // then
         assertThat(gathering.getStatus()).isEqualTo(GatheringStatus.CANCELLED);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 게더링 취소 시 회원 신청자에게 이용권을 환불한다 (KAN-261)")
+    void changeStatus_cancelRandomTable_refundsTicketsToMembers() {
+        // given
+        Gathering randomTable = Gathering.builder()
+                .title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(8)
+                .gatheringType(GatheringType.RANDOM_TABLE)
+                .build();
+        ReflectionTestUtils.setField(randomTable, "id", gatheringId);
+
+        User member = buildMember("member@example.com", "member1");
+        Application memberApp = buildApplication(randomTable, member);
+        Application guestApp = buildApplication(randomTable, null); // 비회원: 환불 대상 아님
+
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
+        given(applicationRepository.findByGatheringIdAndStatusInWithUser(eq(gatheringId), any()))
+                .willReturn(List.of(memberApp, guestApp));
+        GatheringStatusRequest request = buildStatusRequest(GatheringStatus.CANCELLED);
+
+        // when
+        adminGatheringService.changeStatus(gatheringId, request);
+
+        // then
+        then(ticketService).should().refundOneTicket(member);
+        then(ticketService).should(never()).refundOneTicket(null);
+    }
+
+    private User buildMember(String email, String nickname) {
+        User member = User.builder()
+                .email(email)
+                .password("encoded")
+                .name("김회원")
+                .gender(Gender.FEMALE)
+                .age(28)
+                .nickname(nickname)
+                .phone("01099998888")
+                .build();
+        ReflectionTestUtils.setField(member, "id", UUID.randomUUID());
+        return member;
+    }
+
+    private Application buildApplication(Gathering targetGathering, User user) {
+        Application app = Application.builder()
+                .bookingNumber("WH260618-RT" + UUID.randomUUID().toString().substring(0, 4))
+                .gathering(targetGathering)
+                .user(user)
+                .name(user != null ? user.getName() : "비회원")
+                .phone("01000000000")
+                .build();
+        ReflectionTestUtils.setField(app, "id", UUID.randomUUID());
+        return app;
     }
 
     @Test

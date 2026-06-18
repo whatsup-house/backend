@@ -274,8 +274,10 @@ public class ApplicationService {
         application.cancel();
 
         // 우연한 식탁 회원 신청 취소 시 차감했던 이용권을 환불한다. (KAN-261)
+        // 단, 게더링이 이미 취소된 경우엔 게더링 취소 시점에 일괄 환불되었으므로 중복 환불하지 않는다.
         if (application.getUser() != null
-                && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE) {
+                && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
+                && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
             ticketService.refundOneTicket(application.getUser());
         }
 
