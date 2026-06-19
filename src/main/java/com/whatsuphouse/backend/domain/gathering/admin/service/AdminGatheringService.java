@@ -20,6 +20,8 @@ import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
+import com.whatsuphouse.backend.domain.translation.enums.TranslatableType;
+import com.whatsuphouse.backend.domain.translation.service.AutoTranslationService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
@@ -32,6 +34,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -50,6 +53,7 @@ public class AdminGatheringService {
     private final FormProvisionService formProvisionService;
     private final TicketService ticketService;
     private final ApplicationEventPublisher eventPublisher;
+    private final AutoTranslationService autoTranslationService;
 
     public List<AdminGatheringResponse> listGatherings(
             GatheringStatus status, LocalDate eventDate, LocalDate from, LocalDate to) {
@@ -137,6 +141,8 @@ public class AdminGatheringService {
         Gathering saved = gatheringRepository.save(gathering);
         // 신청폼 + 시스템 예약 질문(이름/연락처) 자동 생성
         formProvisionService.createDefaultForm(saved);
+        // ko 입력분을 en/ja로 비동기 자동 번역 (KAN-267)
+        autoTranslate(saved);
         return GatheringDetailResponse.from(saved);
     }
 
@@ -155,7 +161,23 @@ public class AdminGatheringService {
         gathering.update(request.getTitle(), request.getDescription(), location,
                 request.getEventDate(), request.getStartTime(), request.getEndTime(),
                 request.getPrice(), request.getMaxAttendees(), thumbnailUrl, request.getHowToRun());
+        // 수정된 ko 입력분을 en/ja로 비동기 재번역 (변경분만, KAN-267)
+        autoTranslate(gathering);
         return GatheringDetailResponse.from(gathering);
+    }
+
+    // 게더링 title/description을 비동기 자동 번역 큐에 넘긴다. (KAN-267)
+    private void autoTranslate(Gathering gathering) {
+        Map<String, String> fields = new HashMap<>();
+        if (StringUtils.hasText(gathering.getTitle())) {
+            fields.put("title", gathering.getTitle());
+        }
+        if (StringUtils.hasText(gathering.getDescription())) {
+            fields.put("description", gathering.getDescription());
+        }
+        if (!fields.isEmpty()) {
+            autoTranslationService.translateEntity(TranslatableType.GATHERING, gathering.getId(), fields);
+        }
     }
 
     @Transactional

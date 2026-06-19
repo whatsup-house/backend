@@ -29,4 +29,16 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    // AI 자동 번역(KAN-267) 전용 스레드풀. 외부 GMS 호출이 길 수 있어 이메일과 분리한다.
+    @Bean(name = "translationTaskExecutor")
+    public TaskExecutor translationTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(3);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("translation-");
+        executor.initialize();
+        return executor;
+    }
 }
