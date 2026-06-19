@@ -31,6 +31,11 @@ public class GatheringDetailResponse {
     private LocationDetail location;
 
     public static GatheringDetailResponse from(Gathering gathering) {
+        return from(gathering, gathering.getTitle(), gathering.getDescription());
+    }
+
+    // 로케일별 번역이 적용된 title/description을 받는 오버로드. (KAN-266)
+    public static GatheringDetailResponse from(Gathering gathering, String title, String description) {
         LocationDetail locationDetail = null;
         Location location = gathering.getLocation();
         if (location != null) {
@@ -45,8 +50,8 @@ public class GatheringDetailResponse {
 
         return GatheringDetailResponse.builder()
                 .id(gathering.getId())
-                .title(gathering.getTitle())
-                .description(gathering.getDescription())
+                .title(title)
+                .description(description)
                 .howToRun(gathering.getHowToRun())
                 .eventDate(gathering.getEventDate())
                 .startTime(gathering.getStartTime())
