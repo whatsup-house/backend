@@ -67,6 +67,9 @@ class AdminGatheringServiceTest {
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private com.whatsuphouse.backend.domain.translation.service.AutoTranslationService autoTranslationService;
+
     @InjectMocks
     private AdminGatheringService adminGatheringService;
 

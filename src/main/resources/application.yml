@@ -65,3 +65,10 @@ server:
 
 app:
   frontend-url: ${FRONTEND_URL:https://www.whatsup.house}
+
+# GMS(SSAFY) AI 자동 번역 (KAN-267). key는 .env의 GMS_KEY로 주입, 미설정 시 자동번역 비활성(ko 폴백).
+gms:
+  base-url: ${GMS_BASE_URL:https://gms.ssafy.io/gmsapi/api.openai.com/v1}
+  key: ${GMS_KEY:}
+  model: ${GMS_MODEL:gpt-4o-mini}
+  enabled: ${GMS_TRANSLATION_ENABLED:true}
