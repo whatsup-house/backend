@@ -6,6 +6,9 @@ import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringRe
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.translation.enums.TranslatableType;
+import com.whatsuphouse.backend.domain.translation.service.ContentTranslationService;
+import com.whatsuphouse.backend.global.common.enums.AppLocale;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,7 @@ import java.util.UUID;
 public class GatheringService {
 
     private final GatheringRepository gatheringRepository;
+    private final ContentTranslationService contentTranslationService;
 
     public List<GatheringResponse> listGatherings(LocalDate date, GatheringStatus status) {
         return findGatherings(date, status).stream()
@@ -57,8 +61,24 @@ public class GatheringService {
     }
 
     public GatheringDetailResponse getGathering(UUID id) {
+        return getGathering(id, AppLocale.KO);
+    }
+
+    // 요청 로케일로 title/description을 번역 적용해 반환한다. ko이거나 번역 없으면 원문. (KAN-266)
+    public GatheringDetailResponse getGathering(UUID id, AppLocale locale) {
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-        return GatheringDetailResponse.from(gathering);
+
+        if (locale == AppLocale.KO) {
+            return GatheringDetailResponse.from(gathering);
+        }
+
+        ContentTranslationService.Localizer localizer =
+                contentTranslationService.localizer(TranslatableType.GATHERING, id, locale);
+        return GatheringDetailResponse.from(
+                gathering,
+                localizer.get("title", gathering.getTitle()),
+                localizer.get("description", gathering.getDescription())
+        );
     }
 }
