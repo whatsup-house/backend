@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     review_type        VARCHAR(10) NOT NULL,
     review_content     TEXT        NOT NULL,
     like_count         INTEGER     NOT NULL DEFAULT 0,
+    notified_like_milestone INTEGER NOT NULL DEFAULT 0,
     is_home_featured   BOOLEAN     NOT NULL DEFAULT FALSE,
     home_display_order INTEGER     NOT NULL DEFAULT 0,
     created_at         TIMESTAMP   NOT NULL,
@@ -256,3 +257,64 @@ CREATE TABLE IF NOT EXISTS mail_templates (
     created_at   TIMESTAMP    NOT NULL,
     updated_at   TIMESTAMP    NOT NULL
 );
+
+-- ================================================
+-- 인앱 알림
+-- ================================================
+CREATE TABLE IF NOT EXISTS notifications (
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID         NOT NULL REFERENCES users(id),
+    type       VARCHAR(40)  NOT NULL,
+    title      VARCHAR(200) NOT NULL,
+    content    TEXT,
+    link       VARCHAR(40),
+    is_read    BOOLEAN      NOT NULL DEFAULT FALSE,
+    read_at    TIMESTAMP,
+    created_at TIMESTAMP    NOT NULL,
+    updated_at TIMESTAMP    NOT NULL,
+    deleted_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read);
+
+-- ================================================
+-- 우연한 식탁 이용권
+-- ================================================
+CREATE TABLE IF NOT EXISTS ticket_passes (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID        NOT NULL REFERENCES users(id),
+    product         VARCHAR(40) NOT NULL,
+    total_count     INTEGER     NOT NULL,
+    remaining_count INTEGER     NOT NULL DEFAULT 0,
+    status          VARCHAR(20) NOT NULL,
+    activated_at    TIMESTAMP,
+    created_at      TIMESTAMP   NOT NULL,
+    updated_at      TIMESTAMP   NOT NULL,
+    deleted_at      TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_passes_user_id ON ticket_passes(user_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_passes_status ON ticket_passes(status);
+
+-- ================================================
+-- 다국어 콘텐츠 번역
+-- ================================================
+CREATE TABLE IF NOT EXISTS content_translations (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_type  VARCHAR(40)  NOT NULL,
+    entity_id    UUID         NOT NULL,
+    field        VARCHAR(40)  NOT NULL,
+    locale       VARCHAR(5)   NOT NULL,
+    value        TEXT,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'DONE',
+    source_hash  VARCHAR(64),
+    is_override  BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMP    NOT NULL,
+    updated_at   TIMESTAMP    NOT NULL,
+    deleted_at   TIMESTAMP,
+    CONSTRAINT uq_content_translation UNIQUE (entity_type, entity_id, field, locale)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_translation_lookup
+    ON content_translations (entity_type, entity_id, locale);
