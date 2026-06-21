@@ -296,3 +296,25 @@ CREATE TABLE IF NOT EXISTS ticket_passes (
 
 CREATE INDEX IF NOT EXISTS idx_ticket_passes_user_id ON ticket_passes(user_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_passes_status ON ticket_passes(status);
+
+-- ================================================
+-- 다국어 콘텐츠 번역
+-- ================================================
+CREATE TABLE IF NOT EXISTS content_translations (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_type  VARCHAR(40)  NOT NULL,
+    entity_id    UUID         NOT NULL,
+    field        VARCHAR(40)  NOT NULL,
+    locale       VARCHAR(5)   NOT NULL,
+    value        TEXT,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'DONE',
+    source_hash  VARCHAR(64),
+    is_override  BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMP    NOT NULL,
+    updated_at   TIMESTAMP    NOT NULL,
+    deleted_at   TIMESTAMP,
+    CONSTRAINT uq_content_translation UNIQUE (entity_type, entity_id, field, locale)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_translation_lookup
+    ON content_translations (entity_type, entity_id, locale);
