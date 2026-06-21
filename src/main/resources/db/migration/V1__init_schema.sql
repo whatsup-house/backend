@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     review_type        VARCHAR(10) NOT NULL,
     review_content     TEXT        NOT NULL,
     like_count         INTEGER     NOT NULL DEFAULT 0,
+    notified_like_milestone INTEGER NOT NULL DEFAULT 0,
     is_home_featured   BOOLEAN     NOT NULL DEFAULT FALSE,
     home_display_order INTEGER     NOT NULL DEFAULT 0,
     created_at         TIMESTAMP   NOT NULL,
@@ -256,3 +257,42 @@ CREATE TABLE IF NOT EXISTS mail_templates (
     created_at   TIMESTAMP    NOT NULL,
     updated_at   TIMESTAMP    NOT NULL
 );
+
+-- ================================================
+-- 인앱 알림
+-- ================================================
+CREATE TABLE IF NOT EXISTS notifications (
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID         NOT NULL REFERENCES users(id),
+    type       VARCHAR(40)  NOT NULL,
+    title      VARCHAR(200) NOT NULL,
+    content    TEXT,
+    link       VARCHAR(40),
+    is_read    BOOLEAN      NOT NULL DEFAULT FALSE,
+    read_at    TIMESTAMP,
+    created_at TIMESTAMP    NOT NULL,
+    updated_at TIMESTAMP    NOT NULL,
+    deleted_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read);
+
+-- ================================================
+-- 우연한 식탁 이용권
+-- ================================================
+CREATE TABLE IF NOT EXISTS ticket_passes (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID        NOT NULL REFERENCES users(id),
+    product         VARCHAR(40) NOT NULL,
+    total_count     INTEGER     NOT NULL,
+    remaining_count INTEGER     NOT NULL DEFAULT 0,
+    status          VARCHAR(20) NOT NULL,
+    activated_at    TIMESTAMP,
+    created_at      TIMESTAMP   NOT NULL,
+    updated_at      TIMESTAMP   NOT NULL,
+    deleted_at      TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_passes_user_id ON ticket_passes(user_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_passes_status ON ticket_passes(status);
