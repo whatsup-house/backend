@@ -5,11 +5,13 @@ import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringRe
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.global.common.ApiResult;
+import com.whatsuphouse.backend.global.common.enums.AppLocale;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -36,11 +38,13 @@ public class GatheringController {
         return ResponseEntity.ok(ApiResult.success(gatheringService.listGatherings(date, status)));
     }
 
-    @Operation(summary = "모임 상세 조회", description = "모임 상세 정보를 조회합니다. 장소 정보(주소, 지도 URL)를 포함합니다.")
+    @Operation(summary = "모임 상세 조회", description = "모임 상세 정보를 조회합니다. 장소 정보(주소, 지도 URL)를 포함합니다. Accept-Language(ko/en/ja)로 번역을 반환합니다.")
     @GetMapping("/{id}")
     public ResponseEntity<ApiResult<GatheringDetailResponse>> getGathering(
-            @PathVariable UUID id
+            @PathVariable UUID id,
+            @RequestHeader(name = HttpHeaders.ACCEPT_LANGUAGE, required = false) String acceptLanguage
     ) {
-        return ResponseEntity.ok(ApiResult.success(gatheringService.getGathering(id)));
+        AppLocale locale = AppLocale.fromAcceptLanguage(acceptLanguage);
+        return ResponseEntity.ok(ApiResult.success(gatheringService.getGathering(id, locale)));
     }
 }
