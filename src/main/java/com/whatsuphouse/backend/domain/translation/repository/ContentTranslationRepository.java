@@ -22,4 +22,8 @@ public interface ContentTranslationRepository extends JpaRepository<ContentTrans
     // upsert/조회용: 특정 필드 1건
     Optional<ContentTranslation> findByEntityTypeAndEntityIdAndFieldAndLocaleAndDeletedAtIsNull(
             TranslatableType entityType, UUID entityId, String field, String locale);
+
+    // 관리자 조회용: 엔티티의 모든 로케일·필드 번역
+    List<ContentTranslation> findByEntityTypeAndEntityIdAndDeletedAtIsNull(
+            TranslatableType entityType, UUID entityId);
 }
