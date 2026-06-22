@@ -26,6 +26,14 @@ SET birth_date = (CURRENT_DATE - make_interval(years => age))::date
 WHERE birth_date IS NULL;
 
 
+-- 1-1. 참가자 (회원) — 모든 회원을 MEMBER participant로 파생한다. 신청·이용권은 participant_id를 참조한다.
+-- participant.id를 user.id와 동일하게 두어 기존 신청 mock이 컬럼명만 바꿔도 유효하도록 한다.
+INSERT INTO participants (id, user_id, participant_type, name, email, phone, created_at, updated_at)
+SELECT id, id, 'MEMBER', name, email, COALESCE(phone, '01000000000'), NOW(), NOW()
+FROM users
+ON CONFLICT (id) DO NOTHING;
+
+
 -- 2. 장소 (4곳)
 INSERT INTO locations (id, name, address, naver_map_url, kakao_map_url, status, max_capacity, memo, created_at, updated_at)
 VALUES
@@ -59,7 +67,7 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- 4. 신청 (ATTENDED 12건 + PENDING 2건 + CONFIRMED 2건)
-INSERT INTO applications (id, created_at, updated_at, booking_number, name, phone, gender, age, mbti, job, intro, status, gathering_id, user_id)
+INSERT INTO applications (id, created_at, updated_at, booking_number, name, phone, gender, age, mbti, job, intro, status, gathering_id, participant_id)
 VALUES
     ('f0000001-0000-0000-0000-000000000001', NOW(), NOW(), 'BK-0001', '이지은', '01011112222', 'FEMALE', 26, 'INFP', '그래픽 디자이너', '조용한 게 좋아요',               'ATTENDED',  'c2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000002'),
     ('f0000001-0000-0000-0000-000000000002', NOW(), NOW(), 'BK-0002', '박준서', '01022223333', 'MALE',   29, 'ENTP', '개발자',          '새로운 사람 만나는 걸 좋아해요',  'ATTENDED',  'c2000000-0000-0000-0000-000000000002', 'b1000000-0000-0000-0000-000000000003'),
@@ -130,7 +138,7 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- 5-2. 추가 리뷰 (텍스트 15 + 사진 12) + 신청 27건
-INSERT INTO applications (id, created_at, updated_at, booking_number, name, phone, gender, age, mbti, job, intro, status, gathering_id, user_id)
+INSERT INTO applications (id, created_at, updated_at, booking_number, name, phone, gender, age, mbti, job, intro, status, gathering_id, participant_id)
 VALUES
     ('f0000001-0000-0000-0000-000000000017', NOW(), NOW(), 'BK-0017', '이지은', '01011112222', 'FEMALE', 26, 'INFP', '그래픽 디자이너', '조용한 게 좋아요', 'ATTENDED', 'c2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000002'),
     ('f0000001-0000-0000-0000-000000000018', NOW(), NOW(), 'BK-0018', '박준서', '01022223333', 'MALE', 29, 'ENTP', '개발자', '새로운 사람 만나는 걸 좋아해요', 'ATTENDED', 'c2000000-0000-0000-0000-000000000002', 'b1000000-0000-0000-0000-000000000003'),
@@ -293,7 +301,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 우연한 식탁 신청 4건 (회원, 매칭 대기) — 예산 '2만원' / 날짜 '2026-06-26' 공통으로 하드조건 충족
-INSERT INTO applications (id, created_at, updated_at, booking_number, name, phone, email, form_snapshot, status, gathering_id, user_id)
+INSERT INTO applications (id, created_at, updated_at, booking_number, name, phone, email, form_snapshot, status, gathering_id, participant_id)
 VALUES
     ('f0000002-0000-0000-0000-000000000001', NOW(), NOW(), 'WH-RT-001', '이지은', '01011112222', 'user1@test.com', '{}', 'CONFIRMED', 'c2000000-0000-0000-0000-000000000005', 'b1000000-0000-0000-0000-000000000002'),
     ('f0000002-0000-0000-0000-000000000002', NOW(), NOW(), 'WH-RT-002', '박준서', '01022223333', 'user2@test.com', '{}', 'CONFIRMED', 'c2000000-0000-0000-0000-000000000005', 'b1000000-0000-0000-0000-000000000003'),
