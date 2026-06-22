@@ -20,6 +20,8 @@ import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
+import com.whatsuphouse.backend.domain.translation.enums.TranslatableType;
+import com.whatsuphouse.backend.domain.translation.event.ContentTranslationRequestedEvent;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
@@ -32,6 +34,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -137,6 +140,8 @@ public class AdminGatheringService {
         Gathering saved = gatheringRepository.save(gathering);
         // 신청폼 + 시스템 예약 질문(이름/연락처) 자동 생성
         formProvisionService.createDefaultForm(saved);
+        // 커밋 후 ko 원문(title/description)을 en/ja로 자동 번역 (KAN-267)
+        publishTranslation(saved);
         return GatheringDetailResponse.from(saved);
     }
 
@@ -155,7 +160,20 @@ public class AdminGatheringService {
         gathering.update(request.getTitle(), request.getDescription(), location,
                 request.getEventDate(), request.getStartTime(), request.getEndTime(),
                 request.getPrice(), request.getMaxAttendees(), thumbnailUrl, request.getHowToRun());
+        // 변경된 ko 원문 재번역 (원문 미변경 필드는 해시 비교로 자동 스킵) (KAN-267)
+        publishTranslation(gathering);
         return GatheringDetailResponse.from(gathering);
+    }
+
+    // 게더링의 번역 대상 ko 필드(title/description)를 자동 번역 이벤트로 발행한다. (KAN-267)
+    private void publishTranslation(Gathering gathering) {
+        Map<String, String> koFields = new LinkedHashMap<>();
+        koFields.put("title", gathering.getTitle());
+        if (gathering.getDescription() != null) {
+            koFields.put("description", gathering.getDescription());
+        }
+        eventPublisher.publishEvent(new ContentTranslationRequestedEvent(
+                TranslatableType.GATHERING, gathering.getId(), koFields));
     }
 
     @Transactional

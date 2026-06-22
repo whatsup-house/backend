@@ -5,7 +5,10 @@ import com.whatsuphouse.backend.domain.translation.enums.TranslatableType;
 import com.whatsuphouse.backend.domain.translation.enums.TranslationStatus;
 import com.whatsuphouse.backend.domain.translation.repository.ContentTranslationRepository;
 import com.whatsuphouse.backend.global.common.enums.AppLocale;
+import com.whatsuphouse.backend.global.config.CacheConfig;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +27,13 @@ public class ContentTranslationService {
     private final ContentTranslationRepository repository;
 
     // 단일 엔티티의 번역을 한 번에 읽어, 필드별 ko 폴백을 적용할 수 있는 Localizer를 만든다. (N+1 방지)
+    // 조회 결과를 (entityType, entityId, locale) 단위로 캐싱한다. (서빙 레이어, KAN-280)
+    // KO는 DB를 조회하지 않으므로 캐싱 대상에서 제외한다.
+    @Cacheable(
+            cacheNames = CacheConfig.CONTENT_TRANSLATION_CACHE,
+            key = "#type + ':' + #entityId + ':' + #locale",
+            condition = "#locale != T(com.whatsuphouse.backend.global.common.enums.AppLocale).KO"
+    )
     @Transactional(readOnly = true)
     public Localizer localizer(TranslatableType type, UUID entityId, AppLocale locale) {
         if (locale == AppLocale.KO) {
@@ -39,6 +49,12 @@ public class ContentTranslationService {
     }
 
     // 번역 결과를 저장/갱신한다. (KAN-266 제공, KAN-267 AI 파이프라인이 사용)
+    // 해당 (entityType, entityId, locale)의 조회 캐시를 무효화한다. (서빙 레이어, KAN-280)
+    // 한 필드만 바뀌어도 Localizer는 로케일 단위로 묶이므로 키 전체를 evict 한다.
+    @CacheEvict(
+            cacheNames = CacheConfig.CONTENT_TRANSLATION_CACHE,
+            key = "#type + ':' + #entityId + ':' + #locale"
+    )
     @Transactional
     public void upsert(TranslatableType type, UUID entityId, String field, AppLocale locale,
                        String value, TranslationStatus status, String sourceHash, boolean isOverride) {

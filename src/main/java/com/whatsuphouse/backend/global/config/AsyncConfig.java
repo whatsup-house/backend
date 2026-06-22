@@ -29,4 +29,22 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * AI 자동 번역(GMS) 전용 스레드풀. (KAN-267)
+     * 저장 즉시 ko를 노출하고 번역은 이 풀에서 비동기로 처리한다.
+     * - corePoolSize=1   : 토큰 예산이 작아 동시 호출을 과하게 늘리지 않는다(직렬에 가깝게).
+     * - maxPoolSize=3    : 생성/수정 몰릴 때 대비
+     * - queueCapacity=100: 대기 작업 큐
+     */
+    @Bean(name = "translationExecutor")
+    public TaskExecutor translationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(3);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("translation-");
+        executor.initialize();
+        return executor;
+    }
 }

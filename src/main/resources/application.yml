@@ -50,6 +50,15 @@ supabase:
   key: ${SUPABASE_KEY}
   bucket: ${SUPABASE_BUCKET}
 
+# GMS(SSAFY) AI 번역 (KAN-267). 키 미설정/만료 또는 enabled=false면 자동 번역 비활성 → ko fallback.
+# base-url/model은 SSAFY GMS(OpenAI 호환 프록시) 기본값이며, 콘솔 확정값과 다르면 .env로 override 한다.
+gms:
+  base-url: ${GMS_BASE_URL:https://gms.ssafy.io/gmsapi/api.openai.com/v1}
+  key: ${GMS_KEY:}
+  model: ${GMS_MODEL:gpt-4o-mini}
+  enabled: ${GMS_ENABLED:true}
+  max-input-chars: ${GMS_MAX_INPUT_CHARS:2000}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
