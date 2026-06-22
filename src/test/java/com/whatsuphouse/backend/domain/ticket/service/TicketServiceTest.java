@@ -108,7 +108,10 @@ class TicketServiceTest {
     @DisplayName("우연한 식탁 신청 시 사용 가능한 이용권을 1회 차감한다")
     void useOneTicket_deducts() {
         TicketPass active = activePass(2);
-        given(ticketPassRepository.findUsableForUpdate(eq(userId), eq(TicketPassStatus.ACTIVE), any(Pageable.class)))
+        Participant participant = active.getParticipant();
+        ReflectionTestUtils.setField(participant, "id", UUID.randomUUID());
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+        given(ticketPassRepository.findUsableByParticipantForUpdate(eq(participant.getId()), eq(TicketPassStatus.ACTIVE), any(Pageable.class)))
                 .willReturn(List.of(active));
 
         ticketService.useOneTicket(user);
@@ -119,7 +122,10 @@ class TicketServiceTest {
     @Test
     @DisplayName("사용 가능한 이용권이 없으면 신청 차단 예외")
     void useOneTicket_whenNone_throws() {
-        given(ticketPassRepository.findUsableForUpdate(eq(userId), eq(TicketPassStatus.ACTIVE), any(Pageable.class)))
+        Participant participant = Participant.member(user);
+        ReflectionTestUtils.setField(participant, "id", UUID.randomUUID());
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+        given(ticketPassRepository.findUsableByParticipantForUpdate(eq(participant.getId()), eq(TicketPassStatus.ACTIVE), any(Pageable.class)))
                 .willReturn(List.of());
 
         assertThatThrownBy(() -> ticketService.useOneTicket(user))

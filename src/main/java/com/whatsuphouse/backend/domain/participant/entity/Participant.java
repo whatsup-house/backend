@@ -1,6 +1,8 @@
 package com.whatsuphouse.backend.domain.participant.entity;
 
+import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatus;
 import com.whatsuphouse.backend.domain.participant.enums.ParticipantType;
+import com.whatsuphouse.backend.domain.participant.enums.RandomTableEligibility;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import jakarta.persistence.*;
@@ -46,12 +48,13 @@ public class Participant extends BaseEntity {
     @Column(name = "email_verified_at")
     private LocalDateTime emailVerifiedAt;
 
-    // 사람 단위 자격/상태. 현재는 기본값으로만 저장하고, 심사·차단 로직은 후속 일감에서 사용한다. (KAN-277)
+    @Enumerated(EnumType.STRING)
     @Column(name = "account_status", nullable = false, length = 20)
-    private String accountStatus;
+    private ParticipantAccountStatus accountStatus;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "random_table_eligibility", nullable = false, length = 20)
-    private String randomTableEligibility;
+    private RandomTableEligibility randomTableEligibility;
 
     private Participant(User user, ParticipantType participantType, String name, String email, String phone) {
         this.user = user;
@@ -59,8 +62,8 @@ public class Participant extends BaseEntity {
         this.name = name;
         this.email = email;
         this.phone = phone;
-        this.accountStatus = "ACTIVE";
-        this.randomTableEligibility = "UNREVIEWED";
+        this.accountStatus = ParticipantAccountStatus.ACTIVE;
+        this.randomTableEligibility = RandomTableEligibility.UNREVIEWED;
     }
 
     /** 회원 참가자 생성. 이름/이메일/전화는 계정 정보를 따른다. */
@@ -75,5 +78,38 @@ public class Participant extends BaseEntity {
 
     public boolean isMember() {
         return this.participantType == ParticipantType.MEMBER;
+    }
+
+    public boolean isApprovedForRandomTable() {
+        return randomTableEligibility == RandomTableEligibility.APPROVED;
+    }
+
+    public boolean isBlockedFromRandomTable() {
+        return isAccountBlocked() || isRandomTableEligibilityRestricted();
+    }
+
+    public boolean isAccountBlocked() {
+        return accountStatus == ParticipantAccountStatus.BLOCKED;
+    }
+
+    public boolean isRandomTableEligibilityRestricted() {
+        return randomTableEligibility == RandomTableEligibility.REJECTED
+                || randomTableEligibility == RandomTableEligibility.SUSPENDED;
+    }
+
+    public void approveRandomTable() {
+        this.randomTableEligibility = RandomTableEligibility.APPROVED;
+    }
+
+    public void rejectRandomTable() {
+        this.randomTableEligibility = RandomTableEligibility.REJECTED;
+    }
+
+    public void suspendRandomTable() {
+        this.randomTableEligibility = RandomTableEligibility.SUSPENDED;
+    }
+
+    public void changeAccountStatus(ParticipantAccountStatus status) {
+        this.accountStatus = status;
     }
 }

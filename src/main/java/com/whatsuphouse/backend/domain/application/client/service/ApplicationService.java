@@ -21,6 +21,7 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
@@ -132,11 +133,6 @@ public class ApplicationService {
             }
         }
 
-        // 우연한 식탁(RANDOM_TABLE) 회원 신청은 이용권을 1회 차감한다. 잔여가 없으면 차단. (KAN-261)
-        if (user != null && gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
-            ticketService.useOneTicket(user);
-        }
-
         String name = user != null ? user.getName() : extractString(byKey, "name");
         String phone = user != null ? user.getPhone() : extractString(byKey, "phone");
         // 알림 발송용 이메일: 회원=계정 이메일, 비회원=신청서 답변 이메일
@@ -146,6 +142,16 @@ public class ApplicationService {
         Participant participant = user != null
                 ? participantService.getOrCreateForUser(user)
                 : participantService.createGuest(name, email, phone);
+
+        boolean autoConfirmed = false;
+        boolean paymentPending = false;
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
+            validateRandomTableEligibility(participant);
+            if (participant.isApprovedForRandomTable()) {
+                autoConfirmed = ticketService.tryUseOneTicket(participant);
+                paymentPending = !autoConfirmed;
+            }
+        }
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
@@ -157,13 +163,31 @@ public class ApplicationService {
                 .formSnapshot(buildFormSnapshot(questions))
                 .build();
 
+        if (autoConfirmed) {
+            application.confirm();
+        } else if (paymentPending) {
+            application.awaitPayment();
+        }
+
         Application saved = applicationRepository.save(application);
 
         saveAnswers(saved, request.getAnswers(), questionMap);
 
-        // 자동매칭 대상은 status = CONFIRMED인 신청만 포함한다. PENDING/CANCELLED/ATTENDED는 제외.
-        eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
+        if (autoConfirmed) {
+            eventPublisher.publishEvent(new ApplicationConfirmedEvent(saved));
+        } else {
+            eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
+        }
         return ApplicationResponse.from(saved);
+    }
+
+    private void validateRandomTableEligibility(Participant participant) {
+        if (participant.isAccountBlocked()) {
+            throw new CustomException(ErrorCode.PARTICIPANT_BLOCKED);
+        }
+        if (participant.isRandomTableEligibilityRestricted()) {
+            throw new CustomException(ErrorCode.RANDOM_TABLE_ELIGIBILITY_RESTRICTED);
+        }
     }
 
     private void validateAnswers(List<AnswerItem> answers, List<FormQuestion> questions,
@@ -275,7 +299,8 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
         }
 
-        if (application.getStatus() != ApplicationStatus.PENDING) {
+        if (application.getStatus() != ApplicationStatus.PENDING
+                && application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
             throw new CustomException(ErrorCode.CANNOT_CANCEL);
         }
 

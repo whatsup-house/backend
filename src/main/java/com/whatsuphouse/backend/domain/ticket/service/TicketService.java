@@ -60,12 +60,21 @@ public class TicketService {
 
     /** 우연한 식탁 신청 시 1회 차감한다. 사용 가능한 이용권이 없으면 NO_AVAILABLE_TICKET. */
     public void useOneTicket(User user) {
-        List<TicketPass> usable = ticketPassRepository.findUsableForUpdate(
-                user.getId(), TicketPassStatus.ACTIVE, PageRequest.of(0, 1));
-        if (usable.isEmpty()) {
+        Participant participant = participantService.getOrCreateForUser(user);
+        if (!tryUseOneTicket(participant)) {
             throw new CustomException(ErrorCode.NO_AVAILABLE_TICKET);
         }
+    }
+
+    /** 참가자 기준으로 잔여 이용권을 1회 차감한다. 이용권이 없으면 상태 변경 없이 false를 반환한다. */
+    public boolean tryUseOneTicket(Participant participant) {
+        List<TicketPass> usable = ticketPassRepository.findUsableByParticipantForUpdate(
+                participant.getId(), TicketPassStatus.ACTIVE, PageRequest.of(0, 1));
+        if (usable.isEmpty()) {
+            return false;
+        }
         usable.get(0).deductOne();
+        return true;
     }
 
     /** 우연한 식탁 신청 취소 시 차감했던 이용권을 1회 환불한다. 환불 대상이 없으면 무시. */

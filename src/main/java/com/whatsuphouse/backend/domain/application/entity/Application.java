@@ -62,6 +62,12 @@ public class Application extends BaseEntity {
     @Column(name = "payment_confirmed_at")
     private LocalDateTime paymentConfirmedAt;
 
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
     @Builder
     public Application(String bookingNumber, Gathering gathering, Participant participant, String name, String phone,
                        String email, Map<String, Object> formSnapshot) {
@@ -90,6 +96,21 @@ public class Application extends BaseEntity {
 
     public void confirm() {
         this.status = ApplicationStatus.CONFIRMED;
+        if (this.reviewedAt == null) {
+            this.reviewedAt = LocalDateTime.now();
+        }
+    }
+
+    public void awaitPayment() {
+        this.status = ApplicationStatus.PAYMENT_PENDING;
+        this.reviewedAt = LocalDateTime.now();
+        this.rejectionReason = null;
+    }
+
+    public void reject(String reason) {
+        this.status = ApplicationStatus.REJECTED;
+        this.reviewedAt = LocalDateTime.now();
+        this.rejectionReason = reason;
     }
 
     public void attend() {

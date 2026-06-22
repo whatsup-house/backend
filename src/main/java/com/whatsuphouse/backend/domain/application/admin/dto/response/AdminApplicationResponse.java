@@ -4,6 +4,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
+import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatus;
+import com.whatsuphouse.backend.domain.participant.enums.ParticipantType;
+import com.whatsuphouse.backend.domain.participant.enums.RandomTableEligibility;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import lombok.Builder;
 import lombok.Getter;
@@ -33,6 +37,12 @@ public class AdminApplicationResponse {
     private LocalDateTime paymentConfirmedAt;
     private UUID gatheringId;
     private UUID userId;
+    private UUID participantId;
+    private ParticipantType participantType;
+    private ParticipantAccountStatus participantAccountStatus;
+    private RandomTableEligibility randomTableEligibility;
+    private LocalDateTime reviewedAt;
+    private String rejectionReason;
     private LocalDateTime createdAt;
     @JsonProperty("isGuest")
     private boolean isGuest;
@@ -44,6 +54,7 @@ public class AdminApplicationResponse {
 
     public static AdminApplicationResponse from(Application application, List<AnswerView> answers) {
         User user = application.getUser();
+        Participant participant = application.getParticipant();
         return AdminApplicationResponse.builder()
                 .id(application.getId())
                 .bookingNumber(application.getBookingNumber())
@@ -61,6 +72,12 @@ public class AdminApplicationResponse {
                 .paymentConfirmedAt(application.getPaymentConfirmedAt())
                 .gatheringId(application.getGathering().getId())
                 .userId(user != null ? user.getId() : null)
+                .participantId(participant != null ? participant.getId() : null)
+                .participantType(participant != null ? participant.getParticipantType() : null)
+                .participantAccountStatus(participant != null ? participant.getAccountStatus() : null)
+                .randomTableEligibility(participant != null ? participant.getRandomTableEligibility() : null)
+                .reviewedAt(application.getReviewedAt())
+                .rejectionReason(application.getRejectionReason())
                 .createdAt(application.getCreatedAt())
                 .isGuest(user == null)
                 .answers(answers)

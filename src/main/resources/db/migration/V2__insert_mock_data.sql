@@ -301,6 +301,15 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 우연한 식탁 신청 4건 (회원, 매칭 대기) — 예산 '2만원' / 날짜 '2026-06-26' 공통으로 하드조건 충족
+UPDATE participants
+SET random_table_eligibility = 'APPROVED', updated_at = NOW()
+WHERE id IN (
+    'b1000000-0000-0000-0000-000000000002',
+    'b1000000-0000-0000-0000-000000000003',
+    'b1000000-0000-0000-0000-000000000004',
+    'b1000000-0000-0000-0000-000000000005'
+);
+
 INSERT INTO applications (id, created_at, updated_at, booking_number, name, phone, email, form_snapshot, status, gathering_id, participant_id)
 VALUES
     ('f0000002-0000-0000-0000-000000000001', NOW(), NOW(), 'WH-RT-001', '이지은', '01011112222', 'user1@test.com', '{}', 'CONFIRMED', 'c2000000-0000-0000-0000-000000000005', 'b1000000-0000-0000-0000-000000000002'),

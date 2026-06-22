@@ -15,6 +15,9 @@ import lombok.NoArgsConstructor;
 public class ApplicationStatusRequest {
 
     @NotNull(message = "상태는 필수입니다.")
-    @Schema(example = "CONFIRMED", description = "변경할 신청 상태 (CONFIRMED, CANCELLED, ATTENDED)")
+    @Schema(example = "CONFIRMED", description = "변경할 신청 상태 (CONFIRMED, REJECTED, ATTENDED)")
     private ApplicationStatus status;
+
+    @Schema(example = "운영 기준에 맞지 않음", description = "REJECTED 변경 시 필수인 거절 사유")
+    private String rejectionReason;
 }

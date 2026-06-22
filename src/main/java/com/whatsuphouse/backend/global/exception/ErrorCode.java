@@ -62,6 +62,9 @@ public enum ErrorCode {
     GUEST_PHONE_REQUIRED("비회원 신청 시 전화번호는 필수입니다.", HttpStatus.BAD_REQUEST),
     INVALID_EMAIL_FORMAT("올바른 이메일 형식이 아닙니다.", HttpStatus.BAD_REQUEST),
     ALREADY_ATTENDED("이미 출석 처리된 신청입니다.", HttpStatus.CONFLICT),
+    PARTICIPANT_BLOCKED("차단된 참가자는 우연한 식탁을 신청할 수 없습니다.", HttpStatus.FORBIDDEN),
+    RANDOM_TABLE_ELIGIBILITY_RESTRICTED("우연한 식탁 참여 자격이 제한된 상태입니다.", HttpStatus.FORBIDDEN),
+    REJECTION_REASON_REQUIRED("신청 거절 사유는 필수입니다.", HttpStatus.BAD_REQUEST),
 
     // Location
     LOCATION_NOT_FOUND("존재하지 않는 장소입니다.", HttpStatus.NOT_FOUND),

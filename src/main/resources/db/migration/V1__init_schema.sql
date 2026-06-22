@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS applications (
     referrer_name  VARCHAR(50),
     status         VARCHAR(20) NOT NULL,
     payment_confirmed_at TIMESTAMP,
+    reviewed_at    TIMESTAMP,
+    rejection_reason VARCHAR(500),
     created_at     TIMESTAMP   NOT NULL,
     updated_at     TIMESTAMP   NOT NULL,
     deleted_at     TIMESTAMP

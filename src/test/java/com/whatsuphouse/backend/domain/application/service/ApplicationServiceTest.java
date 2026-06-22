@@ -49,6 +49,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 
 @ExtendWith(MockitoExtension.class)
@@ -141,8 +142,8 @@ class ApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("우연한 식탁 회원 신청 시 이용권을 차감한다 (KAN-261)")
-    void apply_randomTable_member_deductsTicket() {
+    @DisplayName("승인된 우연한 식탁 회원은 이용권 차감 후 자동 확정된다 (KAN-277)")
+    void apply_randomTable_approvedMember_autoConfirmsWithTicket() {
         Gathering randomTable = Gathering.builder()
                 .title("우연한 식탁")
                 .eventDate(LocalDate.now().plusDays(7))
@@ -157,12 +158,63 @@ class ApplicationServiceTest {
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
-        given(participantService.getOrCreateForUser(any())).willReturn(Participant.member(user));
+        Participant participant = Participant.member(user);
+        participant.approveRandomTable();
+        given(participantService.getOrCreateForUser(any())).willReturn(participant);
+        given(ticketService.tryUseOneTicket(participant)).willReturn(true);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
-        applicationService.apply(gatheringId, request, userId);
+        ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
 
-        then(ticketService).should().useOneTicket(user);
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(ticketService).should().tryUseOneTicket(participant);
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("승인된 우연한 식탁 회원에게 이용권이 없으면 재심사 없이 결제 대기한다 (KAN-277)")
+    void apply_randomTable_approvedMemberWithoutTicket_awaitsPayment() {
+        Gathering randomTable = Gathering.builder()
+                .title("우연한 식탁").eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
+                .gatheringType(GatheringType.RANDOM_TABLE).build();
+        Participant participant = Participant.member(user);
+        participant.approveRandomTable();
+
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+        given(ticketService.tryUseOneTicket(participant)).willReturn(false);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+    }
+
+    @Test
+    @DisplayName("거절된 참가자는 우연한 식탁을 다시 신청할 수 없다 (KAN-277)")
+    void apply_randomTable_rejectedMember_isBlocked() {
+        Gathering randomTable = Gathering.builder()
+                .title("우연한 식탁").eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
+                .gatheringType(GatheringType.RANDOM_TABLE).build();
+        Participant participant = Participant.member(user);
+        participant.rejectRandomTable();
+
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+
+        assertThatThrownBy(() -> applicationService.apply(gatheringId, request, userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RANDOM_TABLE_ELIGIBILITY_RESTRICTED);
     }
 
     @Test

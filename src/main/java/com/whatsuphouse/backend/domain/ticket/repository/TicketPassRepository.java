@@ -31,4 +31,13 @@ public interface TicketPassRepository extends JpaRepository<TicketPass, UUID> {
     List<TicketPass> findUsableForUpdate(@Param("userId") UUID userId,
                                          @Param("status") TicketPassStatus status,
                                          Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from TicketPass t " +
+            "where t.participant.id = :participantId and t.status = :status " +
+            "and t.remainingCount > 0 and t.deletedAt is null " +
+            "order by t.activatedAt asc")
+    List<TicketPass> findUsableByParticipantForUpdate(@Param("participantId") UUID participantId,
+                                                      @Param("status") TicketPassStatus status,
+                                                      Pageable pageable);
 }

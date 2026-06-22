@@ -232,6 +232,66 @@ class AdminApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("우연한 식탁 최초 승인 시 사람 자격을 승인하고 이용권이 없으면 결제 대기한다 (KAN-277)")
+    void changeStatus_randomTableApprovalWithoutTicket_awaitsPayment() {
+        Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
+        Participant participant = randomTableApp.getParticipant();
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
+        given(ticketService.tryUseOneTicket(participant)).willReturn(false);
+
+        ApplicationStatusResponse response = adminApplicationService.changeStatus(
+                applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
+
+        assertThat(participant.isApprovedForRandomTable()).isTrue();
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        then(eventPublisher).should(never()).publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 승인 시 잔여 이용권이 있으면 즉시 확정한다 (KAN-277)")
+    void changeStatus_randomTableApprovalWithTicket_confirms() {
+        Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
+        Participant participant = randomTableApp.getParticipant();
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
+        given(ticketService.tryUseOneTicket(participant)).willReturn(true);
+
+        ApplicationStatusResponse response = adminApplicationService.changeStatus(
+                applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
+
+        assertThat(participant.isApprovedForRandomTable()).isTrue();
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 거절은 사람 자격과 신청에 함께 반영한다 (KAN-277)")
+    void changeStatus_randomTableRejection_rejectsParticipantAndApplication() {
+        Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
+        ApplicationStatusRequest request = ApplicationStatusRequest.builder()
+                .status(ApplicationStatus.REJECTED)
+                .rejectionReason("운영 기준에 맞지 않음")
+                .build();
+
+        ApplicationStatusResponse response = adminApplicationService.changeStatus(applicationId, request);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        assertThat(randomTableApp.getRejectionReason()).isEqualTo("운영 기준에 맞지 않음");
+        assertThat(randomTableApp.getParticipant().isRandomTableEligibilityRestricted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("거절 사유 없이 거절할 수 없다 (KAN-277)")
+    void changeStatus_rejectionWithoutReason_throws() {
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+
+        assertThatThrownBy(() -> adminApplicationService.changeStatus(
+                applicationId, buildStatusRequest(ApplicationStatus.REJECTED)))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REJECTION_REASON_REQUIRED);
+    }
+
+    @Test
     @DisplayName("확정 시 이미 정원(CONFIRMED+ATTENDED)이 가득 차 있으면 GATHERING_FULL 예외 (KAN-236)")
     void changeStatus_toConfirmed_capacityFull_throwsException() {
         // GIVEN: 확정/출석 인원이 이미 정원(10)에 도달
