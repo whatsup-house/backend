@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.client.service;
 
 import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
+import com.whatsuphouse.backend.domain.auth.service.AuthService;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
@@ -62,6 +63,7 @@ public class ApplicationService {
     private final FormProvisionService formProvisionService;
     private final TicketService ticketService;
     private final ParticipantService participantService;
+    private final AuthService authService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -132,6 +134,9 @@ public class ApplicationService {
             if (guestEmail != null && !guestEmail.isBlank() && !EMAIL_PATTERN.matcher(guestEmail).matches()) {
                 throw new CustomException(ErrorCode.INVALID_EMAIL_FORMAT);
             }
+            if (guestEmail == null || guestEmail.isBlank() || !authService.isGuestEmailVerified(guestEmail)) {
+                throw new CustomException(ErrorCode.EMAIL_NOT_VERIFIED);
+            }
         }
 
         String name = user != null ? user.getName() : extractString(byKey, "name");
@@ -142,7 +147,7 @@ public class ApplicationService {
         // 신청 주체를 participant로 연결한다. 회원은 user당 1개 보장, 비회원은 신청마다 새 GUEST. (KAN-276)
         Participant participant = user != null
                 ? participantService.getOrCreateForUser(user)
-                : participantService.createGuest(name, email, phone);
+                : participantService.getOrCreateVerifiedGuest(name, email, phone);
 
         boolean autoConfirmed = false;
         boolean paymentPending = false;
@@ -161,6 +166,9 @@ public class ApplicationService {
                 .build();
 
         Application saved = applicationRepository.save(application);
+        if (user == null) {
+            authService.consumeGuestEmailVerification(email);
+        }
 
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
                 && participant.isApprovedForRandomTable()) {

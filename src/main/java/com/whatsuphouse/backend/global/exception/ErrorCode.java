@@ -22,6 +22,8 @@ public enum ErrorCode {
     INVALID_REFRESH_TOKEN("유효하지 않은 리프레시 토큰입니다.", HttpStatus.UNAUTHORIZED),
     EXPIRED_REFRESH_TOKEN("만료된 리프레시 토큰입니다.", HttpStatus.UNAUTHORIZED),
     INVALID_PASSWORD_RESET_TOKEN("유효하지 않은 비밀번호 재설정 링크입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_EMAIL_VERIFICATION_CODE("인증번호가 올바르지 않거나 만료되었습니다.", HttpStatus.BAD_REQUEST),
+    EMAIL_NOT_VERIFIED("이메일 인증이 필요합니다.", HttpStatus.FORBIDDEN),
 
     // User
     DUPLICATE_NICKNAME("이미 사용 중인 닉네임입니다.", HttpStatus.CONFLICT),

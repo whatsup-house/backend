@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.Applicati
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
+import com.whatsuphouse.backend.domain.auth.service.AuthService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
@@ -67,6 +68,9 @@ class ApplicationServiceTest {
 
     @Mock
     private ParticipantService participantService;
+
+    @Mock
+    private AuthService authService;
 
     @Mock
     private FormRepository formRepository;
@@ -222,16 +226,20 @@ class ApplicationServiceTest {
     @DisplayName("비회원 정상 신청")
     void apply_guest_success() {
         FormQuestion phoneQuestion = question("phone", false);
-        setAnswers(request, List.of(answerItem(phoneQuestion.getId(), "01098765432")));
+        FormQuestion emailQuestion = question("email", false);
+        setAnswers(request, List.of(
+                answerItem(phoneQuestion.getId(), "01098765432"),
+                answerItem(emailQuestion.getId(), "g@test.com")));
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
-                .willReturn(List.of(phoneQuestion));
+                .willReturn(List.of(phoneQuestion, emailQuestion));
         given(applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(false);
-        given(participantService.createGuest(any(), any(), any())).willReturn(Participant.guest("비회원", "g@test.com", "01098765432"));
+        given(authService.isGuestEmailVerified("g@test.com")).willReturn(true);
+        given(participantService.getOrCreateVerifiedGuest(any(), any(), any())).willReturn(Participant.guest("비회원", "g@test.com", "01098765432"));
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, null);
@@ -239,6 +247,28 @@ class ApplicationServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PENDING);
         then(eventPublisher).should().publishEvent(any(ApplicationPendingEvent.class));
+        then(authService).should().consumeGuestEmailVerification("g@test.com");
+    }
+
+    @Test
+    @DisplayName("비회원 이메일이 인증되지 않으면 신청을 차단한다")
+    void apply_guestEmailNotVerified_throws() {
+        FormQuestion phoneQuestion = question("phone", false);
+        FormQuestion emailQuestion = question("email", false);
+        setAnswers(request, List.of(
+                answerItem(phoneQuestion.getId(), "01098765432"),
+                answerItem(emailQuestion.getId(), "g@test.com")));
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+                .willReturn(List.of(phoneQuestion, emailQuestion));
+        given(applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(authService.isGuestEmailVerified("g@test.com")).willReturn(false);
+
+        assertThatThrownBy(() -> applicationService.applyAsGuest(gatheringId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMAIL_NOT_VERIFIED);
     }
 
     @Test

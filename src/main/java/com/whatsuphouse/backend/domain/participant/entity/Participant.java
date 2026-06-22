@@ -112,4 +112,8 @@ public class Participant extends BaseEntity {
     public void changeAccountStatus(ParticipantAccountStatus status) {
         this.accountStatus = status;
     }
+
+    public void verifyEmail() {
+        this.emailVerifiedAt = LocalDateTime.now();
+    }
 }

@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.participant.service;
 
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.repository.ParticipantRepository;
+import com.whatsuphouse.backend.domain.participant.enums.ParticipantType;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,5 +27,16 @@ public class ParticipantService {
      */
     public Participant createGuest(String name, String email, String phone) {
         return participantRepository.save(Participant.guest(name, email, phone));
+    }
+
+    public Participant getOrCreateVerifiedGuest(String name, String email, String phone) {
+        return participantRepository
+                .findFirstByParticipantTypeAndEmailIgnoreCaseAndPhoneAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(
+                        ParticipantType.GUEST, email, phone)
+                .orElseGet(() -> {
+                    Participant guest = Participant.guest(name, email, phone);
+                    guest.verifyEmail();
+                    return participantRepository.save(guest);
+                });
     }
 }
