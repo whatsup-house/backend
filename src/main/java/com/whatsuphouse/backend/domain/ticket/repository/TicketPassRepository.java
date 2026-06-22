@@ -18,6 +18,8 @@ public interface TicketPassRepository extends JpaRepository<TicketPass, UUID> {
     // 이용권 소유자(회원) 기준 조회. participant.user.id로 찾는다. (KAN-276)
     List<TicketPass> findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID userId);
 
+    List<TicketPass> findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID participantId);
+
     Optional<TicketPass> findByIdAndDeletedAtIsNull(UUID id);
 
     List<TicketPass> findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus status);

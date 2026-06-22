@@ -40,6 +40,9 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
 
     Optional<Application> findByPhoneAndBookingNumberAndDeletedAtIsNull(String phone, String bookingNumber);
 
+    @EntityGraph(attributePaths = "participant")
+    Optional<Application> findByBookingNumberAndDeletedAtIsNull(String bookingNumber);
+
     @EntityGraph(attributePaths = "gathering")
     List<Application> findByParticipant_User_IdAndDeletedAtIsNull(UUID userId);
 

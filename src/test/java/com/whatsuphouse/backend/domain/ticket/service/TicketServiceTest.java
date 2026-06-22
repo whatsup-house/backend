@@ -2,6 +2,9 @@ package com.whatsuphouse.backend.domain.ticket.service;
 
 import com.whatsuphouse.backend.domain.ticket.dto.response.MyTicketsResponse;
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
+import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
@@ -34,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class TicketServiceTest {
@@ -42,6 +46,7 @@ class TicketServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private ParticipantService participantService;
     @Mock private TicketTransactionRepository ticketTransactionRepository;
+    @Mock private ApplicationRepository applicationRepository;
 
     @InjectMocks private TicketService ticketService;
 
@@ -102,6 +107,41 @@ class TicketServiceTest {
         given(participantService.getOrCreateForUser(user)).willReturn(participant);
 
         assertThatThrownBy(() -> ticketService.purchase(userId, TicketProduct.RANDOM_TABLE_ONE))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
+    }
+
+    @Test
+    @DisplayName("승인된 비회원은 예약번호로 이용권을 구매할 수 있다")
+    void purchaseGuest_approvedApplication_createsPendingPass() {
+        Participant guest = Participant.guest("비회원", "guest@test.com", "01012345678");
+        ReflectionTestUtils.setField(guest, "id", UUID.randomUUID());
+        guest.approveRandomTable();
+        Application application = mock(Application.class);
+        given(application.getParticipant()).willReturn(guest);
+        given(application.getStatus()).willReturn(ApplicationStatus.PAYMENT_PENDING);
+        given(applicationRepository.findByBookingNumberAndDeletedAtIsNull("WH260623-ABC123"))
+                .willReturn(Optional.of(application));
+
+        TicketPassResponse response = ticketService.purchaseGuest(
+                "WH260623-ABC123", TicketProduct.RANDOM_TABLE_ONE);
+
+        then(ticketPassRepository).should().save(any(TicketPass.class));
+        assertThat(response.getStatus()).isEqualTo(TicketPassStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("승인되지 않은 비회원 예약번호로는 이용권을 구매할 수 없다")
+    void purchaseGuest_unreviewed_throws() {
+        Participant guest = Participant.guest("비회원", "guest@test.com", "01012345678");
+        Application application = mock(Application.class);
+        given(application.getParticipant()).willReturn(guest);
+        given(application.getStatus()).willReturn(ApplicationStatus.PENDING);
+        given(applicationRepository.findByBookingNumberAndDeletedAtIsNull("WH260623-ABC123"))
+                .willReturn(Optional.of(application));
+
+        assertThatThrownBy(() -> ticketService.purchaseGuest(
+                "WH260623-ABC123", TicketProduct.RANDOM_TABLE_ONE))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
     }

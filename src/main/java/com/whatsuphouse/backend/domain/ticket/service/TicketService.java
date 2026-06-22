@@ -5,6 +5,8 @@ import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
@@ -33,6 +35,7 @@ public class TicketService {
     private final UserRepository userRepository;
     private final ParticipantService participantService;
     private final TicketTransactionRepository ticketTransactionRepository;
+    private final ApplicationRepository applicationRepository;
 
     /** 이용권 구매(선결제) 요청. 입금 확인 전이므로 PENDING으로 생성된다. */
     public TicketPassResponse purchase(UUID userId, TicketProduct product) {
@@ -42,12 +45,13 @@ public class TicketService {
         if (participant.isBlockedFromRandomTable() || !participant.isApprovedForRandomTable()) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
         }
-        TicketPass pass = TicketPass.builder()
-                .participant(participant)
-                .product(product)
-                .build();
-        ticketPassRepository.save(pass);
-        return TicketPassResponse.from(pass);
+        return createPendingPass(participant, product);
+    }
+
+    /** 승인 메일의 예약번호로 비회원 이용권 구매 요청을 생성한다. */
+    public TicketPassResponse purchaseGuest(String bookingNumber, TicketProduct product) {
+        Application application = getApprovedGuestApplication(bookingNumber);
+        return createPendingPass(application.getParticipant(), product);
     }
 
     @Transactional(readOnly = true)
@@ -56,6 +60,42 @@ public class TicketService {
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         Participant participant = participantService.getOrCreateForUser(user);
         List<TicketPass> passes = ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
+        return buildTicketsResponse(participant, passes);
+    }
+
+    /** 승인 메일의 예약번호로 비회원 자격과 이용권을 조회한다. */
+    @Transactional(readOnly = true)
+    public MyTicketsResponse getGuestTickets(String bookingNumber) {
+        Application application = getApprovedGuestApplication(bookingNumber);
+        Participant participant = application.getParticipant();
+        List<TicketPass> passes = ticketPassRepository
+                .findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(participant.getId());
+        return buildTicketsResponse(participant, passes);
+    }
+
+    private Application getApprovedGuestApplication(String bookingNumber) {
+        Application application = applicationRepository.findByBookingNumberAndDeletedAtIsNull(bookingNumber)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        Participant participant = application.getParticipant();
+        if (participant == null || participant.getUser() != null
+                || application.getStatus() != ApplicationStatus.PAYMENT_PENDING
+                || !participant.isApprovedForRandomTable()
+                || participant.isBlockedFromRandomTable()) {
+            throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
+        }
+        return application;
+    }
+
+    private TicketPassResponse createPendingPass(Participant participant, TicketProduct product) {
+        TicketPass pass = TicketPass.builder()
+                .participant(participant)
+                .product(product)
+                .build();
+        ticketPassRepository.save(pass);
+        return TicketPassResponse.from(pass);
+    }
+
+    private MyTicketsResponse buildTicketsResponse(Participant participant, List<TicketPass> passes) {
         int totalRemaining = passes.stream()
                 .filter(p -> p.getStatus() == TicketPassStatus.ACTIVE)
                 .mapToInt(TicketPass::getRemainingCount)
