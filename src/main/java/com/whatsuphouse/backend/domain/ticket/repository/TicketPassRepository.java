@@ -24,6 +24,8 @@ public interface TicketPassRepository extends JpaRepository<TicketPass, UUID> {
 
     List<TicketPass> findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus status);
 
+    long countByStatusAndDeletedAtIsNull(TicketPassStatus status);
+
     // 우연한 식탁 신청 시 차감 대상(가장 먼저 활성화된 사용 가능 이용권)을 동시성 안전하게 잠근다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from TicketPass t " +

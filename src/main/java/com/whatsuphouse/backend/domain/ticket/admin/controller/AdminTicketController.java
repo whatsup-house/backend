@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.admin.controller;
 
+import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminPendingDepositResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminTicketPassResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketAdjustmentRequest;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.TicketTransactionResponse;
@@ -33,6 +34,19 @@ public class AdminTicketController {
     @GetMapping("/pending")
     public ResponseEntity<ApiResult<List<AdminTicketPassResponse>>> listPending() {
         return ResponseEntity.ok(ApiResult.success(adminTicketService.listPending()));
+    }
+
+    @Operation(summary = "입금 대기 큐(신청자·게더링 포함, 요청 오래된 순)",
+            description = "게더링을 가로질러 입금 확인이 필요한 요청을 시간순으로 보여준다. 행의 ticketPassId로 입금 확인한다.")
+    @GetMapping("/deposits/pending")
+    public ResponseEntity<ApiResult<List<AdminPendingDepositResponse>>> pendingDeposits() {
+        return ResponseEntity.ok(ApiResult.success(adminTicketService.listPendingDeposits()));
+    }
+
+    @Operation(summary = "입금 대기 건수(대시보드 뱃지)")
+    @GetMapping("/deposits/count")
+    public ResponseEntity<ApiResult<Long>> pendingDepositCount() {
+        return ResponseEntity.ok(ApiResult.success(adminTicketService.countPendingDeposits()));
     }
 
     @Operation(summary = "이용권 입금 확인(활성화)")

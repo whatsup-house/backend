@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.admin.service;
 
+import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminPendingDepositResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminTicketPassResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketAdjustmentRequest;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
@@ -160,5 +161,45 @@ class AdminTicketServiceTest {
         adminTicketService.adjust(id, TicketAdjustmentRequest.builder()
                 .quantity(1).reason("관리자 복구").build());
         assertThat(pass.getRemainingCount()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("입금 대기 큐는 연결된 신청자·게더링 정보를 붙여 반환한다")
+    void listPendingDeposits_includesApplicationContext() {
+        TicketPass pass = pendingPass();
+        Participant participant = pass.getParticipant();
+        ReflectionTestUtils.setField(participant, "id", UUID.randomUUID());
+        Gathering gathering = Gathering.builder().title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
+                .gatheringType(GatheringType.RANDOM_TABLE).build();
+        ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
+        Application application = Application.builder().bookingNumber("WH-PAY-002")
+                .gathering(gathering).participant(participant).name("홍길동")
+                .phone("01012345678").build();
+        application.awaitPayment();
+
+        given(ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING))
+                .willReturn(List.of(pass));
+        given(applicationRepository.findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                participant.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
+
+        List<AdminPendingDepositResponse> result = adminTicketService.listPendingDeposits();
+
+        assertThat(result).hasSize(1);
+        AdminPendingDepositResponse row = result.get(0);
+        assertThat(row.getApplicantName()).isEqualTo("홍길동");
+        assertThat(row.isMember()).isTrue();
+        assertThat(row.getProductLabel()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getLabel());
+        assertThat(row.getAmount()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getPrice());
+        assertThat(row.getBookingNumber()).isEqualTo("WH-PAY-002");
+        assertThat(row.getGatheringTitle()).isEqualTo("우연한 식탁");
+    }
+
+    @Test
+    @DisplayName("입금 대기 건수를 반환한다")
+    void countPendingDeposits_returnsCount() {
+        given(ticketPassRepository.countByStatusAndDeletedAtIsNull(TicketPassStatus.PENDING)).willReturn(3L);
+
+        assertThat(adminTicketService.countPendingDeposits()).isEqualTo(3L);
     }
 }

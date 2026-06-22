@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.admin.service;
 
+import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminPendingDepositResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminTicketPassResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketAdjustmentRequest;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.TicketTransactionResponse;
@@ -39,6 +40,27 @@ public class AdminTicketService {
                 .stream()
                 .map(AdminTicketPassResponse::from)
                 .toList();
+    }
+
+    /**
+     * 입금 대기 큐. 게더링을 가로질러 요청 오래된 순(FIFO)으로 PENDING 이용권을 나열하고,
+     * 연결된 PAYMENT_PENDING 신청(신청자·게더링)을 붙여 빠른 입금 확인을 돕는다.
+     */
+    @Transactional(readOnly = true)
+    public List<AdminPendingDepositResponse> listPendingDeposits() {
+        return ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING)
+                .stream()
+                .map(pass -> AdminPendingDepositResponse.from(
+                        pass,
+                        applicationRepository.findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                                pass.getParticipant().getId(), ApplicationStatus.PAYMENT_PENDING).orElse(null)))
+                .toList();
+    }
+
+    /** 대시보드 뱃지용 입금 대기 건수. */
+    @Transactional(readOnly = true)
+    public long countPendingDeposits() {
+        return ticketPassRepository.countByStatusAndDeletedAtIsNull(TicketPassStatus.PENDING);
     }
 
     /** 입금 확인 → 이용권 활성화(잔여 충전). PENDING이 아니면 TICKET_ALREADY_PROCESSED. */
