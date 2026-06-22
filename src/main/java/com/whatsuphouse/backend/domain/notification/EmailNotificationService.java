@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -133,9 +134,23 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
+        MailContent mail = mailTemplateRenderer.render(
+                MailTemplateType.APPLICATION_APPROVED, applicationVariables(application));
+        send(email, mail.subject(), mail.body());
+    }
+
+    @Override
+    @Async("emailTaskExecutor")
+    public void sendTicketPurchaseRequested(Application application, TicketPass ticketPass) {
+        String email = resolveEmail(application);
+        if (email == null) return;
+
         Map<String, String> variables = applicationVariables(application);
-        variables.put("입금금액", formatPrice(application));
-        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_APPROVED, variables);
+        variables.put("이용권명", ticketPass.getProduct().getLabel());
+        variables.put("결제금액", String.format("%,d", ticketPass.getPurchaseAmount()));
+        variables.put("입금계좌", "우리은행 1002-157-849052");
+        variables.put("예금주", "와썹하우스");
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.TICKET_PURCHASE_REQUESTED, variables);
         send(email, mail.subject(), mail.body());
     }
 
@@ -273,11 +288,6 @@ public class EmailNotificationService implements NotificationService {
     /**
      * 게더링 참가비를 천 단위 구분 문자열로 포맷합니다. 가격이 없으면 "0"을 반환합니다.
      */
-    private String formatPrice(Application application) {
-        Integer price = application.getGathering().getPrice();
-        return String.format("%,d", price != null ? price : 0);
-    }
-
     /**
      * 실제 이메일 발송을 처리하는 내부 메서드.
      *

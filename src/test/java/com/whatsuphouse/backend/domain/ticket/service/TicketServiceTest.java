@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
@@ -26,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Optional;
@@ -47,6 +49,7 @@ class TicketServiceTest {
     @Mock private ParticipantService participantService;
     @Mock private TicketTransactionRepository ticketTransactionRepository;
     @Mock private ApplicationRepository applicationRepository;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks private TicketService ticketService;
 
@@ -127,6 +130,7 @@ class TicketServiceTest {
                 "WH260623-ABC123", TicketProduct.RANDOM_TABLE_ONE);
 
         then(ticketPassRepository).should().save(any(TicketPass.class));
+        then(eventPublisher).should().publishEvent(any(TicketPurchaseRequestedEvent.class));
         assertThat(response.getStatus()).isEqualTo(TicketPassStatus.PENDING);
     }
 

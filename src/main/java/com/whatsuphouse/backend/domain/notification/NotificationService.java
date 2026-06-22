@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.notification;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 
 import java.util.List;
 
@@ -17,6 +18,8 @@ public interface NotificationService {
     void sendApplicationPending(Application application);
 
     void sendApplicationApproved(Application application);
+
+    void sendTicketPurchaseRequested(Application application, TicketPass ticketPass);
 
     void sendApplicationConfirmed(Application application);
 

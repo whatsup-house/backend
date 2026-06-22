@@ -7,6 +7,7 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
@@ -21,6 +22,7 @@ import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -36,6 +38,7 @@ public class TicketService {
     private final ParticipantService participantService;
     private final TicketTransactionRepository ticketTransactionRepository;
     private final ApplicationRepository applicationRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** 이용권 구매(선결제) 요청. 입금 확인 전이므로 PENDING으로 생성된다. */
     public TicketPassResponse purchase(UUID userId, TicketProduct product) {
@@ -45,13 +48,15 @@ public class TicketService {
         if (participant.isBlockedFromRandomTable() || !participant.isApprovedForRandomTable()) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
         }
-        return createPendingPass(participant, product);
+        return TicketPassResponse.from(createPendingPass(participant, product));
     }
 
     /** 승인 메일의 예약번호로 비회원 이용권 구매 요청을 생성한다. */
     public TicketPassResponse purchaseGuest(String bookingNumber, TicketProduct product) {
         Application application = getApprovedGuestApplication(bookingNumber);
-        return createPendingPass(application.getParticipant(), product);
+        TicketPass pass = createPendingPass(application.getParticipant(), product);
+        eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
+        return TicketPassResponse.from(pass);
     }
 
     @Transactional(readOnly = true)
@@ -86,13 +91,13 @@ public class TicketService {
         return application;
     }
 
-    private TicketPassResponse createPendingPass(Participant participant, TicketProduct product) {
+    private TicketPass createPendingPass(Participant participant, TicketProduct product) {
         TicketPass pass = TicketPass.builder()
                 .participant(participant)
                 .product(product)
                 .build();
         ticketPassRepository.save(pass);
-        return TicketPassResponse.from(pass);
+        return pass;
     }
 
     private MyTicketsResponse buildTicketsResponse(Participant participant, List<TicketPass> passes) {

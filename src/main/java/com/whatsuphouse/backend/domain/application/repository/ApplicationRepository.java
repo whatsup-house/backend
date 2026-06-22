@@ -40,7 +40,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
 
     Optional<Application> findByPhoneAndBookingNumberAndDeletedAtIsNull(String phone, String bookingNumber);
 
-    @EntityGraph(attributePaths = "participant")
+    @EntityGraph(attributePaths = {"participant", "gathering"})
     Optional<Application> findByBookingNumberAndDeletedAtIsNull(String bookingNumber);
 
     @EntityGraph(attributePaths = "gathering")

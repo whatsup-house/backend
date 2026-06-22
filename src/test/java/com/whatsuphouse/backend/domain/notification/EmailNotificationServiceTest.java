@@ -14,6 +14,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import org.springframework.mail.MailSendException;
@@ -126,6 +129,26 @@ class EmailNotificationServiceTest {
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_APPROVED), argThat(vars ->
                 vars.get("결제링크").equals(
                         "http://localhost:3000/payments/random-table?bookingNumber=WH260428-TEST01")));
+        then(mailSender).should().send(any(SimpleMailMessage.class));
+    }
+
+    @Test
+    @DisplayName("이용권 구매 요청 메일에는 상품·금액·계좌·상태 링크가 포함된다")
+    void sendTicketPurchaseRequested_containsPaymentDetails() {
+        User user = buildUser("ticket@test.com");
+        Application application = buildApplication(user, buildGathering());
+        TicketPass pass = TicketPass.builder()
+                .participant(Participant.member(user))
+                .product(TicketProduct.RANDOM_TABLE_FOUR)
+                .build();
+
+        emailNotificationService.sendTicketPurchaseRequested(application, pass);
+
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.TICKET_PURCHASE_REQUESTED), argThat(vars ->
+                "우연한 식탁 4회권".equals(vars.get("이용권명"))
+                        && "40,000".equals(vars.get("결제금액"))
+                        && "우리은행 1002-157-849052".equals(vars.get("입금계좌"))
+                        && vars.get("결제링크").contains("bookingNumber=WH260428-TEST01")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 

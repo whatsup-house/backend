@@ -56,6 +56,11 @@ public class NotificationEventListener {
         notificationService.sendApplicationApproved(event.getApplication());
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onTicketPurchaseRequested(TicketPurchaseRequestedEvent event) {
+        notificationService.sendTicketPurchaseRequested(event.getApplication(), event.getTicketPass());
+    }
+
     /**
      * 신청 확정(CONFIRMED) 이벤트 처리 (FR-NTF-03).
      */
