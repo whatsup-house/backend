@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
@@ -51,6 +52,7 @@ class EmailNotificationServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(emailNotificationService, "from", "noreply@test.com");
+        ReflectionTestUtils.setField(emailNotificationService, "frontendUrl", "http://localhost:3000");
         // 템플릿 렌더링은 별도 단위 테스트에서 검증한다. 여기서는 발송(send) 동작만 보므로 렌더 결과를 고정한다.
         lenient().when(mailTemplateRenderer.render(any(), any()))
                 .thenReturn(new MailContent("제목", "본문"));
@@ -109,6 +111,34 @@ class EmailNotificationServiceTest {
 
         // then
         then(mailSender).should().send(any(SimpleMailMessage.class));
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
+                "WH260428-TEST01".equals(vars.get("예약번호"))
+                        && vars.get("조회경로").contains("/applications/check?bookingNumber=WH260428-TEST01")));
+    }
+
+    @Test
+    @DisplayName("심사 승인 이메일에는 결제 페이지 링크가 포함된다")
+    void sendApplicationApproved_containsPaymentLink() {
+        Application application = buildApplication(buildUser("approved@test.com"), buildGathering());
+
+        emailNotificationService.sendApplicationApproved(application);
+
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_APPROVED), argThat(vars ->
+                vars.get("결제링크").equals(
+                        "http://localhost:3000/payments/random-table?bookingNumber=WH260428-TEST01")));
+        then(mailSender).should().send(any(SimpleMailMessage.class));
+    }
+
+    @Test
+    @DisplayName("비회원 이메일 인증번호와 유효시간을 발송한다")
+    void sendGuestEmailVerification_sendsCode() {
+        emailNotificationService.sendGuestEmailVerification("guest@test.com", "123456");
+
+        then(mailTemplateRenderer).should().render(MailTemplateType.GUEST_EMAIL_VERIFICATION,
+                Map.of("인증번호", "123456", "유효시간", "5분"));
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        then(mailSender).should().send(captor.capture());
+        assertThat(captor.getValue().getTo()).containsExactly("guest@test.com");
     }
 
     @Test

@@ -51,6 +51,11 @@ public class NotificationEventListener {
         notificationService.sendApplicationPending(event.getApplication());
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onApplicationApproved(ApplicationApprovedEvent event) {
+        notificationService.sendApplicationApproved(event.getApplication());
+    }
+
     /**
      * 신청 확정(CONFIRMED) 이벤트 처리 (FR-NTF-03).
      */

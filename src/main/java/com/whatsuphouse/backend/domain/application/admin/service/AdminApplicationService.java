@@ -19,6 +19,7 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEve
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -163,6 +164,7 @@ public class AdminApplicationService {
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
         } else {
             application.awaitPayment();
+            eventPublisher.publishEvent(new ApplicationApprovedEvent(application));
         }
     }
 

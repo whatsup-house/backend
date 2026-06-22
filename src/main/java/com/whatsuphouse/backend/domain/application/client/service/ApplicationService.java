@@ -22,6 +22,7 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
@@ -176,6 +177,8 @@ public class ApplicationService {
 
         if (autoConfirmed) {
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(saved));
+        } else if (paymentPending) {
+            eventPublisher.publishEvent(new ApplicationApprovedEvent(saved));
         } else {
             eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
         }

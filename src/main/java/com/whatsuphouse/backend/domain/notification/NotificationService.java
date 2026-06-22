@@ -12,7 +12,11 @@ public interface NotificationService {
 
     void sendPasswordReset(User user, String resetUrl);
 
+    void sendGuestEmailVerification(String email, String code);
+
     void sendApplicationPending(Application application);
+
+    void sendApplicationApproved(Application application);
 
     void sendApplicationConfirmed(Application application);
 
