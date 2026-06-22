@@ -27,20 +27,21 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
             """)
     List<ApplicationCountProjection> countByGatheringIdsGroupByStatus(@Param("gatheringIds") List<UUID> gatheringIds);
 
-    boolean existsByGatheringIdAndUserIdAndDeletedAtIsNull(UUID gatheringId, UUID userId);
+    // 회원이 해당 게더링에 이미 신청했는지(participant.user 기준). (KAN-276)
+    boolean existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(UUID gatheringId, UUID userId);
 
     boolean existsByGatheringIdAndPhoneAndDeletedAtIsNull(UUID gatheringId, String phone);
 
     // 정원을 차지하는 인원: 관리자 승인(CONFIRMED) + 출석(ATTENDED). PENDING/CANCELLED 제외. (KAN-236)
     int countByGatheringIdAndStatusInAndDeletedAtIsNull(UUID gatheringId, List<ApplicationStatus> statuses);
 
-    @EntityGraph(attributePaths = {"gathering", "user"})
+    @EntityGraph(attributePaths = {"gathering", "participant"})
     Optional<Application> findByIdAndDeletedAtIsNull(UUID id);
 
     Optional<Application> findByPhoneAndBookingNumberAndDeletedAtIsNull(String phone, String bookingNumber);
 
     @EntityGraph(attributePaths = "gathering")
-    List<Application> findByUserIdAndDeletedAtIsNull(UUID userId);
+    List<Application> findByParticipant_User_IdAndDeletedAtIsNull(UUID userId);
 
     /**
      * 모임 취소 시 알림 대상 신청자 목록 조회 (FR-NTF-06).
@@ -49,7 +50,8 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
      */
     @Query("""
             SELECT a FROM Application a
-            LEFT JOIN FETCH a.user
+            LEFT JOIN FETCH a.participant p
+            LEFT JOIN FETCH p.user
             WHERE a.gathering.id = :gatheringId
               AND a.status IN :statuses
               AND a.deletedAt IS NULL

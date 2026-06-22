@@ -15,6 +15,7 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.enums.MileageType;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -301,7 +302,7 @@ class AdminApplicationServiceTest {
         Application memberApplication = Application.builder()
                 .bookingNumber("WH260428-XYZ999")
                 .gathering(gathering)
-                .user(user)
+                .participant(Participant.member(user))
                 .name("홍길동")
                 .phone("01012345678")
                 .build();
@@ -462,7 +463,7 @@ class AdminApplicationServiceTest {
         Application app = Application.builder()
                 .bookingNumber("WH260618-RT0001")
                 .gathering(randomTable)
-                .user(member)
+                .participant(Participant.member(member))
                 .name(member.getName())
                 .phone(member.getPhone())
                 .build();

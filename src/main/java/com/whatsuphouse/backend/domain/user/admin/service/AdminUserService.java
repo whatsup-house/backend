@@ -44,7 +44,7 @@ public class AdminUserService {
     public UserDetailResponse getUser(UUID userId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        List<Application> applications = applicationRepository.findByUserIdAndDeletedAtIsNull(userId);
+        List<Application> applications = applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(userId);
         return UserDetailResponse.from(user, applications);
     }
 

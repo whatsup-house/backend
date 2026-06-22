@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.ticket.entity;
 
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -19,7 +20,7 @@ class TicketPassTest {
                 .email("t@example.com").password("p").name("홍길동")
                 .gender(Gender.MALE).age(25).nickname("nick").phone("01012345678")
                 .build();
-        return TicketPass.builder().user(user).product(TicketProduct.RANDOM_TABLE_FOUR).build();
+        return TicketPass.builder().participant(Participant.member(user)).product(TicketProduct.RANDOM_TABLE_FOUR).build();
     }
 
     @Test

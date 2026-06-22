@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import org.junit.jupiter.api.BeforeEach;
@@ -325,7 +326,7 @@ class EmailNotificationServiceTest {
         return Application.builder()
                 .bookingNumber("WH260428-TEST01")
                 .gathering(gathering)
-                .user(user)
+                .participant(user != null ? Participant.member(user) : Participant.guest("비회원", "g@test.com", "01099999999"))
                 .name(user != null ? user.getName() : "비회원")
                 .phone(user != null ? user.getPhone() : "01099999999")
                 .build();

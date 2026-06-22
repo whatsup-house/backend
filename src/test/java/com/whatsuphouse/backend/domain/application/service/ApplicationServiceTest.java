@@ -20,6 +20,8 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
+import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -60,6 +62,9 @@ class ApplicationServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private ParticipantService participantService;
 
     @Mock
     private FormRepository formRepository;
@@ -124,7 +129,8 @@ class ApplicationServiceTest {
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(participantService.getOrCreateForUser(any())).willReturn(Participant.member(user));
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
@@ -150,7 +156,8 @@ class ApplicationServiceTest {
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(participantService.getOrCreateForUser(any())).willReturn(Participant.member(user));
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         applicationService.apply(gatheringId, request, userId);
@@ -171,6 +178,7 @@ class ApplicationServiceTest {
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
                 .willReturn(List.of(phoneQuestion));
         given(applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(participantService.createGuest(any(), any(), any())).willReturn(Participant.guest("비회원", "g@test.com", "01098765432"));
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, null);
@@ -237,7 +245,7 @@ class ApplicationServiceTest {
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(any(), any())).willReturn(true);
+        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(true);
 
         assertThatThrownBy(() -> applicationService.apply(gatheringId, request, userId))
                 .isInstanceOf(CustomException.class)
@@ -367,7 +375,7 @@ class ApplicationServiceTest {
     @DisplayName("내 신청 목록 반환")
     void getMyApplications_returnsApplications() {
         Application application = buildApplication(ApplicationStatus.PENDING, user, gathering);
-        given(applicationRepository.findByUserIdAndDeletedAtIsNull(userId)).willReturn(List.of(application));
+        given(applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(userId)).willReturn(List.of(application));
 
         List<ApplicationListResponse> result = applicationService.getMyApplications(userId);
 
@@ -377,7 +385,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("신청 내역이 없으면 빈 리스트 반환")
     void getMyApplications_empty_returnsEmptyList() {
-        given(applicationRepository.findByUserIdAndDeletedAtIsNull(userId)).willReturn(List.of());
+        given(applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(userId)).willReturn(List.of());
 
         List<ApplicationListResponse> result = applicationService.getMyApplications(userId);
 
@@ -390,7 +398,7 @@ class ApplicationServiceTest {
         Application application = Application.builder()
                 .bookingNumber("WH260428-ABC123")
                 .gathering(applicationGathering)
-                .user(applicationUser)
+                .participant(applicationUser != null ? Participant.member(applicationUser) : Participant.guest("비회원", "g@test.com", "01012345678"))
                 .name(applicationUser != null ? applicationUser.getName() : "비회원")
                 .phone(applicationUser != null ? applicationUser.getPhone() : "01012345678")
                 .build();

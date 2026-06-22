@@ -6,6 +6,8 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
+import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -37,6 +39,7 @@ class TicketServiceTest {
 
     @Mock private TicketPassRepository ticketPassRepository;
     @Mock private UserRepository userRepository;
+    @Mock private ParticipantService participantService;
 
     @InjectMocks private TicketService ticketService;
 
@@ -54,7 +57,7 @@ class TicketServiceTest {
     }
 
     private TicketPass activePass(int remaining) {
-        TicketPass pass = TicketPass.builder().user(user).product(TicketProduct.RANDOM_TABLE_FOUR).build();
+        TicketPass pass = TicketPass.builder().participant(Participant.member(user)).product(TicketProduct.RANDOM_TABLE_FOUR).build();
         pass.activate();
         int toDeduct = pass.getTotalCount() - remaining;
         for (int i = 0; i < toDeduct; i++) {
@@ -67,6 +70,7 @@ class TicketServiceTest {
     @DisplayName("구매하면 PENDING 이용권이 저장된다")
     void purchase_createsPendingPass() {
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(participantService.getOrCreateForUser(any())).willReturn(Participant.member(user));
 
         TicketPassResponse response = ticketService.purchase(userId, TicketProduct.RANDOM_TABLE_FOUR);
 
@@ -91,7 +95,7 @@ class TicketServiceTest {
     void getMyTickets_sumsActiveRemaining() {
         TicketPass active = activePass(3);
         TicketPass usedUp = activePass(0);   // USED_UP
-        given(ticketPassRepository.findByUser_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId))
+        given(ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId))
                 .willReturn(List.of(active, usedUp));
 
         MyTicketsResponse response = ticketService.getMyTickets(userId);
@@ -127,7 +131,7 @@ class TicketServiceTest {
     @DisplayName("취소 시 USED_UP 이용권을 환불해 ACTIVE로 복구한다")
     void refundOneTicket_restoresUsedUp() {
         TicketPass usedUp = activePass(0);   // USED_UP, remaining 0
-        given(ticketPassRepository.findByUser_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId))
+        given(ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId))
                 .willReturn(List.of(usedUp));
 
         ticketService.refundOneTicket(user);
