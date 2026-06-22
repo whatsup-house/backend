@@ -30,6 +30,7 @@ public class SecurityConfig {
 
     private static final String[] PERMIT_ALL = {
         "/api/auth/**",
+        "/api/guest/**",
         "/swagger-ui/**",
         "/api-docs/**",
         "/actuator/health"
