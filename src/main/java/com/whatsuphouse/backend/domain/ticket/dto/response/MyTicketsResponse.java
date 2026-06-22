@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatu
 import com.whatsuphouse.backend.domain.participant.enums.RandomTableEligibility;
 
 import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Builder
@@ -16,4 +17,5 @@ public class MyTicketsResponse {
     private boolean purchasable;
     private int totalRemaining;
     private List<TicketPassResponse> passes;
+    private UUID gatheringId;
 }

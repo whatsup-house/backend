@@ -68,7 +68,7 @@ public class TicketService {
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         Participant participant = participantService.getOrCreateForUser(user);
         List<TicketPass> passes = ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
-        return buildTicketsResponse(participant, passes);
+        return buildTicketsResponse(participant, passes, null);
     }
 
     /** 승인 메일의 예약번호로 비회원 자격과 이용권을 조회한다. */
@@ -83,7 +83,7 @@ public class TicketService {
         Participant participant = application.getParticipant();
         List<TicketPass> passes = ticketPassRepository
                 .findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(participant.getId());
-        return buildTicketsResponse(participant, passes);
+        return buildTicketsResponse(participant, passes, application.getGathering().getId());
     }
 
     private Application getGuestApplication(String bookingNumber) {
@@ -107,7 +107,8 @@ public class TicketService {
         return pass;
     }
 
-    private MyTicketsResponse buildTicketsResponse(Participant participant, List<TicketPass> passes) {
+    private MyTicketsResponse buildTicketsResponse(
+            Participant participant, List<TicketPass> passes, UUID gatheringId) {
         int totalRemaining = passes.stream()
                 .filter(p -> p.getStatus() == TicketPassStatus.ACTIVE)
                 .mapToInt(TicketPass::getRemainingCount)
@@ -121,6 +122,7 @@ public class TicketService {
                 .purchasable(participant.isApprovedForRandomTable() && !participant.isBlockedFromRandomTable())
                 .totalRemaining(totalRemaining)
                 .passes(items)
+                .gatheringId(gatheringId)
                 .build();
     }
 
