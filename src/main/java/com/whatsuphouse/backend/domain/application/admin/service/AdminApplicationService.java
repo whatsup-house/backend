@@ -97,7 +97,7 @@ public class AdminApplicationService {
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
                 && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
-            ticketService.refundOneTicket(application.getUser());
+            ticketService.refundOneTicket(application);
         }
 
         // 관리자 직접 삭제도 취소 알림 대상 (FR-NTF-04)
@@ -157,7 +157,7 @@ public class AdminApplicationService {
         }
 
         participant.approveRandomTable();
-        if (ticketService.tryUseOneTicket(participant)) {
+        if (ticketService.tryUseOneTicket(participant, application)) {
             enforceCapacityForNewSeat(application);
             application.confirm();
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));

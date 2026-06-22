@@ -33,6 +33,19 @@ class TicketPassTest {
     }
 
     @Test
+    @DisplayName("1회권은 총 1회와 1만원 구매 금액을 스냅샷으로 가진다")
+    void oneSessionPass_hasOneSessionPolicy() {
+        User user = User.builder().email("one@example.com").password("p").name("회원")
+                .gender(Gender.FEMALE).age(25).nickname("one").phone("01012345678").build();
+        TicketPass pass = TicketPass.builder().participant(Participant.member(user))
+                .product(TicketProduct.RANDOM_TABLE_ONE).build();
+
+        assertThat(pass.getTotalCount()).isEqualTo(1);
+        assertThat(pass.getPurchaseAmount()).isEqualTo(10000);
+        assertThat(pass.getPaymentDeadline()).isNotNull();
+    }
+
+    @Test
     @DisplayName("활성화하면 ACTIVE가 되고 잔여가 총 회차로 충전된다")
     void activate_chargesRemaining() {
         TicketPass pass = newPass();

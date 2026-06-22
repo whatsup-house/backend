@@ -147,10 +147,6 @@ public class ApplicationService {
         boolean paymentPending = false;
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
             validateRandomTableEligibility(participant);
-            if (participant.isApprovedForRandomTable()) {
-                autoConfirmed = ticketService.tryUseOneTicket(participant);
-                paymentPending = !autoConfirmed;
-            }
         }
 
         Application application = Application.builder()
@@ -163,13 +159,18 @@ public class ApplicationService {
                 .formSnapshot(buildFormSnapshot(questions))
                 .build();
 
-        if (autoConfirmed) {
-            application.confirm();
-        } else if (paymentPending) {
-            application.awaitPayment();
-        }
-
         Application saved = applicationRepository.save(application);
+
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
+                && participant.isApprovedForRandomTable()) {
+            autoConfirmed = ticketService.tryUseOneTicket(participant, saved);
+            paymentPending = !autoConfirmed;
+            if (autoConfirmed) {
+                saved.confirm();
+            } else {
+                saved.awaitPayment();
+            }
+        }
 
         saveAnswers(saved, request.getAnswers(), questionMap);
 
@@ -311,7 +312,7 @@ public class ApplicationService {
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
                 && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
-            ticketService.refundOneTicket(application.getUser());
+            ticketService.refundOneTicket(application);
         }
 
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));

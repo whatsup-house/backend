@@ -237,7 +237,7 @@ class AdminApplicationServiceTest {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
         Participant participant = randomTableApp.getParticipant();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
-        given(ticketService.tryUseOneTicket(participant)).willReturn(false);
+        given(ticketService.tryUseOneTicket(participant, randomTableApp)).willReturn(false);
 
         ApplicationStatusResponse response = adminApplicationService.changeStatus(
                 applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
@@ -253,7 +253,7 @@ class AdminApplicationServiceTest {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
         Participant participant = randomTableApp.getParticipant();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
-        given(ticketService.tryUseOneTicket(participant)).willReturn(true);
+        given(ticketService.tryUseOneTicket(participant, randomTableApp)).willReturn(true);
 
         ApplicationStatusResponse response = adminApplicationService.changeStatus(
                 applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
@@ -478,7 +478,7 @@ class AdminApplicationServiceTest {
         adminApplicationService.deleteApplication(applicationId);
 
         // THEN
-        then(ticketService).should().refundOneTicket(member);
+        then(ticketService).should().refundOneTicket(randomTableApp);
     }
 
     @Test
@@ -493,7 +493,7 @@ class AdminApplicationServiceTest {
         adminApplicationService.deleteApplication(applicationId);
 
         // THEN
-        then(ticketService).should(never()).refundOneTicket(any());
+        then(ticketService).should(never()).refundOneTicket(any(Application.class));
     }
 
     private User buildMember() {

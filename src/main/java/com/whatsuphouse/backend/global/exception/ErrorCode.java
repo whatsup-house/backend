@@ -95,6 +95,8 @@ public enum ErrorCode {
     TICKET_PASS_NOT_FOUND("존재하지 않는 이용권입니다.", HttpStatus.NOT_FOUND),
     TICKET_ALREADY_PROCESSED("이미 처리된 이용권입니다.", HttpStatus.BAD_REQUEST),
     NO_AVAILABLE_TICKET("사용 가능한 이용권이 없습니다. 이용권을 먼저 구매해주세요.", HttpStatus.BAD_REQUEST),
+    TICKET_PURCHASE_NOT_ALLOWED("우연한 식탁 참여 승인 후 이용권을 구매할 수 있습니다.", HttpStatus.FORBIDDEN),
+    INVALID_TICKET_ADJUSTMENT("유효하지 않은 이용권 횟수 조정입니다.", HttpStatus.BAD_REQUEST),
 
     // Rate Limit
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),

@@ -45,6 +45,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -161,13 +162,13 @@ class ApplicationServiceTest {
         Participant participant = Participant.member(user);
         participant.approveRandomTable();
         given(participantService.getOrCreateForUser(any())).willReturn(participant);
-        given(ticketService.tryUseOneTicket(participant)).willReturn(true);
+        given(ticketService.tryUseOneTicket(eq(participant), any(Application.class))).willReturn(true);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
-        then(ticketService).should().tryUseOneTicket(participant);
+        then(ticketService).should().tryUseOneTicket(eq(participant), any(Application.class));
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
@@ -187,7 +188,7 @@ class ApplicationServiceTest {
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(participantService.getOrCreateForUser(user)).willReturn(participant);
-        given(ticketService.tryUseOneTicket(participant)).willReturn(false);
+        given(ticketService.tryUseOneTicket(eq(participant), any(Application.class))).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);

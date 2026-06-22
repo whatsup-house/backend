@@ -51,6 +51,12 @@ public class TicketPass extends BaseEntity {
     @Column(name = "activated_at")
     private LocalDateTime activatedAt;
 
+    @Column(name = "payment_deadline")
+    private LocalDateTime paymentDeadline;
+
+    @Column(name = "payment_confirmed_at")
+    private LocalDateTime paymentConfirmedAt;
+
     @Builder
     public TicketPass(Participant participant, TicketProduct product) {
         this.participant = participant;
@@ -59,6 +65,7 @@ public class TicketPass extends BaseEntity {
         this.remainingCount = 0;            // 입금 확인 전까지 사용 불가
         this.purchaseAmount = product.getPrice();
         this.status = TicketPassStatus.PENDING;
+        this.paymentDeadline = LocalDateTime.now().plusDays(3);
     }
 
     /** 소유자가 회원이면 그 User를, 비회원이면 null을 반환한다. (KAN-276) */
@@ -74,6 +81,7 @@ public class TicketPass extends BaseEntity {
         this.status = TicketPassStatus.ACTIVE;
         this.remainingCount = this.totalCount;
         this.activatedAt = LocalDateTime.now();
+        this.paymentConfirmedAt = this.activatedAt;
     }
 
     /** 우연한 식탁 신청 시 1회 차감한다. 사용 가능 상태가 아니면 예외. */
@@ -100,5 +108,14 @@ public class TicketPass extends BaseEntity {
 
     public boolean isUsable() {
         return this.status == TicketPassStatus.ACTIVE && this.remainingCount > 0;
+    }
+
+    public void adjustRemaining(int quantity) {
+        int adjusted = this.remainingCount + quantity;
+        if (quantity == 0 || adjusted < 0) {
+            throw new CustomException(ErrorCode.INVALID_TICKET_ADJUSTMENT);
+        }
+        this.remainingCount = adjusted;
+        this.status = adjusted == 0 ? TicketPassStatus.USED_UP : TicketPassStatus.ACTIVE;
     }
 }

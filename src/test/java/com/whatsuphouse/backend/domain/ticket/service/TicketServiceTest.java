@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -40,6 +41,7 @@ class TicketServiceTest {
     @Mock private TicketPassRepository ticketPassRepository;
     @Mock private UserRepository userRepository;
     @Mock private ParticipantService participantService;
+    @Mock private TicketTransactionRepository ticketTransactionRepository;
 
     @InjectMocks private TicketService ticketService;
 
@@ -70,7 +72,9 @@ class TicketServiceTest {
     @DisplayName("구매하면 PENDING 이용권이 저장된다")
     void purchase_createsPendingPass() {
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(participantService.getOrCreateForUser(any())).willReturn(Participant.member(user));
+        Participant participant = Participant.member(user);
+        participant.approveRandomTable();
+        given(participantService.getOrCreateForUser(any())).willReturn(participant);
 
         TicketPassResponse response = ticketService.purchase(userId, TicketProduct.RANDOM_TABLE_FOUR);
 
@@ -91,10 +95,26 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("심사 승인 전에는 이용권을 구매할 수 없다")
+    void purchase_unreviewedParticipant_throws() {
+        Participant participant = Participant.member(user);
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+
+        assertThatThrownBy(() -> ticketService.purchase(userId, TicketProduct.RANDOM_TABLE_ONE))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
+    }
+
+    @Test
     @DisplayName("내 이용권 조회 시 ACTIVE 잔여만 합산한다")
     void getMyTickets_sumsActiveRemaining() {
         TicketPass active = activePass(3);
         TicketPass usedUp = activePass(0);   // USED_UP
+        Participant participant = active.getParticipant();
+        participant.approveRandomTable();
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
         given(ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId))
                 .willReturn(List.of(active, usedUp));
 
@@ -102,6 +122,8 @@ class TicketServiceTest {
 
         assertThat(response.getTotalRemaining()).isEqualTo(3);
         assertThat(response.getPasses()).hasSize(2);
+        assertThat(response.isPurchasable()).isTrue();
+        assertThat(response.getRandomTableEligibility()).isEqualTo(participant.getRandomTableEligibility());
     }
 
     @Test

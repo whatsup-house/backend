@@ -8,6 +8,7 @@ import lombok.Getter;
  */
 @Getter
 public enum TicketProduct {
+    RANDOM_TABLE_ONE("우연한 식탁 1회권", 1, 10000),
     RANDOM_TABLE_FOUR("우연한 식탁 4회권", 4, 40000);
 
     private final String label;

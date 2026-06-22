@@ -174,8 +174,7 @@ public class AdminGatheringService {
             // 신청 상태는 그대로 두되, 이후 개별 취소 시 게더링이 CANCELLED면 중복 환불하지 않는다.
             if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
                 targets.stream()
-                        .filter(target -> target.getUser() != null)
-                        .forEach(target -> ticketService.refundOneTicket(target.getUser()));
+                        .forEach(ticketService::refundOneTicket);
             }
 
             if (!targets.isEmpty()) {

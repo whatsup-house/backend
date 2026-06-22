@@ -418,8 +418,8 @@ class AdminGatheringServiceTest {
         adminGatheringService.changeStatus(gatheringId, request);
 
         // then
-        then(ticketService).should().refundOneTicket(member);
-        then(ticketService).should(never()).refundOneTicket(null);
+        then(ticketService).should().refundOneTicket(memberApp);
+        then(ticketService).should().refundOneTicket(guestApp);
     }
 
     private User buildMember(String email, String nickname) {
