@@ -18,6 +18,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -71,7 +72,7 @@ class AutoTranslationServiceTest {
     }
 
     @Test
-    @DisplayName("신규 필드 → en/ja 번역 후 DONE으로 upsert")
+    @DisplayName("신규 필드 → en/ja/zh/es 번역 후 DONE으로 upsert")
     void translate_newField_upsertsDone() {
         // given
         given(client.isEnabled()).willReturn(true);
@@ -83,10 +84,10 @@ class AutoTranslationServiceTest {
         autoTranslationService.translate(TranslatableType.GATHERING, entityId, Map.of("title", "안녕하세요"));
 
         // then
-        then(translationService).should().upsert(eq(TranslatableType.GATHERING), eq(entityId), eq("title"),
-                eq(AppLocale.EN), eq("Hello"), eq(TranslationStatus.DONE), anyString(), eq(false));
-        then(translationService).should().upsert(eq(TranslatableType.GATHERING), eq(entityId), eq("title"),
-                eq(AppLocale.JA), eq("Hello"), eq(TranslationStatus.DONE), anyString(), eq(false));
+        for (AppLocale locale : List.of(AppLocale.EN, AppLocale.JA, AppLocale.ZH, AppLocale.ES)) {
+            then(translationService).should().upsert(eq(TranslatableType.GATHERING), eq(entityId), eq("title"),
+                    eq(locale), eq("Hello"), eq(TranslationStatus.DONE), anyString(), eq(false));
+        }
     }
 
     @Test
@@ -142,8 +143,8 @@ class AutoTranslationServiceTest {
         // when
         autoTranslationService.translate(TranslatableType.GATHERING, entityId, Map.of("title", "안녕하세요"));
 
-        // then
-        then(translationService).should(times(2)).upsert(eq(TranslatableType.GATHERING), eq(entityId), eq("title"),
+        // then (en/ja/zh/es 4개 모두 FAILED 기록)
+        then(translationService).should(times(4)).upsert(eq(TranslatableType.GATHERING), eq(entityId), eq("title"),
                 any(), isNull(), eq(TranslationStatus.FAILED), anyString(), eq(false));
     }
 

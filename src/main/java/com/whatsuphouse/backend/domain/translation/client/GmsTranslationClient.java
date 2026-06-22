@@ -70,13 +70,21 @@ public class GmsTranslationClient {
 
     // 톤 유지 + 브랜드 용어 글로서리를 지시하고, 번역문만 출력하도록 한다.
     private String systemPrompt(AppLocale target) {
-        String language = target == AppLocale.JA ? "Japanese" : "English";
         return """
                 You are a professional translator for a small social gathering service.
                 Translate the user's Korean text into %s.
                 Preserve the original tone, nuance, and meaning. Keep it natural and concise.
                 Brand glossary: '와썹하우스' = 'Whatsup House', '게더링' = 'gathering'.
                 Output ONLY the translated text, with no quotes, labels, or explanation.
-                """.formatted(language);
+                """.formatted(targetLanguageName(target));
+    }
+
+    private String targetLanguageName(AppLocale target) {
+        return switch (target) {
+            case JA -> "Japanese";
+            case ZH -> "Simplified Chinese";
+            case ES -> "Spanish";
+            default -> "English"; // EN (KO는 번역 대상이 아님)
+        };
     }
 }

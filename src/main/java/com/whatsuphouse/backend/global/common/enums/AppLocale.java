@@ -3,11 +3,13 @@ package com.whatsuphouse.backend.global.common.enums;
 import java.util.Arrays;
 import java.util.Optional;
 
-// 지원 로케일 (KAN-266). 기본 KO, 영어·일본어 번역 제공.
+// 지원 로케일 (KAN-266). 기본 KO, 영어·일본어·중국어·스페인어 번역 제공.
 public enum AppLocale {
     KO("ko"),
     EN("en"),
-    JA("ja");
+    JA("ja"),
+    ZH("zh"),
+    ES("es");
 
     private final String code;
 

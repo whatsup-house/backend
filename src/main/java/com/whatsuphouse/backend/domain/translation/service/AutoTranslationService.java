@@ -37,7 +37,8 @@ import java.util.UUID;
 public class AutoTranslationService {
 
     private static final Logger log = LoggerFactory.getLogger(AutoTranslationService.class);
-    private static final List<AppLocale> TARGET_LOCALES = List.of(AppLocale.EN, AppLocale.JA);
+    private static final List<AppLocale> TARGET_LOCALES =
+            List.of(AppLocale.EN, AppLocale.JA, AppLocale.ZH, AppLocale.ES);
 
     private final GmsTranslationClient client;
     private final ContentTranslationService translationService;
