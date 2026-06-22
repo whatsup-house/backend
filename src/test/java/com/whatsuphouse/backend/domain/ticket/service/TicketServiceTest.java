@@ -140,7 +140,6 @@ class TicketServiceTest {
         Participant guest = Participant.guest("비회원", "guest@test.com", "01012345678");
         Application application = mock(Application.class);
         given(application.getParticipant()).willReturn(guest);
-        given(application.getStatus()).willReturn(ApplicationStatus.PENDING);
         given(applicationRepository.findByBookingNumberAndDeletedAtIsNull("WH260623-ABC123"))
                 .willReturn(Optional.of(application));
 

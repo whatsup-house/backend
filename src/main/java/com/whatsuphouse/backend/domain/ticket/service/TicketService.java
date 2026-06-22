@@ -53,7 +53,10 @@ public class TicketService {
 
     /** 승인 메일의 예약번호로 비회원 이용권 구매 요청을 생성한다. */
     public TicketPassResponse purchaseGuest(String bookingNumber, TicketProduct product) {
-        Application application = getApprovedGuestApplication(bookingNumber);
+        Application application = getGuestApplication(bookingNumber);
+        if (application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
+            throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
+        }
         TicketPass pass = createPendingPass(application.getParticipant(), product);
         eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
         return TicketPassResponse.from(pass);
@@ -71,19 +74,23 @@ public class TicketService {
     /** 승인 메일의 예약번호로 비회원 자격과 이용권을 조회한다. */
     @Transactional(readOnly = true)
     public MyTicketsResponse getGuestTickets(String bookingNumber) {
-        Application application = getApprovedGuestApplication(bookingNumber);
+        Application application = getGuestApplication(bookingNumber);
+        if (application.getStatus() != ApplicationStatus.PAYMENT_PENDING
+                && application.getStatus() != ApplicationStatus.CONFIRMED
+                && application.getStatus() != ApplicationStatus.ATTENDED) {
+            throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
+        }
         Participant participant = application.getParticipant();
         List<TicketPass> passes = ticketPassRepository
                 .findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(participant.getId());
         return buildTicketsResponse(participant, passes);
     }
 
-    private Application getApprovedGuestApplication(String bookingNumber) {
+    private Application getGuestApplication(String bookingNumber) {
         Application application = applicationRepository.findByBookingNumberAndDeletedAtIsNull(bookingNumber)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
         Participant participant = application.getParticipant();
         if (participant == null || participant.getUser() != null
-                || application.getStatus() != ApplicationStatus.PAYMENT_PENDING
                 || !participant.isApprovedForRandomTable()
                 || participant.isBlockedFromRandomTable()) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
