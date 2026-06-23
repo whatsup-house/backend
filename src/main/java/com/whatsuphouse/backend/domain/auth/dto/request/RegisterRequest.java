@@ -60,6 +60,10 @@ public class RegisterRequest {
     @Size(max = 30, message = "직업 코드는 30자 이하여야 합니다.")
     private String job;
 
+    @Schema(example = "hong_gildong", description = "인스타그램 아이디 (선택)")
+    @Size(max = 100, message = "인스타그램 아이디는 100자 이하여야 합니다.")
+    private String instagramId;
+
     @Schema(example = "안녕하세요, 잘 부탁드려요!", description = "한줄소개 (선택)")
     @Size(max = 500, message = "한줄소개는 500자 이하여야 합니다.")
     private String intro;

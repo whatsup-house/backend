@@ -79,6 +79,7 @@ public class AuthService {
                 .birthDate(request.getBirthDate())
                 .nickname(request.getNickname())
                 .phone(request.getPhone())
+                .instagramId(request.getInstagramId())
                 .job(request.getJob())
                 .intro(request.getIntro())
                 .build();

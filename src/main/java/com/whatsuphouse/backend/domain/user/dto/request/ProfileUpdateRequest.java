@@ -42,6 +42,7 @@ public class ProfileUpdateRequest {
     private Integer age;
 
     @Schema(example = "hong_gildong")
+    @Size(max = 100, message = "인스타그램 아이디는 100자 이하여야 합니다.")
     private String instagramId;
 
     @Schema(example = "ENFP")
