@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +17,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +65,9 @@ public class EmailNotificationService implements NotificationService {
     @Value("${notification.email.from}")
     private String from;
 
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
+
     /**
      * 회원가입 완료 환영 이메일.
      * 가입 축하 마일리지 1,000P 적립 안내를 포함합니다.
@@ -81,6 +87,14 @@ public class EmailNotificationService implements NotificationService {
         MailContent mail = mailTemplateRenderer.render(MailTemplateType.PASSWORD_RESET,
                 Map.of("닉네임", user.getNickname(), "재설정링크", resetUrl));
         send(user.getEmail(), mail.subject(), mail.body());
+    }
+
+    @Override
+    @Async("emailTaskExecutor")
+    public void sendGuestEmailVerification(String email, String code) {
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.GUEST_EMAIL_VERIFICATION,
+                Map.of("인증번호", code, "유효시간", "5분"));
+        send(email, mail.subject(), mail.body());
     }
 
     /**
@@ -109,10 +123,34 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
-        // 확정 메일은 입금 요청서 역할을 겸하므로 입금 금액(게더링 참가비)을 함께 채운다. (KAN-242)
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_CONFIRMED,
+                applicationVariables(application));
+        send(email, mail.subject(), mail.body());
+    }
+
+    @Override
+    @Async("emailTaskExecutor")
+    public void sendApplicationApproved(Application application) {
+        String email = resolveEmail(application);
+        if (email == null) return;
+
+        MailContent mail = mailTemplateRenderer.render(
+                MailTemplateType.APPLICATION_APPROVED, applicationVariables(application));
+        send(email, mail.subject(), mail.body());
+    }
+
+    @Override
+    @Async("emailTaskExecutor")
+    public void sendTicketPurchaseRequested(Application application, TicketPass ticketPass) {
+        String email = resolveEmail(application);
+        if (email == null) return;
+
         Map<String, String> variables = applicationVariables(application);
-        variables.put("입금금액", formatPrice(application));
-        MailContent mail = mailTemplateRenderer.render(MailTemplateType.APPLICATION_CONFIRMED, variables);
+        variables.put("이용권명", ticketPass.getProduct().getLabel());
+        variables.put("결제금액", String.format("%,d", ticketPass.getPurchaseAmount()));
+        variables.put("입금계좌", "우리은행 1002-157-849052");
+        variables.put("예금주", "와썹하우스");
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.TICKET_PURCHASE_REQUESTED, variables);
         send(email, mail.subject(), mail.body());
     }
 
@@ -208,6 +246,11 @@ public class EmailNotificationService implements NotificationService {
         variables.put("모임날짜", formatDate(application));
         variables.put("시작시간", formatTime(application));
         variables.put("예약번호", application.getBookingNumber());
+        String encodedBookingNumber = URLEncoder.encode(application.getBookingNumber(), StandardCharsets.UTF_8);
+        variables.put("조회경로", frontendUrl + "/applications/check?bookingNumber=" + encodedBookingNumber);
+        variables.put("결제링크", frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
+        variables.put("확정링크", frontendUrl + "/gatherings/" + application.getGathering().getId()
+                + "/apply/confirmed?bookingNumber=" + encodedBookingNumber);
         return variables;
     }
 
@@ -247,11 +290,6 @@ public class EmailNotificationService implements NotificationService {
     /**
      * 게더링 참가비를 천 단위 구분 문자열로 포맷합니다. 가격이 없으면 "0"을 반환합니다.
      */
-    private String formatPrice(Application application) {
-        Integer price = application.getGathering().getPrice();
-        return String.format("%,d", price != null ? price : 0);
-    }
-
     /**
      * 실제 이메일 발송을 처리하는 내부 메서드.
      *

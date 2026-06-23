@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.config.TestJpaConfig;
@@ -62,11 +63,13 @@ class AdminUserRepositoryTest {
                 .maxAttendees(10)
                 .build());
 
+        Participant participant = em.persist(Participant.member(user));
+
         // PENDING 신청 1건
         applicationRepository.save(Application.builder()
                 .bookingNumber("WH001")
                 .gathering(gathering)
-                .user(user)
+                .participant(participant)
                 .name(user.getName())
                 .phone(user.getPhone())
                 .build());
@@ -75,7 +78,7 @@ class AdminUserRepositoryTest {
         Application attended = applicationRepository.save(Application.builder()
                 .bookingNumber("WH002")
                 .gathering(gathering)
-                .user(user)
+                .participant(participant)
                 .name(user.getName())
                 .phone(user.getPhone())
                 .build());
@@ -85,7 +88,7 @@ class AdminUserRepositoryTest {
         Application cancelled = applicationRepository.save(Application.builder()
                 .bookingNumber("WH003")
                 .gathering(gathering)
-                .user(user)
+                .participant(participant)
                 .name(user.getName())
                 .phone(user.getPhone())
                 .build());

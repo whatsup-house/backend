@@ -30,6 +30,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.security.SecureRandom;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -40,6 +42,11 @@ public class AuthService {
     private static final String REFRESH_TOKEN_PREFIX = "refresh:";
     private static final String PASSWORD_RESET_PREFIX = "password-reset:";
     private static final long PASSWORD_RESET_TTL_MINUTES = 30L;
+    private static final String GUEST_EMAIL_CODE_PREFIX = "guest-email-code:";
+    private static final String GUEST_EMAIL_VERIFIED_PREFIX = "guest-email-verified:";
+    private static final long GUEST_EMAIL_CODE_TTL_MINUTES = 5L;
+    private static final long GUEST_EMAIL_VERIFIED_TTL_MINUTES = 30L;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -158,6 +165,47 @@ public class AuthService {
         return PasswordResetConfirmResponse.builder()
                 .reset(true)
                 .build();
+    }
+
+    public com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse requestGuestEmailVerification(
+            com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationRequest request) {
+        String email = normalizeEmail(request.getEmail());
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
+        redisTemplate.opsForValue().set(
+                GUEST_EMAIL_CODE_PREFIX + email, code,
+                GUEST_EMAIL_CODE_TTL_MINUTES, TimeUnit.MINUTES);
+        notificationService.sendGuestEmailVerification(email, code);
+        return com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse.builder()
+                .accepted(true).verified(false).build();
+    }
+
+    public com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse confirmGuestEmailVerification(
+            com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationConfirmRequest request) {
+        String email = normalizeEmail(request.getEmail());
+        String codeKey = GUEST_EMAIL_CODE_PREFIX + email;
+        String storedCode = redisTemplate.opsForValue().get(codeKey);
+        if (storedCode == null || !storedCode.equals(request.getCode())) {
+            throw new CustomException(ErrorCode.INVALID_EMAIL_VERIFICATION_CODE);
+        }
+        redisTemplate.delete(codeKey);
+        redisTemplate.opsForValue().set(
+                GUEST_EMAIL_VERIFIED_PREFIX + email, "true",
+                GUEST_EMAIL_VERIFIED_TTL_MINUTES, TimeUnit.MINUTES);
+        return com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse.builder()
+                .accepted(true).verified(true).build();
+    }
+
+    public boolean isGuestEmailVerified(String email) {
+        return email != null && Boolean.TRUE.equals(redisTemplate.hasKey(
+                GUEST_EMAIL_VERIFIED_PREFIX + normalizeEmail(email)));
+    }
+
+    public void consumeGuestEmailVerification(String email) {
+        redisTemplate.delete(GUEST_EMAIL_VERIFIED_PREFIX + normalizeEmail(email));
+    }
+
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     public void logout(UUID userId) {

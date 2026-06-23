@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.client.service;
 
 import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
+import com.whatsuphouse.backend.domain.auth.service.AuthService;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
@@ -21,7 +22,11 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
+import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
@@ -57,6 +62,8 @@ public class ApplicationService {
     private final ApplicationEventPublisher eventPublisher;
     private final FormProvisionService formProvisionService;
     private final TicketService ticketService;
+    private final ParticipantService participantService;
+    private final AuthService authService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -110,7 +117,7 @@ public class ApplicationService {
         if (userId != null) {
             user = userRepository.findByIdAndDeletedAtIsNull(userId)
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-            if (applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(gathering.getId(), userId)) {
+            if (applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(gathering.getId(), userId)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         } else {
@@ -127,11 +134,9 @@ public class ApplicationService {
             if (guestEmail != null && !guestEmail.isBlank() && !EMAIL_PATTERN.matcher(guestEmail).matches()) {
                 throw new CustomException(ErrorCode.INVALID_EMAIL_FORMAT);
             }
-        }
-
-        // 우연한 식탁(RANDOM_TABLE) 회원 신청은 이용권을 1회 차감한다. 잔여가 없으면 차단. (KAN-261)
-        if (user != null && gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
-            ticketService.useOneTicket(user);
+            if (guestEmail == null || guestEmail.isBlank() || !authService.isGuestEmailVerified(guestEmail)) {
+                throw new CustomException(ErrorCode.EMAIL_NOT_VERIFIED);
+            }
         }
 
         String name = user != null ? user.getName() : extractString(byKey, "name");
@@ -139,10 +144,21 @@ public class ApplicationService {
         // 알림 발송용 이메일: 회원=계정 이메일, 비회원=신청서 답변 이메일
         String email = user != null ? user.getEmail() : extractString(byKey, "email");
 
+        // 신청 주체를 participant로 연결한다. 회원은 user당 1개 보장, 비회원은 신청마다 새 GUEST. (KAN-276)
+        Participant participant = user != null
+                ? participantService.getOrCreateForUser(user)
+                : participantService.getOrCreateVerifiedGuest(name, email, phone);
+
+        boolean autoConfirmed = false;
+        boolean paymentPending = false;
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
+            validateRandomTableEligibility(participant);
+        }
+
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
                 .gathering(gathering)
-                .user(user)
+                .participant(participant)
                 .name(name)
                 .phone(phone)
                 .email(email)
@@ -150,12 +166,40 @@ public class ApplicationService {
                 .build();
 
         Application saved = applicationRepository.save(application);
+        if (user == null) {
+            authService.consumeGuestEmailVerification(email);
+        }
+
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
+                && participant.isApprovedForRandomTable()) {
+            autoConfirmed = ticketService.tryUseOneTicket(participant, saved);
+            paymentPending = !autoConfirmed;
+            if (autoConfirmed) {
+                saved.confirm();
+            } else {
+                saved.awaitPayment();
+            }
+        }
 
         saveAnswers(saved, request.getAnswers(), questionMap);
 
-        // 자동매칭 대상은 status = CONFIRMED인 신청만 포함한다. PENDING/CANCELLED/ATTENDED는 제외.
-        eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
+        if (autoConfirmed) {
+            eventPublisher.publishEvent(new ApplicationConfirmedEvent(saved));
+        } else if (paymentPending) {
+            eventPublisher.publishEvent(new ApplicationApprovedEvent(saved));
+        } else {
+            eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
+        }
         return ApplicationResponse.from(saved);
+    }
+
+    private void validateRandomTableEligibility(Participant participant) {
+        if (participant.isAccountBlocked()) {
+            throw new CustomException(ErrorCode.PARTICIPANT_BLOCKED);
+        }
+        if (participant.isRandomTableEligibilityRestricted()) {
+            throw new CustomException(ErrorCode.RANDOM_TABLE_ELIGIBILITY_RESTRICTED);
+        }
     }
 
     private void validateAnswers(List<AnswerItem> answers, List<FormQuestion> questions,
@@ -252,7 +296,7 @@ public class ApplicationService {
     }
 
     public List<ApplicationListResponse> getMyApplications(UUID userId) {
-        return applicationRepository.findByUserIdAndDeletedAtIsNull(userId)
+        return applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(userId)
                 .stream()
                 .map(ApplicationListResponse::from)
                 .toList();
@@ -267,7 +311,8 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
         }
 
-        if (application.getStatus() != ApplicationStatus.PENDING) {
+        if (application.getStatus() != ApplicationStatus.PENDING
+                && application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
             throw new CustomException(ErrorCode.CANNOT_CANCEL);
         }
 
@@ -278,7 +323,7 @@ public class ApplicationService {
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
                 && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
-            ticketService.refundOneTicket(application.getUser());
+            ticketService.refundOneTicket(application);
         }
 
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));

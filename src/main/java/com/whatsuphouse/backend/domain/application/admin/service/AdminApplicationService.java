@@ -19,6 +19,8 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEve
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -96,7 +98,7 @@ public class AdminApplicationService {
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
                 && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
-            ticketService.refundOneTicket(application.getUser());
+            ticketService.refundOneTicket(application);
         }
 
         // 관리자 직접 삭제도 취소 알림 대상 (FR-NTF-04)
@@ -112,10 +114,23 @@ public class AdminApplicationService {
         ApplicationStatus newStatus = request.getStatus();
         switch (newStatus) {
             case CONFIRMED -> {
-                enforceCapacityForNewSeat(application);
-                application.confirm();
-                // 확정 알림 이메일 (FR-NTF-03)
-                eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
+                if (application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE) {
+                    approveRandomTableApplication(application);
+                } else {
+                    enforceCapacityForNewSeat(application);
+                    application.confirm();
+                    eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
+                }
+            }
+            case REJECTED -> {
+                String reason = request.getRejectionReason();
+                if (reason == null || reason.isBlank()) {
+                    throw new CustomException(ErrorCode.REJECTION_REASON_REQUIRED);
+                }
+                application.reject(reason.trim());
+                if (application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE) {
+                    application.getParticipant().rejectRandomTable();
+                }
             }
             case ATTENDED -> {
                 if (application.getStatus() == ApplicationStatus.ATTENDED) {
@@ -131,6 +146,26 @@ public class AdminApplicationService {
         }
 
         return ApplicationStatusResponse.of(application.getId(), application.getStatus(), null, null);
+    }
+
+    private void approveRandomTableApplication(Application application) {
+        Participant participant = application.getParticipant();
+        if (participant.isAccountBlocked()) {
+            throw new CustomException(ErrorCode.PARTICIPANT_BLOCKED);
+        }
+        if (participant.isRandomTableEligibilityRestricted()) {
+            throw new CustomException(ErrorCode.RANDOM_TABLE_ELIGIBILITY_RESTRICTED);
+        }
+
+        participant.approveRandomTable();
+        if (ticketService.tryUseOneTicket(participant, application)) {
+            enforceCapacityForNewSeat(application);
+            application.confirm();
+            eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
+        } else {
+            application.awaitPayment();
+            eventPublisher.publishEvent(new ApplicationApprovedEvent(application));
+        }
     }
 
     // 입금 확인/해제 토글. 신청 상태(status)와 독립적으로 동작하며 확정을 자동 트리거하지 않는다. (KAN-242)

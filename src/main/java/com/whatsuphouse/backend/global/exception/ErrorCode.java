@@ -22,6 +22,9 @@ public enum ErrorCode {
     INVALID_REFRESH_TOKEN("유효하지 않은 리프레시 토큰입니다.", HttpStatus.UNAUTHORIZED),
     EXPIRED_REFRESH_TOKEN("만료된 리프레시 토큰입니다.", HttpStatus.UNAUTHORIZED),
     INVALID_PASSWORD_RESET_TOKEN("유효하지 않은 비밀번호 재설정 링크입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_EMAIL_VERIFICATION_CODE("인증번호가 올바르지 않거나 만료되었습니다.", HttpStatus.BAD_REQUEST),
+    EMAIL_NOT_VERIFIED("이메일 인증이 필요합니다.", HttpStatus.FORBIDDEN),
+    GUEST_PARTICIPANT_NOT_FOUND("일치하는 비회원 이용내역을 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
 
     // User
     DUPLICATE_NICKNAME("이미 사용 중인 닉네임입니다.", HttpStatus.CONFLICT),
@@ -62,6 +65,9 @@ public enum ErrorCode {
     GUEST_PHONE_REQUIRED("비회원 신청 시 전화번호는 필수입니다.", HttpStatus.BAD_REQUEST),
     INVALID_EMAIL_FORMAT("올바른 이메일 형식이 아닙니다.", HttpStatus.BAD_REQUEST),
     ALREADY_ATTENDED("이미 출석 처리된 신청입니다.", HttpStatus.CONFLICT),
+    PARTICIPANT_BLOCKED("차단된 참가자는 우연한 식탁을 신청할 수 없습니다.", HttpStatus.FORBIDDEN),
+    RANDOM_TABLE_ELIGIBILITY_RESTRICTED("우연한 식탁 참여 자격이 제한된 상태입니다.", HttpStatus.FORBIDDEN),
+    REJECTION_REASON_REQUIRED("신청 거절 사유는 필수입니다.", HttpStatus.BAD_REQUEST),
 
     // Location
     LOCATION_NOT_FOUND("존재하지 않는 장소입니다.", HttpStatus.NOT_FOUND),
@@ -92,6 +98,8 @@ public enum ErrorCode {
     TICKET_PASS_NOT_FOUND("존재하지 않는 이용권입니다.", HttpStatus.NOT_FOUND),
     TICKET_ALREADY_PROCESSED("이미 처리된 이용권입니다.", HttpStatus.BAD_REQUEST),
     NO_AVAILABLE_TICKET("사용 가능한 이용권이 없습니다. 이용권을 먼저 구매해주세요.", HttpStatus.BAD_REQUEST),
+    TICKET_PURCHASE_NOT_ALLOWED("우연한 식탁 참여 승인 후 이용권을 구매할 수 있습니다.", HttpStatus.FORBIDDEN),
+    INVALID_TICKET_ADJUSTMENT("유효하지 않은 이용권 횟수 조정입니다.", HttpStatus.BAD_REQUEST),
 
     // Rate Limit
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),

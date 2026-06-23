@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.entity;
 
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -25,9 +26,10 @@ public class TicketPass extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // 이용권 소유자. 회원/비회원 모두 participant로 연결한다. (KAN-276)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @JoinColumn(name = "participant_id", nullable = false)
+    private Participant participant;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40)
@@ -39,6 +41,9 @@ public class TicketPass extends BaseEntity {
     @Column(name = "remaining_count", nullable = false)
     private int remainingCount;
 
+    @Column(name = "purchase_amount", nullable = false)
+    private int purchaseAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TicketPassStatus status;
@@ -46,13 +51,26 @@ public class TicketPass extends BaseEntity {
     @Column(name = "activated_at")
     private LocalDateTime activatedAt;
 
+    @Column(name = "payment_deadline")
+    private LocalDateTime paymentDeadline;
+
+    @Column(name = "payment_confirmed_at")
+    private LocalDateTime paymentConfirmedAt;
+
     @Builder
-    public TicketPass(User user, TicketProduct product) {
-        this.user = user;
+    public TicketPass(Participant participant, TicketProduct product) {
+        this.participant = participant;
         this.product = product;
         this.totalCount = product.getSessionCount();
         this.remainingCount = 0;            // 입금 확인 전까지 사용 불가
+        this.purchaseAmount = product.getPrice();
         this.status = TicketPassStatus.PENDING;
+        this.paymentDeadline = LocalDateTime.now().plusDays(3);
+    }
+
+    /** 소유자가 회원이면 그 User를, 비회원이면 null을 반환한다. (KAN-276) */
+    public User getUser() {
+        return participant != null ? participant.getUser() : null;
     }
 
     /** 관리자 입금 확인 시 활성화하고 잔여를 충전한다. PENDING이 아니면 예외. */
@@ -63,6 +81,7 @@ public class TicketPass extends BaseEntity {
         this.status = TicketPassStatus.ACTIVE;
         this.remainingCount = this.totalCount;
         this.activatedAt = LocalDateTime.now();
+        this.paymentConfirmedAt = this.activatedAt;
     }
 
     /** 우연한 식탁 신청 시 1회 차감한다. 사용 가능 상태가 아니면 예외. */
@@ -89,5 +108,14 @@ public class TicketPass extends BaseEntity {
 
     public boolean isUsable() {
         return this.status == TicketPassStatus.ACTIVE && this.remainingCount > 0;
+    }
+
+    public void adjustRemaining(int quantity) {
+        int adjusted = this.remainingCount + quantity;
+        if (quantity == 0 || adjusted < 0) {
+            throw new CustomException(ErrorCode.INVALID_TICKET_ADJUSTMENT);
+        }
+        this.remainingCount = adjusted;
+        this.status = adjusted == 0 ? TicketPassStatus.USED_UP : TicketPassStatus.ACTIVE;
     }
 }

@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -44,6 +45,7 @@ class ApplicationRepositoryTest {
 
     private Gathering gathering;
     private User user;
+    private Participant participant;
 
     @BeforeEach
     void setUp() {
@@ -62,6 +64,8 @@ class ApplicationRepositoryTest {
                 .nickname("chulsoo")
                 .phone("01012345678")
                 .build());
+
+        participant = em.persist(Participant.member(user));
 
         em.flush();
         em.clear();
@@ -94,7 +98,7 @@ class ApplicationRepositoryTest {
         em.flush();
         em.clear();
 
-        boolean exists = applicationRepository.existsByGatheringIdAndUserIdAndDeletedAtIsNull(
+        boolean exists = applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(
                 gathering.getId(), user.getId());
 
         assertThat(exists).isTrue();
@@ -149,7 +153,7 @@ class ApplicationRepositoryTest {
         em.flush();
         em.clear();
 
-        List<Application> result = applicationRepository.findByUserIdAndDeletedAtIsNull(user.getId());
+        List<Application> result = applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(user.getId());
 
         assertThat(result).hasSize(2);
     }
@@ -213,7 +217,7 @@ class ApplicationRepositoryTest {
         return applicationRepository.save(Application.builder()
                 .bookingNumber(bookingNumber)
                 .gathering(g)
-                .user(u)
+                .participant(u != null ? participant : null)
                 .name(name)
                 .phone(phoneValue)
                 .build());

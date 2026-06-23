@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.notification;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.notification.event.*;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,7 +55,7 @@ class NotificationEventListenerTest {
         application = Application.builder()
                 .bookingNumber("WH260428-TEST01")
                 .gathering(gathering)
-                .user(user)
+                .participant(Participant.member(user))
                 .name(user.getName())
                 .phone(user.getPhone())
                 .build();

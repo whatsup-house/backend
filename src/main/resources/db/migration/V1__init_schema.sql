@@ -20,6 +20,26 @@ CREATE TABLE IF NOT EXISTS users (
     deleted_at      TIMESTAMP
 );
 
+-- ================================================
+-- 참가자 (회원/비회원 공통) — 우연한 식탁 심사·이용권의 소유 주체
+-- ================================================
+CREATE TABLE IF NOT EXISTS participants (
+    id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id                  UUID         UNIQUE REFERENCES users(id),
+    participant_type         VARCHAR(20)  NOT NULL,
+    name                     VARCHAR(50)  NOT NULL,
+    email                    VARCHAR(255) NOT NULL,
+    phone                    VARCHAR(11)  NOT NULL,
+    email_verified_at        TIMESTAMP,
+    account_status           VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    random_table_eligibility VARCHAR(20)  NOT NULL DEFAULT 'UNREVIEWED',
+    created_at               TIMESTAMP    NOT NULL,
+    updated_at               TIMESTAMP    NOT NULL,
+    deleted_at               TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_participants_user_id ON participants(user_id);
+
 CREATE TABLE IF NOT EXISTS locations (
     id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     name          VARCHAR(100) NOT NULL,
@@ -59,7 +79,7 @@ CREATE TABLE IF NOT EXISTS applications (
     id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     booking_number VARCHAR(20) NOT NULL UNIQUE,
     gathering_id   UUID        NOT NULL REFERENCES gatherings(id),
-    user_id        UUID        REFERENCES users(id),
+    participant_id UUID        REFERENCES participants(id),
     name           VARCHAR(50) NOT NULL,
     phone          VARCHAR(11) NOT NULL,
     email          VARCHAR(255),
@@ -73,6 +93,8 @@ CREATE TABLE IF NOT EXISTS applications (
     referrer_name  VARCHAR(50),
     status         VARCHAR(20) NOT NULL,
     payment_confirmed_at TIMESTAMP,
+    reviewed_at    TIMESTAMP,
+    rejection_reason VARCHAR(500),
     created_at     TIMESTAMP   NOT NULL,
     updated_at     TIMESTAMP   NOT NULL,
     deleted_at     TIMESTAMP
@@ -282,20 +304,40 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_i
 -- 우연한 식탁 이용권
 -- ================================================
 CREATE TABLE IF NOT EXISTS ticket_passes (
-    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID        NOT NULL REFERENCES users(id),
-    product         VARCHAR(40) NOT NULL,
-    total_count     INTEGER     NOT NULL,
-    remaining_count INTEGER     NOT NULL DEFAULT 0,
-    status          VARCHAR(20) NOT NULL,
-    activated_at    TIMESTAMP,
-    created_at      TIMESTAMP   NOT NULL,
-    updated_at      TIMESTAMP   NOT NULL,
-    deleted_at      TIMESTAMP
+    id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    participant_id       UUID        NOT NULL REFERENCES participants(id),
+    product              VARCHAR(40) NOT NULL,
+    total_count          INTEGER     NOT NULL,
+    remaining_count      INTEGER     NOT NULL DEFAULT 0,
+    purchase_amount      INTEGER     NOT NULL,
+    status               VARCHAR(20) NOT NULL,
+    payment_deadline     TIMESTAMP,
+    payment_confirmed_at TIMESTAMP,
+    activated_at         TIMESTAMP,
+    created_at           TIMESTAMP   NOT NULL,
+    updated_at           TIMESTAMP   NOT NULL,
+    deleted_at           TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_ticket_passes_user_id ON ticket_passes(user_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_passes_participant_id ON ticket_passes(participant_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_passes_status ON ticket_passes(status);
+
+-- ================================================
+-- 우연한 식탁 이용권 거래내역 (잔여 횟수 변경 이력)
+-- ================================================
+CREATE TABLE IF NOT EXISTS ticket_transactions (
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_pass_id   UUID        NOT NULL REFERENCES ticket_passes(id),
+    application_id   UUID        REFERENCES applications(id),
+    transaction_type VARCHAR(20) NOT NULL,
+    quantity         INTEGER     NOT NULL,
+    balance_after    INTEGER     NOT NULL,
+    reason           VARCHAR(255),
+    created_at       TIMESTAMP   NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticket_transactions_ticket_pass_id ON ticket_transactions(ticket_pass_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_transactions_application_id ON ticket_transactions(application_id);
 
 -- ================================================
 -- 다국어 콘텐츠 번역

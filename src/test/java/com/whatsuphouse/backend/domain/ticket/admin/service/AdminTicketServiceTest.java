@@ -1,10 +1,21 @@
 package com.whatsuphouse.backend.domain.ticket.admin.service;
 
+import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminPendingDepositResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminTicketPassResponse;
+import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketAdjustmentRequest;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import org.springframework.context.ApplicationEventPublisher;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -21,15 +32,21 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.ArgumentMatchers.any;
 
 @ExtendWith(MockitoExtension.class)
 class AdminTicketServiceTest {
 
     @Mock private TicketPassRepository ticketPassRepository;
+    @Mock private TicketTransactionRepository ticketTransactionRepository;
+    @Mock private ApplicationRepository applicationRepository;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks private AdminTicketService adminTicketService;
 
@@ -45,7 +62,7 @@ class AdminTicketServiceTest {
     }
 
     private TicketPass pendingPass() {
-        return TicketPass.builder().user(user).product(TicketProduct.RANDOM_TABLE_FOUR).build();
+        return TicketPass.builder().participant(Participant.member(user)).product(TicketProduct.RANDOM_TABLE_FOUR).build();
     }
 
     @Test
@@ -60,6 +77,37 @@ class AdminTicketServiceTest {
         assertThat(pass.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
         assertThat(response.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
         assertThat(response.getTotalCount()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("입금 확인 시 결제 대기 신청에 1회를 사용하고 자동 확정한다")
+    void confirm_paymentPendingApplication_autoConfirms() {
+        UUID id = UUID.randomUUID();
+        TicketPass pass = pendingPass();
+        Participant participant = pass.getParticipant();
+        ReflectionTestUtils.setField(participant, "id", UUID.randomUUID());
+        Gathering gathering = Gathering.builder().title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
+                .gatheringType(GatheringType.RANDOM_TABLE).build();
+        ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
+        Application application = Application.builder().bookingNumber("WH-PAY-001")
+                .gathering(gathering).participant(participant).name("홍길동")
+                .phone("01012345678").build();
+        ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
+        application.awaitPayment();
+
+        given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
+        given(applicationRepository.findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                participant.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
+                gathering.getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
+
+        adminTicketService.confirm(id);
+
+        assertThat(pass.getRemainingCount()).isEqualTo(3);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        assertThat(application.isPaymentConfirmed()).isTrue();
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
     @Test
@@ -96,5 +144,62 @@ class AdminTicketServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getStatus()).isEqualTo(TicketPassStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("관리자는 사유와 함께 이용권 횟수를 회수하고 복구할 수 있다")
+    void adjust_changesRemaining() {
+        UUID id = UUID.randomUUID();
+        TicketPass pass = pendingPass();
+        pass.activate();
+        given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
+
+        adminTicketService.adjust(id, TicketAdjustmentRequest.builder()
+                .quantity(-2).reason("노쇼 회수").build());
+        assertThat(pass.getRemainingCount()).isEqualTo(2);
+
+        adminTicketService.adjust(id, TicketAdjustmentRequest.builder()
+                .quantity(1).reason("관리자 복구").build());
+        assertThat(pass.getRemainingCount()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("입금 대기 큐는 연결된 신청자·게더링 정보를 붙여 반환한다")
+    void listPendingDeposits_includesApplicationContext() {
+        TicketPass pass = pendingPass();
+        Participant participant = pass.getParticipant();
+        ReflectionTestUtils.setField(participant, "id", UUID.randomUUID());
+        Gathering gathering = Gathering.builder().title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
+                .gatheringType(GatheringType.RANDOM_TABLE).build();
+        ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
+        Application application = Application.builder().bookingNumber("WH-PAY-002")
+                .gathering(gathering).participant(participant).name("홍길동")
+                .phone("01012345678").build();
+        application.awaitPayment();
+
+        given(ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING))
+                .willReturn(List.of(pass));
+        given(applicationRepository.findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                participant.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
+
+        List<AdminPendingDepositResponse> result = adminTicketService.listPendingDeposits();
+
+        assertThat(result).hasSize(1);
+        AdminPendingDepositResponse row = result.get(0);
+        assertThat(row.getApplicantName()).isEqualTo("홍길동");
+        assertThat(row.isMember()).isTrue();
+        assertThat(row.getProductLabel()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getLabel());
+        assertThat(row.getAmount()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getPrice());
+        assertThat(row.getBookingNumber()).isEqualTo("WH-PAY-002");
+        assertThat(row.getGatheringTitle()).isEqualTo("우연한 식탁");
+    }
+
+    @Test
+    @DisplayName("입금 대기 건수를 반환한다")
+    void countPendingDeposits_returnsCount() {
+        given(ticketPassRepository.countByStatusAndDeletedAtIsNull(TicketPassStatus.PENDING)).willReturn(3L);
+
+        assertThat(adminTicketService.countPendingDeposits()).isEqualTo(3L);
     }
 }

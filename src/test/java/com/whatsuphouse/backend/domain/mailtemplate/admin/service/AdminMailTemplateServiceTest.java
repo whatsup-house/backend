@@ -65,14 +65,25 @@ class AdminMailTemplateServiceTest {
     }
 
     @Test
-    @DisplayName("확정 메일에는 입금금액 변수와 입금 안내가 포함된다 (KAN-242)")
-    void getTemplate_confirmed_hasPaymentInfo() {
-        given(mailTemplateRepository.findByTemplateKey("APPLICATION_CONFIRMED")).willReturn(Optional.empty());
+    @DisplayName("심사 승인 메일에는 계좌 없이 이용권 선택 링크만 포함된다")
+    void getTemplate_approved_hasSelectionLinkOnly() {
+        given(mailTemplateRepository.findByTemplateKey("APPLICATION_APPROVED")).willReturn(Optional.empty());
 
-        MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("APPLICATION_CONFIRMED");
+        MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("APPLICATION_APPROVED");
 
-        assertThat(result.getVariables()).contains("입금금액");
-        assertThat(result.getBody()).contains("{{입금금액}}");
+        assertThat(result.getVariables()).contains("결제링크").doesNotContain("입금금액");
+        assertThat(result.getBody()).contains("{{결제링크}}");
+    }
+
+    @Test
+    @DisplayName("이용권 구매 요청 메일에 결제금액과 입금계좌가 포함된다")
+    void getTemplate_ticketPurchaseRequested_hasPaymentInfo() {
+        given(mailTemplateRepository.findByTemplateKey("TICKET_PURCHASE_REQUESTED")).willReturn(Optional.empty());
+
+        MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("TICKET_PURCHASE_REQUESTED");
+
+        assertThat(result.getVariables()).contains("이용권명", "결제금액", "입금계좌", "결제링크");
+        assertThat(result.getBody()).contains("{{결제금액}}", "{{입금계좌}}", "{{결제링크}}");
     }
 
     @Test

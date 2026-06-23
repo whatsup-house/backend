@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.application.entity;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import jakarta.persistence.*;
@@ -34,9 +35,10 @@ public class Application extends BaseEntity {
     @JoinColumn(name = "gathering_id", nullable = false)
     private Gathering gathering;
 
+    // 신청 주체. 회원/비회원 모두 participant로 연결한다. (KAN-276)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
-    private User user;
+    @JoinColumn(name = "participant_id")
+    private Participant participant;
 
     @Column(nullable = false, length = 50)
     private String name;
@@ -60,17 +62,31 @@ public class Application extends BaseEntity {
     @Column(name = "payment_confirmed_at")
     private LocalDateTime paymentConfirmedAt;
 
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
     @Builder
-    public Application(String bookingNumber, Gathering gathering, User user, String name, String phone,
+    public Application(String bookingNumber, Gathering gathering, Participant participant, String name, String phone,
                        String email, Map<String, Object> formSnapshot) {
         this.bookingNumber = bookingNumber;
         this.gathering = gathering;
-        this.user = user;
+        this.participant = participant;
         this.name = name;
         this.phone = phone;
         this.email = email;
         this.formSnapshot = formSnapshot;
         this.status = ApplicationStatus.PENDING;
+    }
+
+    /**
+     * 신청 주체가 회원이면 그 User를, 비회원이면 null을 반환한다.
+     * 기존 호출처(마일리지·리뷰·알림 등)의 회원 식별 의미를 그대로 보존하기 위한 편의 메서드다. (KAN-276)
+     */
+    public User getUser() {
+        return participant != null ? participant.getUser() : null;
     }
 
     public void cancel() {
@@ -80,6 +96,21 @@ public class Application extends BaseEntity {
 
     public void confirm() {
         this.status = ApplicationStatus.CONFIRMED;
+        if (this.reviewedAt == null) {
+            this.reviewedAt = LocalDateTime.now();
+        }
+    }
+
+    public void awaitPayment() {
+        this.status = ApplicationStatus.PAYMENT_PENDING;
+        this.reviewedAt = LocalDateTime.now();
+        this.rejectionReason = null;
+    }
+
+    public void reject(String reason) {
+        this.status = ApplicationStatus.REJECTED;
+        this.reviewedAt = LocalDateTime.now();
+        this.rejectionReason = reason;
     }
 
     public void attend() {

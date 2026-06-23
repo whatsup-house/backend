@@ -5,6 +5,9 @@ import com.whatsuphouse.backend.domain.auth.dto.request.LoginRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetConfirmRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.RegisterRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationConfirmRequest;
+import com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.FindEmailResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.LoginResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetConfirmResponse;
@@ -349,6 +352,48 @@ class AuthServiceTest {
         assertThat(user.getPassword()).isEqualTo("encodedNewPassword");
         verify(redisTemplate).delete("password-reset:reset-token");
         verify(redisTemplate).delete("refresh:" + userId);
+    }
+
+    @Test
+    @DisplayName("비회원 이메일 인증번호를 5분 TTL로 저장하고 발송한다")
+    void requestGuestEmailVerification_storesAndSendsCode() {
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+
+        GuestEmailVerificationResponse response = authService.requestGuestEmailVerification(
+                GuestEmailVerificationRequest.builder().email("Guest@Test.COM").build());
+
+        assertThat(response.isAccepted()).isTrue();
+        verify(valueOperations).set(eq("guest-email-code:guest@test.com"), matches("\\d{6}"),
+                eq(5L), eq(TimeUnit.MINUTES));
+        verify(notificationService).sendGuestEmailVerification(eq("guest@test.com"), matches("\\d{6}"));
+    }
+
+    @Test
+    @DisplayName("올바른 인증번호는 30분 인증 완료 표식으로 교환된다")
+    void confirmGuestEmailVerification_marksVerified() {
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.get("guest-email-code:guest@test.com")).willReturn("123456");
+
+        GuestEmailVerificationResponse response = authService.confirmGuestEmailVerification(
+                GuestEmailVerificationConfirmRequest.builder()
+                        .email("guest@test.com").code("123456").build());
+
+        assertThat(response.isVerified()).isTrue();
+        verify(redisTemplate).delete("guest-email-code:guest@test.com");
+        verify(valueOperations).set("guest-email-verified:guest@test.com", "true", 30L, TimeUnit.MINUTES);
+    }
+
+    @Test
+    @DisplayName("틀리거나 만료된 비회원 이메일 인증번호는 거부한다")
+    void confirmGuestEmailVerification_invalidCode_throws() {
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.get("guest-email-code:guest@test.com")).willReturn(null);
+
+        assertThatThrownBy(() -> authService.confirmGuestEmailVerification(
+                GuestEmailVerificationConfirmRequest.builder()
+                        .email("guest@test.com").code("123456").build()))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_EMAIL_VERIFICATION_CODE);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

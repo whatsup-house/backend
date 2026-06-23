@@ -21,6 +21,9 @@ public class TicketPassResponse {
     private TicketPassStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime activatedAt;
+    private int purchaseAmount;
+    private LocalDateTime paymentDeadline;
+    private LocalDateTime paymentConfirmedAt;
 
     public static TicketPassResponse from(TicketPass pass) {
         return TicketPassResponse.builder()
@@ -32,6 +35,9 @@ public class TicketPassResponse {
                 .status(pass.getStatus())
                 .createdAt(pass.getCreatedAt())
                 .activatedAt(pass.getActivatedAt())
+                .purchaseAmount(pass.getPurchaseAmount())
+                .paymentDeadline(pass.getPaymentDeadline())
+                .paymentConfirmedAt(pass.getPaymentConfirmedAt())
                 .build();
     }
 }

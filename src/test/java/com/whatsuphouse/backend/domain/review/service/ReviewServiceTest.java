@@ -26,6 +26,7 @@ import com.whatsuphouse.backend.domain.review.enums.ReviewType;
 import com.whatsuphouse.backend.domain.review.repository.ReviewImageRepository;
 import com.whatsuphouse.backend.domain.review.repository.ReviewLikeRepository;
 import com.whatsuphouse.backend.domain.review.repository.ReviewRepository;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -123,7 +124,7 @@ class ReviewServiceTest {
         application = Application.builder()
                 .bookingNumber("WH260514-ABC123")
                 .gathering(gathering)
-                .user(user)
+                .participant(Participant.member(user))
                 .name(user.getName())
                 .phone(user.getPhone())
                 .build();
@@ -202,7 +203,7 @@ class ReviewServiceTest {
         Application pendingApplication = Application.builder()
                 .bookingNumber("WH260514-PENDING")
                 .gathering(gathering)
-                .user(user)
+                .participant(Participant.member(user))
                 .name(user.getName())
                 .phone(user.getPhone())
                 .build();

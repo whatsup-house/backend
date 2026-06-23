@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +14,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
+import com.whatsuphouse.backend.domain.participant.entity.Participant;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import org.springframework.mail.MailSendException;
@@ -29,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
@@ -50,6 +55,7 @@ class EmailNotificationServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(emailNotificationService, "from", "noreply@test.com");
+        ReflectionTestUtils.setField(emailNotificationService, "frontendUrl", "http://localhost:3000");
         // 템플릿 렌더링은 별도 단위 테스트에서 검증한다. 여기서는 발송(send) 동작만 보므로 렌더 결과를 고정한다.
         lenient().when(mailTemplateRenderer.render(any(), any()))
                 .thenReturn(new MailContent("제목", "본문"));
@@ -108,6 +114,54 @@ class EmailNotificationServiceTest {
 
         // then
         then(mailSender).should().send(any(SimpleMailMessage.class));
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
+                "WH260428-TEST01".equals(vars.get("예약번호"))
+                        && vars.get("조회경로").contains("/applications/check?bookingNumber=WH260428-TEST01")));
+    }
+
+    @Test
+    @DisplayName("심사 승인 이메일에는 결제 페이지 링크가 포함된다")
+    void sendApplicationApproved_containsPaymentLink() {
+        Application application = buildApplication(buildUser("approved@test.com"), buildGathering());
+
+        emailNotificationService.sendApplicationApproved(application);
+
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_APPROVED), argThat(vars ->
+                vars.get("결제링크").equals(
+                        "http://localhost:3000/payments/random-table?bookingNumber=WH260428-TEST01")));
+        then(mailSender).should().send(any(SimpleMailMessage.class));
+    }
+
+    @Test
+    @DisplayName("이용권 구매 요청 메일에는 상품·금액·계좌·상태 링크가 포함된다")
+    void sendTicketPurchaseRequested_containsPaymentDetails() {
+        User user = buildUser("ticket@test.com");
+        Application application = buildApplication(user, buildGathering());
+        TicketPass pass = TicketPass.builder()
+                .participant(Participant.member(user))
+                .product(TicketProduct.RANDOM_TABLE_FOUR)
+                .build();
+
+        emailNotificationService.sendTicketPurchaseRequested(application, pass);
+
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.TICKET_PURCHASE_REQUESTED), argThat(vars ->
+                "우연한 식탁 4회권".equals(vars.get("이용권명"))
+                        && "40,000".equals(vars.get("결제금액"))
+                        && "우리은행 1002-157-849052".equals(vars.get("입금계좌"))
+                        && vars.get("결제링크").contains("bookingNumber=WH260428-TEST01")));
+        then(mailSender).should().send(any(SimpleMailMessage.class));
+    }
+
+    @Test
+    @DisplayName("비회원 이메일 인증번호와 유효시간을 발송한다")
+    void sendGuestEmailVerification_sendsCode() {
+        emailNotificationService.sendGuestEmailVerification("guest@test.com", "123456");
+
+        then(mailTemplateRenderer).should().render(MailTemplateType.GUEST_EMAIL_VERIFICATION,
+                Map.of("인증번호", "123456", "유효시간", "5분"));
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        then(mailSender).should().send(captor.capture());
+        assertThat(captor.getValue().getTo()).containsExactly("guest@test.com");
     }
 
     @Test
@@ -325,7 +379,7 @@ class EmailNotificationServiceTest {
         return Application.builder()
                 .bookingNumber("WH260428-TEST01")
                 .gathering(gathering)
-                .user(user)
+                .participant(user != null ? Participant.member(user) : Participant.guest("비회원", "g@test.com", "01099999999"))
                 .name(user != null ? user.getName() : "비회원")
                 .phone(user != null ? user.getPhone() : "01099999999")
                 .build();

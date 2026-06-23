@@ -21,6 +21,8 @@ public class ApplicationCheckResponse {
     private ApplicationStatus status;
     // 입금 상태. 무료 게더링은 null(표시하지 않음). (KAN-242)
     private PaymentStatus paymentStatus;
+    private LocalDateTime reviewedAt;
+    private String rejectionReason;
     private GatheringInfo gathering;
     private LocalDateTime createdAt;
     private List<AnswerView> answers;
@@ -42,6 +44,8 @@ public class ApplicationCheckResponse {
                 .phone(application.getPhone())
                 .status(application.getStatus())
                 .paymentStatus(application.getPaymentStatus())
+                .reviewedAt(application.getReviewedAt())
+                .rejectionReason(application.getRejectionReason())
                 .gathering(GatheringInfo.builder()
                         .id(application.getGathering().getId())
                         .title(application.getGathering().getTitle())
