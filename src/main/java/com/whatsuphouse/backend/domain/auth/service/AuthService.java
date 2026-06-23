@@ -63,6 +63,9 @@ public class AuthService {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
+        if (!isGuestEmailVerified(request.getEmail())) {
+            throw new CustomException(ErrorCode.EMAIL_NOT_VERIFIED);
+        }
         if (userRepository.existsByNickname(request.getNickname())) {
             throw new CustomException(ErrorCode.DUPLICATE_NICKNAME);
         }
@@ -87,6 +90,7 @@ public class AuthService {
 
         userRepository.save(user);
         mileageService.rewardSignup(user);
+        consumeGuestEmailVerification(request.getEmail());
         // 트랜잭션 커밋 후 환영 이메일 발송
         eventPublisher.publishEvent(new WelcomeEvent(user));
         return RegisterResponse.from(user);
