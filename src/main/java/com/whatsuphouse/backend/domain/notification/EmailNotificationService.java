@@ -147,7 +147,7 @@ public class EmailNotificationService implements NotificationService {
         if (email == null) return;
 
         Map<String, String> variables = applicationVariables(application);
-        variables.put("이용권명", ticketPass.getProduct().getLabel());
+        variables.put("이용권명", ticketPass.getProductLabel());
         variables.put("결제금액", String.format("%,d", ticketPass.getPurchaseAmount()));
         variables.put("입금계좌", "우리은행 1002-157-849052");
         variables.put("예금주", "와썹하우스");

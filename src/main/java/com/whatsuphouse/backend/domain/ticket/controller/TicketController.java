@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.ticket.dto.request.TicketPurchaseRequest;
 import com.whatsuphouse.backend.domain.ticket.dto.request.GuestTicketPurchaseRequest;
 import com.whatsuphouse.backend.domain.ticket.dto.response.MyTicketsResponse;
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
+import com.whatsuphouse.backend.domain.ticket.dto.response.TicketProductResponse;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.List;
 
 @Tag(name = "이용권", description = "우연한 식탁 이용권 API")
 @RestController
@@ -30,6 +32,12 @@ public class TicketController {
 
     private final TicketService ticketService;
 
+    @Operation(summary = "구매 가능한 이용권 상품 목록")
+    @GetMapping("/products")
+    public ResponseEntity<ApiResult<List<TicketProductResponse>>> products() {
+        return ResponseEntity.ok(ApiResult.success(ticketService.listProducts()));
+    }
+
     @Operation(summary = "이용권 구매(선결제) 요청", description = "입금 확인 전까지 PENDING 상태로 생성된다.")
     @PostMapping("/purchase")
     public ResponseEntity<ApiResult<TicketPassResponse>> purchase(
@@ -37,7 +45,7 @@ public class TicketController {
             @Valid @RequestBody TicketPurchaseRequest request
     ) {
         return ResponseEntity.ok(ApiResult.success(
-                ticketService.purchase(principal.getUserId(), request.getProduct(), request.getApplicationId())));
+                ticketService.purchase(principal.getUserId(), request.getProductId(), request.getProduct(), request.getApplicationId())));
     }
 
     @Operation(summary = "비회원 이용권 구매 요청", description = "승인 메일의 예약번호로 구매 요청을 생성한다.")
@@ -46,7 +54,7 @@ public class TicketController {
             @Valid @RequestBody GuestTicketPurchaseRequest request
     ) {
         return ResponseEntity.ok(ApiResult.success(ticketService.purchaseGuest(
-                request.getBookingNumber(), request.getProduct())));
+                request.getBookingNumber(), request.getProductId(), request.getProduct())));
     }
 
     @Operation(summary = "비회원 이용권/자격 조회")

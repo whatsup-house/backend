@@ -44,7 +44,7 @@ public class AdminPendingDepositResponse {
                 .member(participant.getUser() != null)
                 .applicantName(participant.getName())
                 .product(pass.getProduct())
-                .productLabel(pass.getProduct().getLabel())
+                .productLabel(pass.getProductLabel())
                 .amount(pass.getPurchaseAmount())
                 .requestedAt(pass.getCreatedAt())
                 .paymentDeadline(pass.getPaymentDeadline());

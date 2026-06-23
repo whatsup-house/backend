@@ -303,11 +303,23 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_i
 -- ================================================
 -- 우연한 식탁 이용권
 -- ================================================
+CREATE TABLE IF NOT EXISTS ticket_products (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    name          VARCHAR(100) NOT NULL,
+    session_count INTEGER      NOT NULL,
+    price         INTEGER      NOT NULL,
+    created_at    TIMESTAMP    NOT NULL,
+    updated_at    TIMESTAMP    NOT NULL,
+    deleted_at    TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS ticket_passes (
     id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     participant_id       UUID        NOT NULL REFERENCES participants(id),
     application_id        UUID        REFERENCES applications(id),
-    product              VARCHAR(40) NOT NULL,
+    product              VARCHAR(40),
+    product_id           UUID        REFERENCES ticket_products(id) ON DELETE SET NULL,
+    product_name         VARCHAR(100),
     total_count          INTEGER     NOT NULL,
     remaining_count      INTEGER     NOT NULL DEFAULT 0,
     purchase_amount      INTEGER     NOT NULL,

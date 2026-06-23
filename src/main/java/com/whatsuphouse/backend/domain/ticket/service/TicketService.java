@@ -2,7 +2,9 @@ package com.whatsuphouse.backend.domain.ticket.service;
 
 import com.whatsuphouse.backend.domain.ticket.dto.response.MyTicketsResponse;
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
+import com.whatsuphouse.backend.domain.ticket.dto.response.TicketProductResponse;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
@@ -15,6 +17,7 @@ import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketProductRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
@@ -38,15 +41,28 @@ public class TicketService {
     private final UserRepository userRepository;
     private final ParticipantService participantService;
     private final TicketTransactionRepository ticketTransactionRepository;
+    private final TicketProductRepository ticketProductRepository;
     private final ApplicationRepository applicationRepository;
     private final ApplicationEventPublisher eventPublisher;
 
+    @Transactional(readOnly = true)
+    public List<TicketProductResponse> listProducts() {
+        return ticketProductRepository.findAllByDeletedAtIsNullOrderBySessionCountAscPriceAscCreatedAtAsc()
+                .stream()
+                .map(TicketProductResponse::from)
+                .toList();
+    }
+
     /** 이용권 구매(선결제) 요청. 입금 확인 전이므로 PENDING으로 생성된다. */
     public TicketPassResponse purchase(UUID userId, TicketProduct product) {
-        return purchase(userId, product, null);
+        return purchase(userId, null, product, null);
     }
 
     public TicketPassResponse purchase(UUID userId, TicketProduct product, UUID applicationId) {
+        return purchase(userId, null, product, applicationId);
+    }
+
+    public TicketPassResponse purchase(UUID userId, UUID productId, TicketProduct product, UUID applicationId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         Participant participant = participantService.getOrCreateForUser(user);
@@ -57,7 +73,7 @@ public class TicketService {
         if (applicationId != null) {
             application = getMemberPaymentPendingApplication(applicationId, userId, participant);
         }
-        TicketPass pass = createPendingPass(participant, application, product);
+        TicketPass pass = createPendingPass(participant, application, productId, product);
         if (application != null) {
             eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
         }
@@ -66,11 +82,15 @@ public class TicketService {
 
     /** 승인 메일의 예약번호로 비회원 이용권 구매 요청을 생성한다. */
     public TicketPassResponse purchaseGuest(String bookingNumber, TicketProduct product) {
+        return purchaseGuest(bookingNumber, null, product);
+    }
+
+    public TicketPassResponse purchaseGuest(String bookingNumber, UUID productId, TicketProduct product) {
         Application application = getGuestApplication(bookingNumber);
         if (application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
         }
-        TicketPass pass = createPendingPass(application.getParticipant(), application, product);
+        TicketPass pass = createPendingPass(application.getParticipant(), application, productId, product);
         eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
         return TicketPassResponse.from(pass);
     }
@@ -145,12 +165,22 @@ public class TicketService {
         return application;
     }
 
-    private TicketPass createPendingPass(Participant participant, Application application, TicketProduct product) {
-        TicketPass pass = TicketPass.builder()
-                .participant(participant)
-                .application(application)
-                .product(product)
-                .build();
+    private TicketPass createPendingPass(
+            Participant participant, Application application, UUID productId, TicketProduct legacyProduct) {
+        TicketPass pass;
+        if (productId != null) {
+            TicketProductOption productOption = ticketProductRepository.findByIdAndDeletedAtIsNull(productId)
+                    .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND));
+            pass = new TicketPass(participant, application, productOption);
+        } else if (legacyProduct != null) {
+            pass = TicketPass.builder()
+                    .participant(participant)
+                    .application(application)
+                    .product(legacyProduct)
+                    .build();
+        } else {
+            throw new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND);
+        }
         ticketPassRepository.save(pass);
         return pass;
     }
