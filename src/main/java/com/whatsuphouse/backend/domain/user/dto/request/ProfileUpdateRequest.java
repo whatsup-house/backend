@@ -52,5 +52,6 @@ public class ProfileUpdateRequest {
     private String job;
 
     @Schema(example = "재즈와 커피를 좋아합니다")
+    @Size(max = 500, message = "한줄소개는 500자 이하여야 합니다.")
     private String intro;
 }

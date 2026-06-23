@@ -80,6 +80,7 @@ public class AuthService {
                 .nickname(request.getNickname())
                 .phone(request.getPhone())
                 .job(request.getJob())
+                .intro(request.getIntro())
                 .build();
 
         userRepository.save(user);

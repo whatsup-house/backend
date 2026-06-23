@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.user.dto.response;
 
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.enums.Job;
+import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.common.enums.Mbti;
 import lombok.Builder;
 import lombok.Getter;
@@ -21,6 +22,7 @@ public class ProfileResponse {
     private String phone;
     private String instagramId;
     private Mbti mbti;
+    private Gender gender;
     private String job;
     private String jobLabel;
     private String jobCategory;
@@ -42,6 +44,7 @@ public class ProfileResponse {
                 .phone(user.getPhone())
                 .instagramId(user.getInstagramId())
                 .mbti(user.getMbti())
+                .gender(user.getGender())
                 .job(user.getJob())
                 .jobLabel(job != null ? job.getLabel() : user.getJob())
                 .jobCategory(job != null ? job.getCategory().name() : null)
