@@ -107,6 +107,7 @@ class UserServiceTest {
 
         assertThat(response.getEmail()).isEqualTo("test@example.com");
         assertThat(response.getNickname()).isEqualTo("gildong");
+        assertThat(response.getGender()).isEqualTo(Gender.MALE);
         assertThat(response.getMileage()).isZero();
     }
 

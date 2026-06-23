@@ -107,6 +107,10 @@ class AuthServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.getMileageRewarded()).isEqualTo(1000);
         assertThat(response.getMileageBalance()).isEqualTo(1000);
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getIntro()).isEqualTo("안녕하세요, 잘 부탁드려요!");
+        assertThat(captor.getValue().getInstagramId()).isEqualTo("hong_gildong");
         verify(mileageService).rewardSignup(any(User.class));
     }
 
@@ -401,7 +405,10 @@ class AuthServiceTest {
     private RegisterRequest buildRegisterRequest(String email, String nickname) {
         return RegisterRequest.builder()
                 .email(email).password("password123!").name("홍길동")
-                .gender(Gender.MALE).age(25).nickname(nickname).build();
+                .gender(Gender.MALE).age(25).nickname(nickname)
+                .intro("안녕하세요, 잘 부탁드려요!")
+                .instagramId("hong_gildong")
+                .build();
     }
 
     private LoginRequest buildLoginRequest(String email, String password) {
