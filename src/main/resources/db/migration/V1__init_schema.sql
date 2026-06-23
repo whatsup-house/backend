@@ -306,6 +306,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_i
 CREATE TABLE IF NOT EXISTS ticket_passes (
     id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     participant_id       UUID        NOT NULL REFERENCES participants(id),
+    application_id        UUID        REFERENCES applications(id),
     product              VARCHAR(40) NOT NULL,
     total_count          INTEGER     NOT NULL,
     remaining_count      INTEGER     NOT NULL DEFAULT 0,
@@ -320,6 +321,7 @@ CREATE TABLE IF NOT EXISTS ticket_passes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ticket_passes_participant_id ON ticket_passes(participant_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_passes_application_id ON ticket_passes(application_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_passes_status ON ticket_passes(status);
 
 -- ================================================

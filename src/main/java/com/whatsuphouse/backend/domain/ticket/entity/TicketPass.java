@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.entity;
 
+import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
@@ -31,6 +32,11 @@ public class TicketPass extends BaseEntity {
     @JoinColumn(name = "participant_id", nullable = false)
     private Participant participant;
 
+    // 특정 신청의 결제 대기 상태에서 생성된 이용권 구매 요청이면 해당 신청과 직접 연결한다. (KAN-289)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "application_id")
+    private Application application;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40)
     private TicketProduct product;
@@ -58,8 +64,9 @@ public class TicketPass extends BaseEntity {
     private LocalDateTime paymentConfirmedAt;
 
     @Builder
-    public TicketPass(Participant participant, TicketProduct product) {
+    public TicketPass(Participant participant, Application application, TicketProduct product) {
         this.participant = participant;
+        this.application = application;
         this.product = product;
         this.totalCount = product.getSessionCount();
         this.remainingCount = 0;            // 입금 확인 전까지 사용 불가

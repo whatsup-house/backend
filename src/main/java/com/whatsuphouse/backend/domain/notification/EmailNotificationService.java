@@ -247,10 +247,13 @@ public class EmailNotificationService implements NotificationService {
         variables.put("시작시간", formatTime(application));
         variables.put("예약번호", application.getBookingNumber());
         String encodedBookingNumber = URLEncoder.encode(application.getBookingNumber(), StandardCharsets.UTF_8);
+        boolean member = application.getUser() != null;
         variables.put("조회경로", frontendUrl + "/applications/check?bookingNumber=" + encodedBookingNumber);
-        variables.put("결제링크", frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
+        variables.put("결제링크", member
+                ? frontendUrl + "/payments/random-table?applicationId=" + application.getId()
+                : frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
         variables.put("확정링크", frontendUrl + "/gatherings/" + application.getGathering().getId()
-                + "/apply/confirmed?bookingNumber=" + encodedBookingNumber);
+                + "/apply/confirmed" + (member ? "" : "?bookingNumber=" + encodedBookingNumber));
         return variables;
     }
 

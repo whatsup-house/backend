@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.UUID;
+
 @Tag(name = "이용권", description = "우연한 식탁 이용권 API")
 @RestController
 @RequestMapping("/api/tickets")
@@ -35,7 +37,7 @@ public class TicketController {
             @Valid @RequestBody TicketPurchaseRequest request
     ) {
         return ResponseEntity.ok(ApiResult.success(
-                ticketService.purchase(principal.getUserId(), request.getProduct())));
+                ticketService.purchase(principal.getUserId(), request.getProduct(), request.getApplicationId())));
     }
 
     @Operation(summary = "비회원 이용권 구매 요청", description = "승인 메일의 예약번호로 구매 요청을 생성한다.")
@@ -58,9 +60,10 @@ public class TicketController {
     @Operation(summary = "내 이용권/잔여 조회")
     @GetMapping("/me")
     public ResponseEntity<ApiResult<MyTicketsResponse>> getMyTickets(
-            @AuthenticationPrincipal UserPrincipal principal
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) UUID applicationId
     ) {
         return ResponseEntity.ok(ApiResult.success(
-                ticketService.getMyTickets(principal.getUserId())));
+                ticketService.getMyTickets(principal.getUserId(), applicationId)));
     }
 }
