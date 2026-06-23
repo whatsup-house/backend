@@ -249,6 +249,8 @@ public class EmailNotificationService implements NotificationService {
         String encodedBookingNumber = URLEncoder.encode(application.getBookingNumber(), StandardCharsets.UTF_8);
         variables.put("조회경로", frontendUrl + "/applications/check?bookingNumber=" + encodedBookingNumber);
         variables.put("결제링크", frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
+        variables.put("확정링크", frontendUrl + "/gatherings/" + application.getGathering().getId()
+                + "/apply/confirmed?bookingNumber=" + encodedBookingNumber);
         return variables;
     }
 

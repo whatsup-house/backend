@@ -139,12 +139,12 @@ public enum MailTemplateType {
             일시: {{모임날짜}} {{시작시간}}
             예약번호: {{예약번호}}
 
-            신청 조회: {{조회경로}}
+            참가 확정 확인: {{확정링크}}
             """,
-            List.of("이름", "모임명", "모임날짜", "시작시간", "예약번호", "조회경로"),
+            List.of("이름", "모임명", "모임날짜", "시작시간", "예약번호", "확정링크"),
             Map.of("이름", "홍길동", "모임명", "재즈가 흐르는 와인 모임",
                     "모임날짜", "2026년 06월 26일", "시작시간", "19:00", "예약번호", "WH260626-AB12CD",
-                    "조회경로", "https://www.whatsup.house/applications/check?bookingNumber=WH260626-AB12CD")
+                    "확정링크", "https://www.whatsup.house/gatherings/00000000-0000-0000-0000-000000000000/apply/confirmed?bookingNumber=WH260626-AB12CD")
     ),
 
     APPLICATION_CANCELLED(
