@@ -302,6 +302,23 @@ public class ApplicationService {
                 .toList();
     }
 
+    /**
+     * 비회원 신청 목록 조회. 전화+이메일 인증(Redis 표식)이 완료된 비회원의 신청 전체를 반환한다.
+     * 예약번호 없이 "비회원 로그인"처럼 동작한다. (KAN-292)
+     */
+    public List<ApplicationListResponse> getGuestApplications(String phone, String email) {
+        if (email == null || email.isBlank() || !authService.isGuestEmailVerified(email)) {
+            throw new CustomException(ErrorCode.EMAIL_NOT_VERIFIED);
+        }
+        return participantService.findVerifiedGuest(email, phone)
+                .map(participant -> applicationRepository
+                        .findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(participant.getId())
+                        .stream()
+                        .map(ApplicationListResponse::from)
+                        .toList())
+                .orElseGet(List::of);
+    }
+
     @Transactional
     public void cancel(UUID applicationId, UUID userId) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)

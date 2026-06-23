@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -38,5 +40,13 @@ public class ParticipantService {
                     guest.verifyEmail();
                     return participantRepository.save(guest);
                 });
+    }
+
+    /** 전화+이메일로 인증된 비회원 참가자를 찾는다. 비회원 조회("비회원 로그인")에 사용한다. (KAN-292) */
+    @Transactional(readOnly = true)
+    public Optional<Participant> findVerifiedGuest(String email, String phone) {
+        return participantRepository
+                .findFirstByParticipantTypeAndEmailIgnoreCaseAndPhoneAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(
+                        ParticipantType.GUEST, email, phone);
     }
 }

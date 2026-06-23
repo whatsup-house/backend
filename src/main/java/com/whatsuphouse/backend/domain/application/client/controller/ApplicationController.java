@@ -54,6 +54,16 @@ public class ApplicationController {
         return ResponseEntity.ok(ApiResult.success(applicationService.checkApplication(phone, bookingNumber)));
     }
 
+    @Operation(summary = "비회원 신청 목록 조회 (전화+이메일 인증)",
+            description = "이메일 인증 후 전화+이메일로 본인 신청 목록 전체를 조회합니다. 예약번호가 필요 없습니다.")
+    @GetMapping("/api/applications/guest/list")
+    public ResponseEntity<ApiResult<List<ApplicationListResponse>>> getGuestApplications(
+            @Parameter(description = "전화번호", example = "01012345678") @RequestParam String phone,
+            @Parameter(description = "이메일", example = "guest@example.com") @RequestParam String email
+    ) {
+        return ResponseEntity.ok(ApiResult.success(applicationService.getGuestApplications(phone, email)));
+    }
+
     @Operation(summary = "내 신청 목록 조회 (회원)", description = "로그인된 회원의 신청 목록을 조회합니다.")
     @GetMapping("/api/applications")
     public ResponseEntity<ApiResult<List<ApplicationListResponse>>> getMyApplications(

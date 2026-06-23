@@ -368,6 +368,45 @@ class ApplicationServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ALREADY_APPLIED);
     }
 
+    // ── getGuestApplications() ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("비회원 목록 조회: 이메일 미인증이면 EMAIL_NOT_VERIFIED")
+    void getGuestApplications_notVerified_throws() {
+        given(authService.isGuestEmailVerified("g@test.com")).willReturn(false);
+
+        assertThatThrownBy(() -> applicationService.getGuestApplications("01012345678", "g@test.com"))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMAIL_NOT_VERIFIED);
+    }
+
+    @Test
+    @DisplayName("비회원 목록 조회: 인증되면 그 사람의 신청 목록을 반환")
+    void getGuestApplications_verified_returnsList() {
+        Participant guest = Participant.guest("비회원", "g@test.com", "01012345678");
+        ReflectionTestUtils.setField(guest, "id", UUID.randomUUID());
+        Application application = buildApplication(ApplicationStatus.PAYMENT_PENDING, null, gathering);
+        given(authService.isGuestEmailVerified("g@test.com")).willReturn(true);
+        given(participantService.findVerifiedGuest("g@test.com", "01012345678")).willReturn(Optional.of(guest));
+        given(applicationRepository.findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(guest.getId()))
+                .willReturn(List.of(application));
+
+        List<ApplicationListResponse> result = applicationService.getGuestApplications("01012345678", "g@test.com");
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("비회원 목록 조회: 일치하는 참가자가 없으면 빈 목록")
+    void getGuestApplications_noParticipant_returnsEmpty() {
+        given(authService.isGuestEmailVerified("g@test.com")).willReturn(true);
+        given(participantService.findVerifiedGuest("g@test.com", "01012345678")).willReturn(Optional.empty());
+
+        List<ApplicationListResponse> result = applicationService.getGuestApplications("01012345678", "g@test.com");
+
+        assertThat(result).isEmpty();
+    }
+
     // ── cancel() ─────────────────────────────────────────────────────────────
 
     @Test
