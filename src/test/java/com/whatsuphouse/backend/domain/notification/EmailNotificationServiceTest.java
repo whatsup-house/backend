@@ -147,7 +147,7 @@ class EmailNotificationServiceTest {
 
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.TICKET_PURCHASE_REQUESTED), argThat(vars ->
                 "우연한 식탁 4회권".equals(vars.get("이용권명"))
-                        && "40,000".equals(vars.get("결제금액"))
+                        && "18,000".equals(vars.get("결제금액"))
                         && "우리은행 1002-157-849052".equals(vars.get("입금계좌"))
                         && vars.get("결제링크").contains("applicationId=00000000-0000-0000-0000-000000000101")));
         then(mailSender).should().send(any(SimpleMailMessage.class));

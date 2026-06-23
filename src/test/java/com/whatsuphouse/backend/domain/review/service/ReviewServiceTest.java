@@ -325,8 +325,9 @@ class ReviewServiceTest {
                 .build();
         ReflectionTestUtils.setField(image, "id", UUID.randomUUID());
 
-        given(gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)).willReturn(true);
-        given(reviewRepository.findByGatheringIdAndDeletedAtIsNull(eq(gatheringId), any(Pageable.class)))
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(reviewRepository.findByGatheringReviewGroupAndDeletedAtIsNull(
+                eq(gathering.getTitle()), eq(gathering.getGatheringType()), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(review)));
         given(reviewImageRepository.findByReviewIdInAndDeletedAtIsNullOrderByDisplayOrderAsc(List.of(review.getId())))
                 .willReturn(List.of(image));
@@ -345,8 +346,9 @@ class ReviewServiceTest {
         UUID gatheringId = gathering.getId();
         Review review = buildReview(UUID.randomUUID(), "추천순 리뷰입니다.");
 
-        given(gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)).willReturn(true);
-        given(reviewRepository.findByGatheringIdAndDeletedAtIsNull(eq(gatheringId), any(Pageable.class)))
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(reviewRepository.findByGatheringReviewGroupAndDeletedAtIsNull(
+                eq(gathering.getTitle()), eq(gathering.getGatheringType()), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(review)));
         given(reviewImageRepository.findByReviewIdInAndDeletedAtIsNullOrderByDisplayOrderAsc(List.of(review.getId())))
                 .willReturn(List.of());
@@ -361,7 +363,7 @@ class ReviewServiceTest {
     @DisplayName("존재하지 않는 게더링의 리뷰 목록 조회 시 예외 발생")
     void getGatheringReviews_gatheringNotFound_throwsException() {
         UUID gatheringId = UUID.randomUUID();
-        given(gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)).willReturn(false);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> reviewService.getGatheringReviews(gatheringId, ReviewSort.LATEST, 0, 10))
                 .isInstanceOf(CustomException.class)
@@ -637,9 +639,11 @@ class ReviewServiceTest {
         ReflectionTestUtils.setField(review, "createdAt", createdAt);
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)).willReturn(true);
-        given(reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountGreaterThan(gatheringId, 2)).willReturn(4L);
-        given(reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(gatheringId, 2, createdAt)).willReturn(1L);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountGreaterThan(
+                gathering.getTitle(), gathering.getGatheringType(), 2)).willReturn(4L);
+        given(reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(
+                gathering.getTitle(), gathering.getGatheringType(), 2, createdAt)).willReturn(1L);
 
         // when
         ReviewLocateResponse response = reviewService.locateReview(reviewId, ReviewSort.LIKES, gatheringId, 10);
@@ -668,9 +672,15 @@ class ReviewServiceTest {
         UUID reviewId = UUID.randomUUID();
         Review review = buildReview(reviewId, "다른 게더링 소속 리뷰입니다.");
         UUID otherGatheringId = UUID.randomUUID();
+        Gathering otherGathering = Gathering.builder()
+                .title("다른 게더링")
+                .eventDate(LocalDate.now().minusDays(1))
+                .maxAttendees(10)
+                .build();
+        ReflectionTestUtils.setField(otherGathering, "id", otherGatheringId);
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(gatheringRepository.existsByIdAndDeletedAtIsNull(otherGatheringId)).willReturn(true);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(otherGatheringId)).willReturn(Optional.of(otherGathering));
 
         // when & then
         assertThatThrownBy(() -> reviewService.locateReview(reviewId, ReviewSort.LIKES, otherGatheringId, 10))
