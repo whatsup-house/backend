@@ -23,6 +23,7 @@ import com.whatsuphouse.backend.domain.review.enums.ReviewType;
 import com.whatsuphouse.backend.domain.review.repository.ReviewImageRepository;
 import com.whatsuphouse.backend.domain.review.repository.ReviewLikeRepository;
 import com.whatsuphouse.backend.domain.review.repository.ReviewRepository;
+import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
@@ -143,12 +144,12 @@ public class ReviewService {
     }
 
     public ReviewPageResponse getGatheringReviews(UUID gatheringId, ReviewSort sort, int page, int size) {
-        if (!gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)) {
-            throw new CustomException(ErrorCode.GATHERING_NOT_FOUND);
-        }
+        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
+                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
         Pageable pageable = PageRequest.of(page, size, toSort(sort));
-        Page<Review> reviewPage = reviewRepository.findByGatheringIdAndDeletedAtIsNull(gatheringId, pageable);
+        Page<Review> reviewPage = reviewRepository.findByGatheringReviewGroupAndDeletedAtIsNull(
+                gathering.getTitle(), gathering.getGatheringType(), pageable);
         return toReviewPageResponse(reviewPage, pageable);
     }
 
@@ -171,10 +172,9 @@ public class ReviewService {
                 .orElseThrow(() -> new CustomException(ErrorCode.REVIEW_NOT_FOUND));
 
         if (gatheringId != null) {
-            if (!gatheringRepository.existsByIdAndDeletedAtIsNull(gatheringId)) {
-                throw new CustomException(ErrorCode.GATHERING_NOT_FOUND);
-            }
-            if (!review.getGathering().getId().equals(gatheringId)) {
+            Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
+                    .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+            if (!isSameReviewGroup(review.getGathering(), gathering)) {
                 throw new CustomException(ErrorCode.REVIEW_NOT_FOUND);
             }
         }
@@ -287,10 +287,17 @@ public class ReviewService {
 
         if (gatheringId != null) {
             if (sort == ReviewSort.LIKES) {
-                return reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountGreaterThan(gatheringId, likeCount)
-                        + reviewRepository.countByGatheringIdAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(gatheringId, likeCount, createdAt);
+                Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
+                        .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+                return reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountGreaterThan(
+                        gathering.getTitle(), gathering.getGatheringType(), likeCount)
+                        + reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(
+                        gathering.getTitle(), gathering.getGatheringType(), likeCount, createdAt);
             }
-            return reviewRepository.countByGatheringIdAndDeletedAtIsNullAndCreatedAtAfter(gatheringId, createdAt);
+            Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
+                    .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+            return reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndCreatedAtAfter(
+                    gathering.getTitle(), gathering.getGatheringType(), createdAt);
         }
 
         if (sort == ReviewSort.LIKES) {
@@ -298,6 +305,11 @@ public class ReviewService {
                     + reviewRepository.countByDeletedAtIsNullAndLikeCountAndCreatedAtAfter(likeCount, createdAt);
         }
         return reviewRepository.countByDeletedAtIsNullAndCreatedAtAfter(createdAt);
+    }
+
+    private boolean isSameReviewGroup(Gathering left, Gathering right) {
+        return left.getTitle().equals(right.getTitle())
+                && left.getGatheringType() == right.getGatheringType();
     }
 
     private Map<UUID, List<ReviewImage>> findImageMap(List<Review> reviews) {

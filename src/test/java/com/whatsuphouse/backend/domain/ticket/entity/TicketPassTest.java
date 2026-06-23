@@ -33,7 +33,7 @@ class TicketPassTest {
     }
 
     @Test
-    @DisplayName("1회권은 총 1회와 1만원 구매 금액을 스냅샷으로 가진다")
+    @DisplayName("1회권은 총 1회와 8천원 구매 금액을 스냅샷으로 가진다")
     void oneSessionPass_hasOneSessionPolicy() {
         User user = User.builder().email("one@example.com").password("p").name("회원")
                 .gender(Gender.FEMALE).age(25).nickname("one").phone("01012345678").build();
@@ -41,7 +41,7 @@ class TicketPassTest {
                 .product(TicketProduct.RANDOM_TABLE_ONE).build();
 
         assertThat(pass.getTotalCount()).isEqualTo(1);
-        assertThat(pass.getPurchaseAmount()).isEqualTo(10000);
+        assertThat(pass.getPurchaseAmount()).isEqualTo(8000);
         assertThat(pass.getPaymentDeadline()).isNotNull();
     }
 
