@@ -2,13 +2,17 @@ package com.whatsuphouse.backend.domain.ticket.admin.service;
 
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminPendingDepositResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminTicketPassResponse;
+import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketProductRequest;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketAdjustmentRequest;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.TicketTransactionResponse;
+import com.whatsuphouse.backend.domain.ticket.dto.response.TicketProductResponse;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketProductRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
@@ -30,9 +34,38 @@ import java.util.UUID;
 public class AdminTicketService {
 
     private final TicketPassRepository ticketPassRepository;
+    private final TicketProductRepository ticketProductRepository;
     private final TicketTransactionRepository ticketTransactionRepository;
     private final ApplicationRepository applicationRepository;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Transactional(readOnly = true)
+    public List<TicketProductResponse> listProducts() {
+        return ticketProductRepository.findAllByDeletedAtIsNullOrderBySessionCountAscPriceAscCreatedAtAsc()
+                .stream()
+                .map(TicketProductResponse::from)
+                .toList();
+    }
+
+    public TicketProductResponse createProduct(TicketProductRequest request) {
+        TicketProductOption product = new TicketProductOption(
+                request.getName().trim(), request.getSessionCount(), request.getPrice());
+        ticketProductRepository.save(product);
+        return TicketProductResponse.from(product);
+    }
+
+    public TicketProductResponse updateProduct(UUID productId, TicketProductRequest request) {
+        TicketProductOption product = ticketProductRepository.findByIdAndDeletedAtIsNull(productId)
+                .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND));
+        product.update(request.getName().trim(), request.getSessionCount(), request.getPrice());
+        return TicketProductResponse.from(product);
+    }
+
+    public void deleteProduct(UUID productId) {
+        TicketProductOption product = ticketProductRepository.findByIdAndDeletedAtIsNull(productId)
+                .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND));
+        product.delete();
+    }
 
     @Transactional(readOnly = true)
     public List<AdminTicketPassResponse> listPending() {

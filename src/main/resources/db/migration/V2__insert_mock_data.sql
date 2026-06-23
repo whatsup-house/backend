@@ -34,6 +34,14 @@ FROM users
 ON CONFLICT (id) DO NOTHING;
 
 
+-- 1-2. 우연한 식탁 이용권 상품
+INSERT INTO ticket_products (id, name, session_count, price, created_at, updated_at)
+VALUES
+    ('d1000000-0000-0000-0000-000000000001', '우연한 식탁 1회권', 1, 10000, NOW(), NOW()),
+    ('d1000000-0000-0000-0000-000000000004', '우연한 식탁 4회권', 4, 40000, NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+
+
 -- 2. 장소 (4곳)
 INSERT INTO locations (id, name, address, naver_map_url, kakao_map_url, status, max_capacity, memo, created_at, updated_at)
 VALUES

@@ -38,8 +38,15 @@ public class TicketPass extends BaseEntity {
     private Application application;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 40)
+    @Column(length = 40)
     private TicketProduct product;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id")
+    private TicketProductOption productOption;
+
+    @Column(name = "product_name", length = 100)
+    private String productName;
 
     @Column(name = "total_count", nullable = false)
     private int totalCount;
@@ -68,11 +75,31 @@ public class TicketPass extends BaseEntity {
         this.participant = participant;
         this.application = application;
         this.product = product;
+        this.productName = product.getLabel();
         this.totalCount = product.getSessionCount();
         this.remainingCount = 0;            // 입금 확인 전까지 사용 불가
         this.purchaseAmount = product.getPrice();
         this.status = TicketPassStatus.PENDING;
         this.paymentDeadline = LocalDateTime.now().plusDays(3);
+    }
+
+    public TicketPass(Participant participant, Application application, TicketProductOption productOption) {
+        this.participant = participant;
+        this.application = application;
+        this.productOption = productOption;
+        this.productName = productOption.getName();
+        this.totalCount = productOption.getSessionCount();
+        this.remainingCount = 0;            // 입금 확인 전까지 사용 불가
+        this.purchaseAmount = productOption.getPrice();
+        this.status = TicketPassStatus.PENDING;
+        this.paymentDeadline = LocalDateTime.now().plusDays(3);
+    }
+
+    public String getProductLabel() {
+        if (productName != null && !productName.isBlank()) {
+            return productName;
+        }
+        return product != null ? product.getLabel() : "이용권";
     }
 
     /** 소유자가 회원이면 그 User를, 비회원이면 null을 반환한다. (KAN-276) */

@@ -38,7 +38,7 @@ public class AdminTicketPassResponse {
                 .userNickname(user != null ? user.getNickname() : null)
                 .userName(user != null ? user.getName() : null)
                 .product(pass.getProduct())
-                .productLabel(pass.getProduct().getLabel())
+                .productLabel(pass.getProductLabel())
                 .totalCount(pass.getTotalCount())
                 .remainingCount(pass.getRemainingCount())
                 .price(pass.getPurchaseAmount())

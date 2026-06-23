@@ -15,6 +15,7 @@ public class TicketPassResponse {
 
     private UUID id;
     private UUID applicationId;
+    private UUID productId;
     private TicketProduct product;
     private String productLabel;
     private int totalCount;
@@ -30,8 +31,9 @@ public class TicketPassResponse {
         return TicketPassResponse.builder()
                 .id(pass.getId())
                 .applicationId(pass.getApplication() != null ? pass.getApplication().getId() : null)
+                .productId(pass.getProductOption() != null ? pass.getProductOption().getId() : null)
                 .product(pass.getProduct())
-                .productLabel(pass.getProduct().getLabel())
+                .productLabel(pass.getProductLabel())
                 .totalCount(pass.getTotalCount())
                 .remainingCount(pass.getRemainingCount())
                 .status(pass.getStatus())
