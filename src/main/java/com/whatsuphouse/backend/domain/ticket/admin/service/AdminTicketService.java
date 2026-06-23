@@ -50,10 +50,7 @@ public class AdminTicketService {
     public List<AdminPendingDepositResponse> listPendingDeposits() {
         return ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING)
                 .stream()
-                .map(pass -> AdminPendingDepositResponse.from(
-                        pass,
-                        applicationRepository.findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                                pass.getParticipant().getId(), ApplicationStatus.PAYMENT_PENDING).orElse(null)))
+                .map(pass -> AdminPendingDepositResponse.from(pass, resolvePaymentPendingApplication(pass)))
                 .toList();
     }
 
@@ -67,10 +64,7 @@ public class AdminTicketService {
     public AdminTicketPassResponse confirm(UUID passId) {
         TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNull(passId)
                 .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
-        Application paymentPending = applicationRepository
-                .findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                        pass.getParticipant().getId(), ApplicationStatus.PAYMENT_PENDING)
-                .orElse(null);
+        Application paymentPending = resolvePaymentPendingApplication(pass);
         if (paymentPending != null) {
             int occupied = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
                     paymentPending.getGathering().getId(), ApplicationStatus.SEAT_OCCUPYING);
@@ -90,6 +84,17 @@ public class AdminTicketService {
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
         }
         return AdminTicketPassResponse.from(pass);
+    }
+
+    private Application resolvePaymentPendingApplication(TicketPass pass) {
+        Application linked = pass.getApplication();
+        if (linked != null) {
+            return linked.getStatus() == ApplicationStatus.PAYMENT_PENDING ? linked : null;
+        }
+        return applicationRepository
+                .findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                        pass.getParticipant().getId(), ApplicationStatus.PAYMENT_PENDING)
+                .orElse(null);
     }
 
     public AdminTicketPassResponse adjust(UUID passId, TicketAdjustmentRequest request) {

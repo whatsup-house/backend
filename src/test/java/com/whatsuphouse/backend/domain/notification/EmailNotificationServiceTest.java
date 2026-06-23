@@ -28,6 +28,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -128,7 +129,7 @@ class EmailNotificationServiceTest {
 
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_APPROVED), argThat(vars ->
                 vars.get("결제링크").equals(
-                        "http://localhost:3000/payments/random-table?bookingNumber=WH260428-TEST01")));
+                        "http://localhost:3000/payments/random-table?applicationId=00000000-0000-0000-0000-000000000101")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
@@ -148,7 +149,7 @@ class EmailNotificationServiceTest {
                 "우연한 식탁 4회권".equals(vars.get("이용권명"))
                         && "40,000".equals(vars.get("결제금액"))
                         && "우리은행 1002-157-849052".equals(vars.get("입금계좌"))
-                        && vars.get("결제링크").contains("bookingNumber=WH260428-TEST01")));
+                        && vars.get("결제링크").contains("applicationId=00000000-0000-0000-0000-000000000101")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
@@ -376,12 +377,14 @@ class EmailNotificationServiceTest {
     }
 
     private Application buildApplication(User user, Gathering gathering) {
-        return Application.builder()
+        Application application = Application.builder()
                 .bookingNumber("WH260428-TEST01")
                 .gathering(gathering)
                 .participant(user != null ? Participant.member(user) : Participant.guest("비회원", "g@test.com", "01099999999"))
                 .name(user != null ? user.getName() : "비회원")
                 .phone(user != null ? user.getPhone() : "01099999999")
                 .build();
+        ReflectionTestUtils.setField(application, "id", UUID.fromString("00000000-0000-0000-0000-000000000101"));
+        return application;
     }
 }

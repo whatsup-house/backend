@@ -12,6 +12,7 @@ import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
@@ -42,13 +43,25 @@ public class TicketService {
 
     /** 이용권 구매(선결제) 요청. 입금 확인 전이므로 PENDING으로 생성된다. */
     public TicketPassResponse purchase(UUID userId, TicketProduct product) {
+        return purchase(userId, product, null);
+    }
+
+    public TicketPassResponse purchase(UUID userId, TicketProduct product, UUID applicationId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         Participant participant = participantService.getOrCreateForUser(user);
         if (participant.isBlockedFromRandomTable() || !participant.isApprovedForRandomTable()) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
         }
-        return TicketPassResponse.from(createPendingPass(participant, product));
+        Application application = null;
+        if (applicationId != null) {
+            application = getMemberPaymentPendingApplication(applicationId, userId, participant);
+        }
+        TicketPass pass = createPendingPass(participant, application, product);
+        if (application != null) {
+            eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
+        }
+        return TicketPassResponse.from(pass);
     }
 
     /** 승인 메일의 예약번호로 비회원 이용권 구매 요청을 생성한다. */
@@ -57,18 +70,28 @@ public class TicketService {
         if (application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
         }
-        TicketPass pass = createPendingPass(application.getParticipant(), product);
+        TicketPass pass = createPendingPass(application.getParticipant(), application, product);
         eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
         return TicketPassResponse.from(pass);
     }
 
     @Transactional(readOnly = true)
     public MyTicketsResponse getMyTickets(UUID userId) {
+        return getMyTickets(userId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public MyTicketsResponse getMyTickets(UUID userId, UUID applicationId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         Participant participant = participantService.getOrCreateForUser(user);
         List<TicketPass> passes = ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
-        return buildTicketsResponse(participant, passes, null);
+        UUID gatheringId = null;
+        if (applicationId != null) {
+            Application application = getMemberPaymentPendingOrConfirmedApplication(applicationId, userId);
+            gatheringId = application.getGathering().getId();
+        }
+        return buildTicketsResponse(participant, passes, applicationId, gatheringId);
     }
 
     /** 승인 메일의 예약번호로 비회원 자격과 이용권을 조회한다. */
@@ -83,7 +106,30 @@ public class TicketService {
         Participant participant = application.getParticipant();
         List<TicketPass> passes = ticketPassRepository
                 .findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(participant.getId());
-        return buildTicketsResponse(participant, passes, application.getGathering().getId());
+        return buildTicketsResponse(participant, passes, application.getId(), application.getGathering().getId());
+    }
+
+    private Application getMemberPaymentPendingApplication(UUID applicationId, UUID userId, Participant participant) {
+        Application application = getMemberPaymentPendingOrConfirmedApplication(applicationId, userId);
+        if (application.getStatus() != ApplicationStatus.PAYMENT_PENDING
+                || application.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE
+                || application.getParticipant() == null
+                || !application.getParticipant().getId().equals(participant.getId())) {
+            throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
+        }
+        return application;
+    }
+
+    private Application getMemberPaymentPendingOrConfirmedApplication(UUID applicationId, UUID userId) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        if (application.getParticipant() == null
+                || application.getParticipant().getUser() == null
+                || !application.getParticipant().getUser().getId().equals(userId)
+                || application.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE) {
+            throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
+        }
+        return application;
     }
 
     private Application getGuestApplication(String bookingNumber) {
@@ -91,6 +137,7 @@ public class TicketService {
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
         Participant participant = application.getParticipant();
         if (participant == null || participant.getUser() != null
+                || application.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE
                 || !participant.isApprovedForRandomTable()
                 || participant.isBlockedFromRandomTable()) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
@@ -98,9 +145,10 @@ public class TicketService {
         return application;
     }
 
-    private TicketPass createPendingPass(Participant participant, TicketProduct product) {
+    private TicketPass createPendingPass(Participant participant, Application application, TicketProduct product) {
         TicketPass pass = TicketPass.builder()
                 .participant(participant)
+                .application(application)
                 .product(product)
                 .build();
         ticketPassRepository.save(pass);
@@ -108,7 +156,7 @@ public class TicketService {
     }
 
     private MyTicketsResponse buildTicketsResponse(
-            Participant participant, List<TicketPass> passes, UUID gatheringId) {
+            Participant participant, List<TicketPass> passes, UUID applicationId, UUID gatheringId) {
         int totalRemaining = passes.stream()
                 .filter(p -> p.getStatus() == TicketPassStatus.ACTIVE)
                 .mapToInt(TicketPass::getRemainingCount)
@@ -122,6 +170,7 @@ public class TicketService {
                 .purchasable(participant.isApprovedForRandomTable() && !participant.isBlockedFromRandomTable())
                 .totalRemaining(totalRemaining)
                 .passes(items)
+                .applicationId(applicationId)
                 .gatheringId(gatheringId)
                 .build();
     }

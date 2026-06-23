@@ -14,6 +14,7 @@ import java.util.UUID;
 public class TicketPassResponse {
 
     private UUID id;
+    private UUID applicationId;
     private TicketProduct product;
     private String productLabel;
     private int totalCount;
@@ -28,6 +29,7 @@ public class TicketPassResponse {
     public static TicketPassResponse from(TicketPass pass) {
         return TicketPassResponse.builder()
                 .id(pass.getId())
+                .applicationId(pass.getApplication() != null ? pass.getApplication().getId() : null)
                 .product(pass.getProduct())
                 .productLabel(pass.getProduct().getLabel())
                 .totalCount(pass.getTotalCount())

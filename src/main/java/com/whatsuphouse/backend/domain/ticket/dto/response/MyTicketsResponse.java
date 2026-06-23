@@ -17,5 +17,6 @@ public class MyTicketsResponse {
     private boolean purchasable;
     private int totalRemaining;
     private List<TicketPassResponse> passes;
+    private UUID applicationId;
     private UUID gatheringId;
 }

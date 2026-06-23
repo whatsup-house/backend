@@ -5,6 +5,8 @@ import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
@@ -121,7 +123,10 @@ class TicketServiceTest {
         ReflectionTestUtils.setField(guest, "id", UUID.randomUUID());
         guest.approveRandomTable();
         Application application = mock(Application.class);
+        Gathering gathering = mock(Gathering.class);
         given(application.getParticipant()).willReturn(guest);
+        given(application.getGathering()).willReturn(gathering);
+        given(gathering.getGatheringType()).willReturn(GatheringType.RANDOM_TABLE);
         given(application.getStatus()).willReturn(ApplicationStatus.PAYMENT_PENDING);
         given(applicationRepository.findByBookingNumberAndDeletedAtIsNull("WH260623-ABC123"))
                 .willReturn(Optional.of(application));
@@ -139,7 +144,10 @@ class TicketServiceTest {
     void purchaseGuest_unreviewed_throws() {
         Participant guest = Participant.guest("비회원", "guest@test.com", "01012345678");
         Application application = mock(Application.class);
+        Gathering gathering = mock(Gathering.class);
         given(application.getParticipant()).willReturn(guest);
+        given(application.getGathering()).willReturn(gathering);
+        given(gathering.getGatheringType()).willReturn(GatheringType.RANDOM_TABLE);
         given(applicationRepository.findByBookingNumberAndDeletedAtIsNull("WH260623-ABC123"))
                 .willReturn(Optional.of(application));
 

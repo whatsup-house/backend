@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
@@ -164,10 +165,9 @@ public class EmailNotificationService implements NotificationService {
         String email = resolveEmail(application);
         if (email == null) return;
 
-        MailContent mail = mailTemplateRenderer.render(MailTemplateType.PAYMENT_CONFIRMED, Map.of(
-                "이름", application.getName(),
-                "모임명", application.getGathering().getTitle(),
-                "예약번호", application.getBookingNumber()));
+        Map<String, String> variables = applicationVariables(application);
+        variables.put("확정링크", withPaymentConfirmed(variables.get("확정링크")));
+        MailContent mail = mailTemplateRenderer.render(MailTemplateType.PAYMENT_CONFIRMED, variables);
         send(email, mail.subject(), mail.body());
     }
 
@@ -247,11 +247,23 @@ public class EmailNotificationService implements NotificationService {
         variables.put("시작시간", formatTime(application));
         variables.put("예약번호", application.getBookingNumber());
         String encodedBookingNumber = URLEncoder.encode(application.getBookingNumber(), StandardCharsets.UTF_8);
+        boolean member = application.getUser() != null;
+        boolean randomTable = application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE;
         variables.put("조회경로", frontendUrl + "/applications/check?bookingNumber=" + encodedBookingNumber);
-        variables.put("결제링크", frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
+        variables.put("결제링크", member
+                ? frontendUrl + "/payments/random-table?applicationId=" + application.getId()
+                : frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
         variables.put("확정링크", frontendUrl + "/gatherings/" + application.getGathering().getId()
-                + "/apply/confirmed?bookingNumber=" + encodedBookingNumber);
+                + "/apply/confirmed" + (member ? "" : "?bookingNumber=" + encodedBookingNumber));
+        variables.put("확정안내문구", randomTable
+                ? "이용권 1회 사용이 완료되어 참가가 최종 확정되었습니다."
+                : "참가가 승인되었습니다. 아래 링크에서 입금 계좌를 확인하고 입금해 주세요. 입금 확인 후 예약이 최종 확정됩니다.");
+        variables.put("확정링크라벨", randomTable ? "참가 확정 확인" : "입금 안내 확인");
         return variables;
+    }
+
+    private String withPaymentConfirmed(String url) {
+        return url + (url.contains("?") ? "&" : "?") + "payment=confirmed";
     }
 
     /**

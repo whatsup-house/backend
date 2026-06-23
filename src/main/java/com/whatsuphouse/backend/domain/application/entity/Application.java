@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.application.entity;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
@@ -126,10 +127,10 @@ public class Application extends BaseEntity {
         this.paymentConfirmedAt = null;
     }
 
-    // 유료 게더링 여부. 참가비가 양수일 때만 입금 개념을 적용한다.
+    // 일반 유료 게더링 여부. 우연한 식탁은 이용권 결제 축으로 처리하므로 여기서 제외한다. (KAN-289)
     public boolean isPaidGathering() {
         Integer price = gathering.getPrice();
-        return price != null && price > 0;
+        return gathering.getGatheringType() != GatheringType.RANDOM_TABLE && price != null && price > 0;
     }
 
     public boolean isPaymentConfirmed() {

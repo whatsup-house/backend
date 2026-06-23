@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatus;
 import com.whatsuphouse.backend.domain.participant.enums.ParticipantType;
@@ -36,6 +37,7 @@ public class AdminApplicationResponse {
     private boolean paymentConfirmed;   // 입금 확인 여부
     private LocalDateTime paymentConfirmedAt;
     private UUID gatheringId;
+    private GatheringType gatheringType;
     private UUID userId;
     private UUID participantId;
     private ParticipantType participantType;
@@ -71,6 +73,7 @@ public class AdminApplicationResponse {
                 .paymentConfirmed(application.isPaymentConfirmed())
                 .paymentConfirmedAt(application.getPaymentConfirmedAt())
                 .gatheringId(application.getGathering().getId())
+                .gatheringType(application.getGathering().getGatheringType())
                 .userId(user != null ? user.getId() : null)
                 .participantId(participant != null ? participant.getId() : null)
                 .participantType(participant != null ? participant.getParticipantType() : null)
