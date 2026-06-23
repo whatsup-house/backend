@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.auth.dto.request;
 
 import com.whatsuphouse.backend.global.common.enums.Gender;
+import com.whatsuphouse.backend.global.common.enums.Mbti;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
@@ -36,6 +37,10 @@ public class RegisterRequest {
     @Pattern(regexp = "^\\d{11}$", message = "전화번호는 11자리 숫자여야 합니다.")
     private String phone;
 
+    @Schema(example = "hong_gildong", description = "인스타그램 아이디 (선택)")
+    @Size(max = 100, message = "인스타그램 아이디는 100자 이하여야 합니다.")
+    private String instagramId;
+
     @Schema(example = "홍길동")
     @NotBlank
     @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
@@ -59,4 +64,11 @@ public class RegisterRequest {
     @Schema(example = "SOFTWARE_DEVELOPER", description = "직업 코드 (GET /api/jobs 목록 중 하나)")
     @Size(max = 30, message = "직업 코드는 30자 이하여야 합니다.")
     private String job;
+
+    @Schema(example = "ENFP", description = "MBTI (선택)")
+    private Mbti mbti;
+
+    @Schema(example = "안녕하세요, 잘 부탁드려요!", description = "한줄소개 (선택)")
+    @Size(max = 500, message = "한줄소개는 500자 이하여야 합니다.")
+    private String intro;
 }
