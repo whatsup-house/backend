@@ -94,6 +94,7 @@ class AuthServiceTest {
     void register_success() {
         RegisterRequest request = buildRegisterRequest("new@example.com", "nickname1");
         given(userRepository.existsByEmail("new@example.com")).willReturn(false);
+        given(redisTemplate.hasKey("guest-email-verified:new@example.com")).willReturn(true);
         given(userRepository.existsByNickname("nickname1")).willReturn(false);
         given(passwordEncoder.encode(any())).willReturn("encodedPassword");
         given(userRepository.save(any())).willReturn(user);
@@ -113,6 +114,7 @@ class AuthServiceTest {
         assertThat(captor.getValue().getIntro()).isEqualTo("안녕하세요, 잘 부탁드려요!");
         assertThat(captor.getValue().getInstagramId()).isEqualTo("hong_gildong");
         assertThat(captor.getValue().getMbti()).isEqualTo(Mbti.ENFP);
+        verify(redisTemplate).delete("guest-email-verified:new@example.com");
         verify(mileageService).rewardSignup(any(User.class));
     }
 
@@ -124,6 +126,7 @@ class AuthServiceTest {
                 .gender(Gender.MALE).age(25).nickname("birthnick")
                 .birthDate(LocalDate.of(1999, 3, 15)).build();
         given(userRepository.existsByEmail("birth@example.com")).willReturn(false);
+        given(redisTemplate.hasKey("guest-email-verified:birth@example.com")).willReturn(true);
         given(userRepository.existsByNickname("birthnick")).willReturn(false);
         given(passwordEncoder.encode(any())).willReturn("encodedPassword");
         given(userRepository.save(any())).willReturn(user);
@@ -133,6 +136,20 @@ class AuthServiceTest {
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getBirthDate()).isEqualTo(LocalDate.of(1999, 3, 15));
+    }
+
+    @Test
+    @DisplayName("이메일 인증을 완료하지 않으면 회원가입할 수 없다")
+    void register_emailNotVerified_throwsException() {
+        RegisterRequest request = buildRegisterRequest("new@example.com", "nickname1");
+        given(userRepository.existsByEmail("new@example.com")).willReturn(false);
+        given(redisTemplate.hasKey("guest-email-verified:new@example.com")).willReturn(false);
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMAIL_NOT_VERIFIED);
+        verify(userRepository, never()).save(any(User.class));
+        verify(mileageService, never()).rewardSignup(any(User.class));
     }
 
     @Test
@@ -152,6 +169,7 @@ class AuthServiceTest {
     void register_duplicateNickname_throwsException() {
         RegisterRequest request = buildRegisterRequest("new@example.com", "gildong");
         given(userRepository.existsByEmail("new@example.com")).willReturn(false);
+        given(redisTemplate.hasKey("guest-email-verified:new@example.com")).willReturn(true);
         given(userRepository.existsByNickname("gildong")).willReturn(true);
 
         assertThatThrownBy(() -> authService.register(request))

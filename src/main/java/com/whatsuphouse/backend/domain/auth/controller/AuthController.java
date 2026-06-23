@@ -116,6 +116,20 @@ public class AuthController {
         return ResponseEntity.ok(ApiResult.success(authService.confirmGuestEmailVerification(request)));
     }
 
+    @Operation(summary = "회원가입 이메일 인증번호 요청")
+    @PostMapping("/register-email-verification/request")
+    public ResponseEntity<ApiResult<com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse>> requestRegisterEmailVerification(
+            @Valid @RequestBody com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationRequest request) {
+        return ResponseEntity.ok(ApiResult.success(authService.requestGuestEmailVerification(request)));
+    }
+
+    @Operation(summary = "회원가입 이메일 인증번호 확인")
+    @PostMapping("/register-email-verification/confirm")
+    public ResponseEntity<ApiResult<com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse>> confirmRegisterEmailVerification(
+            @Valid @RequestBody com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationConfirmRequest request) {
+        return ResponseEntity.ok(ApiResult.success(authService.confirmGuestEmailVerification(request)));
+    }
+
     private ResponseCookie buildCookie(String name, String value) {
         return ResponseCookie.from(name, value)
                 .httpOnly(true)
