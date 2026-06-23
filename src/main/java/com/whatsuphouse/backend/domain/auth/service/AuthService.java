@@ -80,6 +80,7 @@ public class AuthService {
                 .nickname(request.getNickname())
                 .phone(request.getPhone())
                 .instagramId(request.getInstagramId())
+                .mbti(request.getMbti())
                 .job(request.getJob())
                 .intro(request.getIntro())
                 .build();

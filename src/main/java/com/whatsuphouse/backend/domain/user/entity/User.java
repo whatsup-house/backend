@@ -77,7 +77,7 @@ public class User extends BaseEntity {
 
     @Builder
     public User(String email, String password, String name, Gender gender, Integer age, LocalDate birthDate,
-                String nickname, String phone, String instagramId, String job, String intro) {
+                String nickname, String phone, String instagramId, Mbti mbti, String job, String intro) {
         this.email = email;
         this.password = password;
         this.name = name;
@@ -87,6 +87,7 @@ public class User extends BaseEntity {
         this.nickname = nickname;
         this.phone = phone;
         this.instagramId = instagramId;
+        this.mbti = mbti;
         this.job = job;
         this.intro = intro;
     }

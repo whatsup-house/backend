@@ -21,6 +21,7 @@ import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.enums.Gender;
+import com.whatsuphouse.backend.global.common.enums.Mbti;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -111,6 +112,7 @@ class AuthServiceTest {
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getIntro()).isEqualTo("안녕하세요, 잘 부탁드려요!");
         assertThat(captor.getValue().getInstagramId()).isEqualTo("hong_gildong");
+        assertThat(captor.getValue().getMbti()).isEqualTo(Mbti.ENFP);
         verify(mileageService).rewardSignup(any(User.class));
     }
 
@@ -408,6 +410,7 @@ class AuthServiceTest {
                 .gender(Gender.MALE).age(25).nickname(nickname)
                 .intro("안녕하세요, 잘 부탁드려요!")
                 .instagramId("hong_gildong")
+                .mbti(Mbti.ENFP)
                 .build();
     }
 
