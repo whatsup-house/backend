@@ -20,6 +20,9 @@ public class GatheringDetailResponse {
     private String title;
     private String description;
     private List<String> howToRun;
+    // 카테고리/태그 — 미지정 시 null/빈 배열 (KAN-304)
+    private String category;
+    private List<String> tags;
     private LocalDate eventDate;
     private LocalTime startTime;
     private LocalTime endTime;
@@ -53,6 +56,8 @@ public class GatheringDetailResponse {
                 .title(title)
                 .description(description)
                 .howToRun(gathering.getHowToRun())
+                .category(gathering.getCategory())
+                .tags(gathering.getTags())
                 .eventDate(gathering.getEventDate())
                 .startTime(gathering.getStartTime())
                 .endTime(gathering.getEndTime())
