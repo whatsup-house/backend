@@ -130,6 +130,12 @@ public class AdminApplicationService {
                 application.reject(reason.trim());
                 if (application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE) {
                     application.getParticipant().rejectRandomTable();
+                    // 반려 시 승인 단계에서 차감했던 이용권을 1회 복구한다. (KAN-261 연장)
+                    // refundOneTicket은 USE 거래가 있을 때만 복구하고 중복 복구를 막으므로 멱등하다.
+                    // 게더링이 이미 취소된 경우엔 게더링 취소 시점에 일괄 환불되므로 중복 복구하지 않는다.
+                    if (application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
+                        ticketService.refundOneTicket(application);
+                    }
                 }
             }
             case ATTENDED -> {
