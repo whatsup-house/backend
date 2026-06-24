@@ -4766,3 +4766,565 @@ VALUES
     ('2be17a11-2ea4-56c9-a3d8-e0fac249ba99', 'ba48c841-9451-5e08-9f2f-58b094b0d4c6', '0ba682ee-ed4a-50d8-adea-3c00c1c54acc', '2026-06-24 10:25:01'),
     ('d6b2b52a-e84c-5c91-8876-fb539d5eb969', 'ba48c841-9451-5e08-9f2f-58b094b0d4c6', 'bfe6935b-e1b9-5018-a8d2-4f4e68403c74', '2026-06-24 10:25:02')
 ON CONFLICT (id) DO NOTHING;
+
+-- ================================================
+-- Instagram gathering detail overlay
+-- 웃지마 주인장 생일 파티는 제외하고, 인스타그램 게더링 캡션/이미지를 V2 상세 데이터에 반영한다.
+-- ================================================
+
+INSERT INTO locations (id, name, address, naver_map_url, kakao_map_url, status, max_capacity, memo, created_at, updated_at)
+VALUES
+    ('447d3707-f7e6-5938-a9b6-6afabc5cf2e5', '홍대·합정', '서울 마포구 홍대·합정 일대', NULL, 'https://map.kakao.com/?q=홍대 합정', 'ACTIVE', 8, '우연한 식탁 홍대·합정 지역', NOW(), NOW()),
+    ('d802b590-ada8-50cd-a283-6063123fc883', '코너브루', '서울 관악구 관악로 204', NULL, 'https://map.kakao.com/?q=관악로 204 코너브루', 'ACTIVE', 16, '재즈 감상회 장소', NOW(), NOW())
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    address = EXCLUDED.address,
+    naver_map_url = EXCLUDED.naver_map_url,
+    kakao_map_url = EXCLUDED.kakao_map_url,
+    status = EXCLUDED.status,
+    max_capacity = EXCLUDED.max_capacity,
+    memo = EXCLUDED.memo,
+    updated_at = NOW();
+
+UPDATE gatherings
+SET description = $wh_commute$🥂퇴근 게더링: 새로운 친구 만들기🥂
+
+하루를 무사히 지나냈다는 안도와
+어딘가 공허한 마음 사이.
+
+그 사이에,
+우리의 퇴근 게더링이 놓여 있습니다.
+
+서툰 인사로 시작된 저녁이
+조금씩 웃음으로 물들고,
+어색했던 공기가 따뜻하게 데워질 때쯤
+새로운 사람들과 친구가 됩니다.
+
+누군가의 하루 끝에
+작은 온기가 되어주는 시간.
+의무보다는 여유로 나누는 대화.
+
+우리가 퇴근 후 모이는 이유는
+단순합니다.
+
+그냥, 함께 편하게 놀고 싶어서.
+
+오늘도 우리는 이 이유 하나로,
+와썹하우스의 불을 켭니다.$wh_commute$,
+    how_to_run = '["체크인","가벼운 술 한 잔과 대화","소그룹 대화","마무리 네트워킹"]'::jsonb,
+    thumbnail_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-2.png',
+    updated_at = NOW()
+WHERE title = '퇴근 게더링';
+
+UPDATE gatherings
+SET title = '와썹 초등학교: 어른이날 게더링',
+    description = $wh_adult_day$🏫와썹 초등학교: 어른이날 게더링🏫
+
+긴 연휴에 사람 많아서 여행 가기는 싫고,
+친구들은 죄다 고향으로 내려가고..
+혼자 있기엔 심심한데 뭐 없을까?🤔
+
+사장님이 이런 상태라 준비한 특별 게더링🏖️
+초등학생 시절을 회상하면서 같이 놀아요😆
+
+저녁 식사 제공 + 주류 무제한 + 불량식품(아폴로, 줄넘기, 멜짱..등) + 추억의 레크레이션(빙고 게임, 추억의 노래 맞추기 등) + 어린 시절 사진 맞추기 + 자율적인 2차 참여 등
+
+🗓️날짜: 5월 5일(월)
+
+⏰시간: 7:30~10:30pm
+(자유로운 대화 및 재밌는 레크레이션이 진행됩니다)
+
+🏠장소: 서울대입구역 도보 5분 개인 카페
+(자세한 주소는 문자 공지)
+
+🎫인원: 남/여 각 6명 (총 12명)
+
+자세한 내용과 참가 신청은
+프로필 링크를 참고해주세요☺️$wh_adult_day$,
+    how_to_run = '["체크인","저녁 식사와 주류","추억의 레크레이션","어린 시절 사진 맞추기"]'::jsonb,
+    end_time = '22:30',
+    max_attendees = 12,
+    thumbnail_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/adult-day-school.jpg',
+    updated_at = NOW()
+WHERE title = '어른이날: 와썹 초등학교';
+
+UPDATE gatherings
+SET description = $wh_running$🌅Whatsup Running Crew: 한강 노을 러닝🌅
+
+해가 지는 선선한 시간,
+하늘은 붉게 물들고
+우리는 그 사이를 달립니다👟
+
+3~5km,
+속도, 기록 상관없이
+우리의 기분만은 확실하게 리프레시🌿
+
+걷고, 뛰고, 웃고,
+함께라서 더 즐거운
+저녁 공기를 온몸으로 느끼는 시간✨
+
+[RUN WITH US]
+
+🗓날짜: 5월 10일(토)
+
+⏰ 시간: 7:30 PM
+
+📍장소: 노들섬
+
+🏃‍♀️ 거리: 약 3~5km
+
+🎟 인원: 6-8명 (초보 대환영)
+
+📌크루장: 형섭 @hangsup_wow_
+▪️8km 평균 페이스 4:40/km
+▪️고척동 날다람쥐 🐿️
+
+📌 부크루장: 란영 @ceo.ran
+▪️5km 평균 페이스 6:30/km
+▪️병아리 러너🐥
+
+참가 신청은 프로필 링크를 참고해주세요☺️
+*참가비는 없습니다!
+
+#와썹하우스 #러닝 #러닝크루$wh_running$,
+    how_to_run = '["노들섬 집결","가벼운 스트레칭","3~5km 노을 러닝","러닝 후 마무리"]'::jsonb,
+    location_id = 'a2000000-0000-0000-0000-000000000003',
+    start_time = '19:30',
+    end_time = '21:30',
+    price = 0,
+    max_attendees = 8,
+    thumbnail_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/running-crew.jpg',
+    updated_at = NOW()
+WHERE title = '와썹 러닝 크루';
+
+UPDATE gatherings
+SET title = '취중영담(醉中暎談): 영화 게더링',
+    description = $wh_movie$📽️취중영담(醉中暎談): 영화 게더링📽️
+
+”영화와 술, 그리고 처음 만난 우리“
+영화 보고, 술 마시고, 처음 만난 사람과 이야기 하는 밤🌙
+
+몰아치는 감정의 파도 속에서
+허우적거릴 준비 되셨나요?🌊
+
+🚨선착순으로 마감합니다🚨
+
+🗓️날짜: 5월 31일 (토)
+
+⏰시간: 7:30~10:30pm
+(단편 영화 상영 및 영화 관련 컨텐츠가 진행됩니다)
+
+📌장소: 서울대입구역 도보 5분 (자세한 주소는 문자 공지)
+
+🎫인원: 남/여 각 6명 (총 12명)
+
+자세한 내용과 참가 신청은
+프로필 링크를 참고해주세요☺️
+
+※ 무빌리지(@movillage_official ), 세이브유어캣 (@saveyourcat_ )과 함께합니다.$wh_movie$,
+    how_to_run = '["체크인","단편 영화 상영","영화 관련 콘텐츠","영화와 술을 곁들인 대화"]'::jsonb,
+    end_time = '22:30',
+    max_attendees = 12,
+    thumbnail_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/movie-gathering.png',
+    updated_at = NOW()
+WHERE title = '영화 게더링';
+
+UPDATE gatherings
+SET description = $wh_random_table$“좋은 인연은 생각보다 작은 계기에서 시작됩니다.”
+
+새로운 사람을 만나고 싶은데,
+부담스럽지 않은 자리는 생각보다 없습니다.
+
+소개팅도 아니고,
+딱딱한 네트워킹도 아니고,
+시끄러운 술자리도 아닌..!
+
+그냥 좋은 사람들과
+가볍고 자연스럽게 저녁 한 끼🍽️
+
+우연한 식탁은
+처음 보는 4~6명이 함께하는
+작은 저녁 식사 모임입니다.
+
+매주 목요일,
+다양한 사람들이 모인 식탁에 초대합니다.
+
+📍 홍대·합정
+🕰 매주 목요일 저녁 7:30
+👥 4~6명 소규모
+🍽 식사 비용 각자 계산
+
+#와썹하우스 #우연한식탁 #라이프스타일 #웰니스$wh_random_table$,
+    how_to_run = '["신청서 기반 매칭","홍대·합정 식당 안내","4~6명 소규모 저녁 식사","식사 비용 각자 계산"]'::jsonb,
+    location_id = '447d3707-f7e6-5938-a9b6-6afabc5cf2e5',
+    start_time = '19:30',
+    end_time = '21:30',
+    max_attendees = 6,
+    thumbnail_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/random-table-1.png',
+    updated_at = NOW()
+WHERE gathering_type = 'RANDOM_TABLE'
+  AND title = '우연한 식탁';
+
+UPDATE gatherings
+SET description = $wh_halloween$퇴근하고 귀신 될 사람들 다 모여라~👻
+
+와썹하우스 할로윈 게더링 이번에도 진심 미쳤다🔥
+
+🕯️ 호스트의 할로윈 코스튬 직관잼
+🎭 드레스코드: 할로윈 or 주황
+🎲 할로윈 게임 & 레크레이션
+🍸 하이볼, 맥주, 웃음, 텐션 - ALL 무제한
+
+그냥 좋은 사람들과 할로윈 밤을 재밌게 보내는 자리!
+그게 와썹하우스 방식이에요🎃
+
+📍 10월 31일 (금) 8PM
+📍 서울대입구 도보 5분, 와썹하우스
+📍 신청: 퇴근 게더링 신청서 (프로필 링크 클릭)
+
+#와썹하우스 #할로윈파티 #퇴근게더링 #서울대입구모임 #골반이멈추지않아$wh_halloween$,
+    how_to_run = '["체크인","할로윈 드레스코드 확인","할로윈 게임과 레크레이션","하이볼·맥주와 자유 대화"]'::jsonb,
+    start_time = '20:00',
+    end_time = '22:30',
+    thumbnail_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/halloween-party.jpeg',
+    updated_at = NOW()
+WHERE title = '할로윈 게더링';
+
+INSERT INTO gatherings (id, title, description, how_to_run, location_id, event_date, start_time, end_time, price, max_attendees, gathering_type, status, thumbnail_url, is_curated, curated_rank, created_at, updated_at)
+VALUES
+    ('c7e3b7db-2045-5ec7-8f8b-85d08ea3f85b', '경찰과 도둑', $wh_police$🚨경찰과 도둑🚨
+
+요즘 #경찰과도둑 그렇게 핫하다면서요❤️‍🔥
+우리가 빠지면 (김형)섭섭하지 않겠습니까?
+유행 막차 끊기기 전에 같이 달려용🚓
+
+우리나라 경찰과 도둑 유행의 주인공
+시골쥐(@sigol__g )님도 참가자로 함께 놉니다!
+
+❗️공지 사항❗️
+본 모임에는 JTBC뉴스룸 팀의 현장 촬영이 예정되어 있습니다.
+촬영 노출이 어려우신 분들께서는,
+아쉽지만 다음 기회에 신청해주시기를 권해드립니다.
+
+📅 모임 안내
+
+📌 날짜: 1/11 (일요일)
+
+🕗 시간: 4:00 PM ~ 6:00PM
+
+📍 장소: 보라매 공원
+(서울특별시 동작구 여의대방로20길 33)
+
+💸 참가비: 3000원
+(신청 후 문자로 계좌 안내 드립니다.)
+
+*물과 음료 제공, 경찰 뿅망치, 피아 식별을 위한 야광 팔찌.. 등이 제공됩니다.
+
+🎫모집 인원:  20명 (남녀 성비 5:5)
+(참가 연령: 만 19세 이상)
+*인원 초과 시 조기 마감합니다
+
+자세한 내용과 참가 신청은
+프로필 링크를 확인해주세요☺️$wh_police$, '["팀 나누기와 룰 설명","보라매공원 경찰과 도둑 게임","현장 촬영 안내","마무리"]'::jsonb, 'a2000000-0000-0000-0000-000000000004', '2026-01-11', '16:00', '18:00', 3000, 20, 'REGULAR', 'COMPLETED', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/police-and-thief.png', FALSE, 0, NOW(), NOW()),
+    ('57a7a460-6cd6-58db-bccc-953bd4fdebe1', '보드 게임 클럽: 관악의 왕', $wh_board$🎲보드 게임 클럽: 관악의 왕🎲
+
+보드 게임 최강자를 가려라!
+승부의 세계는 냉정한 법🧊
+오로지 실력으로 증명하라🔥
+혼자 와도 단 1판 만에 친구가 되는 마법✨
+
+”이 구역의 보드 게임 최강자! 혹시 당신?“
+
+🗓️날짜: 7/6 (일요일)
+
+⏰시간: 3:00~6:00pm
+
+🏝️장소: 서울대입구역 도보 5분
+(자세한 주소는 문자로 공지)
+
+🎫인원: 최대 12명 (선착순)
+
+자세한 내용과 참가 신청은
+프로필 링크를 참고해주세요☺️
+
+*모집 인원 초과 시, 조기 마감될 수 있습니다.$wh_board$, '["체크인","보드게임 룰 설명","보드게임 토너먼트","마무리"]'::jsonb, 'a2000000-0000-0000-0000-000000000002', '2025-07-06', '15:00', '18:00', 0, 12, 'REGULAR', 'COMPLETED', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/board-game-club.jpeg', FALSE, 0, NOW(), NOW()),
+    ('e4001622-df3e-5d13-ac04-84f230898011', '목요 수다 클럽: 수다 떨고 토론하는 모임', $wh_chat$🎙️목요 수다 클럽: 수다 떨고 토론하는 모임 🎙️
+
+가끔은 정리되지 않은 생각을
+그냥 누군가에게 말해보고 싶을 때가 있어요.
+
+누가 고쳐주지 않아도,
+누가 정리해주지 않아도,
+그냥 말하면서 스스로 알게 되는 순간들이 있거든요.
+
+’수다 클럽‘
+생각이 입 밖으로 튀어나와도,
+아무도 눈치 안 주는 곳😎
+
+수다, 논쟁, 넋두리, 주저리
+어떤 말이든 대환영합니다!🎊
+
+🗓️날짜: 매주 목요일
+
+⏰시간: 8:00~10:00pm
+(주어진 주제로 토론하고, 수다 떱니다)
+
+🏠장소: 서울대입구역 도보 5분, 개인 카페
+(자세한 주소는 문자로 공지)
+
+🎫인원: 최대 8명
+
+자세한 내용과 참가 신청은
+프로필 링크를 참고해주세요☺️$wh_chat$, '["체크인","주제 기반 토론","자유 수다","마무리"]'::jsonb, 'a2000000-0000-0000-0000-000000000002', '2025-06-05', '20:00', '22:00', 0, 8, 'REGULAR', 'COMPLETED', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/chat-club.jpeg', FALSE, 0, NOW(), NOW()),
+    ('472227e9-7b03-57c5-b590-83fd2565c4ae', '2026 새해 계획&막걸리 모임', $wh_newyear$🍶2026 새해 계획&막걸리 모임🍶
+
+요즘 낭만파들은 다 아는 사실,
+새해 첫 술은 막걸리 아니겠습니까?
+
+“올해는 좀 다르게 살아볼까.”
+
+새해가 되면 올해를 어떻게 보내면 좋을지,
+다른 사람들은 어떤 계획을 가지고 있는지
+괜히 궁금해지잖아요.
+
+그래서 와썹하우스의 2026년 첫 이벤트 모임은
+화려한 새해 파티 대신 신년 계획&막걸리로 시작합니다!
+
+구수하게 넘어가는 한 잔에
+한 해의 목표와 소망,
+아직 말로 정리되지 않은 생각들까지
+함께 적고, 나누고, 마시는 밤!
+
+거창하거나, 소소하거나 뭐든 좋습니다🫰
+2026년 잘 보내겠다는 마음 하나면
+충분한 거 아니겠습니까!
+
+✔️ 각자의 2026년 목표와 다짐 나누기
+✔️ 취향 다른 막걸리 3~5종 함께 마셔보기
+✔️ 전과 안주, 소소한 술상
+
+저(호스트)도 참가자로 함께 앉아
+같이 마시고, 같이 웃고, 같이 떠듭니다!
+
+이런 분들에게 추천드려요👍
+- 2026년을 특별한 추억으로 시작하고 싶은 분
+- 올해 계획을 아직 못 세우신 분
+- 다른 사람들은 어떤 계획을 세우는 지 궁금한 분
+- 막걸리 러버 & 킬러
+- 수요일 저녁에 딱히 일정 없는 분
+- 새로운 사람들을 만나고 싶은 분
+- 기가막힌 점집 알고 계신 분
+- 타로&사주 볼 줄 아시는 분
+
+📅 모임 안내
+
+📌 날짜: 1/14(수요일)
+
+🕗 시간: 8:00 PM ~ 10:30 PM
+
+📍 장소: 서울대입구역 도보 5분 개인 카페
+(자세한 위치는 문자로 알려드립니다!)
+
+💸 참가비: 25,000원
+(신청 후 문자로 계좌 안내 드립니다.)
+
+*다양한 막걸리 3~5종 + 신년 계획 작성 컨텐츠 + 안주(전, 과자, 과일 등) + 멋쟁이 사람들...등이 제공됩니다!
+
+🎫모집 인원: 6~8명 소규모
+*인원 초과 시 조기 마감합니다
+
+자세한 내용과 참가 신청은
+프로필 링크를 확인해주세요☺️$wh_newyear$, '["체크인","2026년 목표와 다짐 나누기","막걸리 3~5종 시음","전과 안주를 곁들인 대화"]'::jsonb, 'a2000000-0000-0000-0000-000000000002', '2026-01-14', '20:00', '22:30', 25000, 8, 'REGULAR', 'COMPLETED', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/new-year-makgeolli.jpeg', FALSE, 0, NOW(), NOW()),
+    ('809e9278-b5a3-5c12-84fc-116cbe38bfa0', '못들은 JAZZ!! 들려드립니다,, 재즈 감상회', $wh_jazz$(마감되었습니다! 감사합니다.)
+안녕하십니까,,☘️
+스근~하이 재즈 듣다 가실 분을,, 찾습니다
+모임 열겠다고 처음 공지하고,,
+재즈 잘 모르는데 가도 되냐는 질문을 매우!!! 많이 받았습니다,,
+당연히!!!! 들었을 때 좋다는 느낌 하나만으로도 충분합니다,,
+
+🎷 못들은 JAZZ!! 들려드립니다,, 재즈 감상회
+
+누가 더 많이 아는지 얘기하는 시간이 아니라
+왜 그 음악이 좋았는지 천천히, 각자 방식대로 이야기해보는 시간입니다,,
+재즈의 본고장 뉴올리언스의 음식인 치킨샌드위치와 베녜를 준비했슴다,,
+드시면서  재즈 틀어놓고 스근~하게 있다 가십시오,,
+
+──────────────
+
+✔️ 이런 분들께 잘 맞습니다,,
+
+- 재즈 들으면서 스근하게 있다 가고 싶으신 분
+- 난 그냥,, 재즈가 좋아,,, 재즈만 들으면 몸이 저절로 들썩거려,, 하시는 분
+- 재즈 들으면서 치킨샌드위치와 베녜 드시고 싶으신 분
+- 재즈의 효능을 온몸으로 경험하고 싶으신 분
+- 그냥 재지기니가 어떤 인간인지 실물이 궁금하신 분
+(재즈 역사 뮤지션 이름 다 몰라도 됩니다 대신 같이 들을 재즈곡 하나만 정해서 오세요,,)
+
+──────────────
+
+🎷 모임 안내,,
+
+날짜 | 2/14 (토)
+시간 | 13:00 – 16:00
+장소 | 와썹하우스 @whatsup_house
+(관악로 204 코너브루)
+참가비 | 39,000원
+(신청 후 문자로 계좌 안내드립니다)
+
+☘️ 제공 사항,,
+
+파파이스 치킨샌드위치 단품 1개
+베녜(뉴올리언스 스타일 도넛) 2개
+음료 2잔 (하이볼·맥주·주스)
+수수하지만 굉장해! 럭키드로우
+재지한 사람들,,,
+
+👥 정원 | 총 16명
+
+(성비 1:1 · 남/여 각 8명 참여 가능)
+**주류를 제공하는 모임으로, 미성년자 분들은 참석이 불가합니다**
+
+──────────────
+
+재즈를 잘 들으러 오는 자리가 아니라 재즈를 즐길 수 있는 사람들이 모이는 자리입니다,,
+자세한 내용 & 신청은 프로필 링크에서 확인해 주십시오,,
+(진짜로 그냥 즐기시면 됩니다,, 🎶)$wh_jazz$, '["체크인","함께 들을 재즈곡 소개","치킨샌드위치와 베녜 제공","재즈 감상과 대화"]'::jsonb, 'd802b590-ada8-50cd-a283-6063123fc883', '2026-02-14', '13:00', '16:00', 39000, 16, 'REGULAR', 'COMPLETED', 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/jazz-listening.png', FALSE, 0, NOW(), NOW())
+ON CONFLICT (id) DO UPDATE SET
+    title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    how_to_run = EXCLUDED.how_to_run,
+    location_id = EXCLUDED.location_id,
+    event_date = EXCLUDED.event_date,
+    start_time = EXCLUDED.start_time,
+    end_time = EXCLUDED.end_time,
+    price = EXCLUDED.price,
+    max_attendees = EXCLUDED.max_attendees,
+    gathering_type = EXCLUDED.gathering_type,
+    status = EXCLUDED.status,
+    thumbnail_url = EXCLUDED.thumbnail_url,
+    is_curated = EXCLUDED.is_curated,
+    curated_rank = EXCLUDED.curated_rank,
+    updated_at = NOW();
+
+WITH birthday_gatherings AS (
+    SELECT id
+    FROM gatherings
+    WHERE title = '웃지마 주인장 생일 파티'
+),
+birthday_applications AS (
+    SELECT id
+    FROM applications
+    WHERE gathering_id IN (SELECT id FROM birthday_gatherings)
+),
+birthday_ticket_passes AS (
+    SELECT id
+    FROM ticket_passes
+    WHERE application_id IN (SELECT id FROM birthday_applications)
+)
+DELETE FROM ticket_transactions
+WHERE application_id IN (SELECT id FROM birthday_applications)
+   OR ticket_pass_id IN (SELECT id FROM birthday_ticket_passes);
+
+DELETE FROM ticket_passes
+WHERE application_id IN (
+    SELECT a.id
+    FROM applications a
+    JOIN gatherings g ON g.id = a.gathering_id
+    WHERE g.title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM application_answers
+WHERE application_id IN (
+    SELECT a.id
+    FROM applications a
+    JOIN gatherings g ON g.id = a.gathering_id
+    WHERE g.title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM matching_members
+WHERE application_id IN (
+    SELECT a.id
+    FROM applications a
+    JOIN gatherings g ON g.id = a.gathering_id
+    WHERE g.title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM matching_groups
+WHERE gathering_id IN (
+    SELECT id
+    FROM gatherings
+    WHERE title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM review_likes
+WHERE review_id IN (
+    SELECT r.id
+    FROM reviews r
+    JOIN gatherings g ON g.id = r.gathering_id
+    WHERE g.title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM review_images
+WHERE review_id IN (
+    SELECT r.id
+    FROM reviews r
+    JOIN gatherings g ON g.id = r.gathering_id
+    WHERE g.title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM reviews
+WHERE gathering_id IN (
+    SELECT id
+    FROM gatherings
+    WHERE title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM applications
+WHERE gathering_id IN (
+    SELECT id
+    FROM gatherings
+    WHERE title = '웃지마 주인장 생일 파티'
+);
+
+UPDATE carousel_slides
+SET gathering_id = NULL,
+    updated_at = NOW()
+WHERE gathering_id IN (
+    SELECT id
+    FROM gatherings
+    WHERE title = '웃지마 주인장 생일 파티'
+);
+
+UPDATE forms
+SET gathering_id = NULL,
+    updated_at = NOW()
+WHERE gathering_id IN (
+    SELECT id
+    FROM gatherings
+    WHERE title = '웃지마 주인장 생일 파티'
+);
+
+DELETE FROM gatherings
+WHERE title = '웃지마 주인장 생일 파티';
+
+-- 홈 화면 후기 기본 노출은 좋아요가 1개 이상인 후기만 대상으로 한다.
+WITH liked_reviews AS (
+    SELECT
+        id,
+        ROW_NUMBER() OVER (ORDER BY like_count DESC, created_at DESC, id) AS display_order
+    FROM reviews
+    WHERE like_count > 0
+),
+review_home_defaults AS (
+    SELECT
+        r.id,
+        liked_reviews.display_order
+    FROM reviews r
+    LEFT JOIN liked_reviews ON liked_reviews.id = r.id
+)
+UPDATE reviews r
+SET is_home_featured = review_home_defaults.display_order IS NOT NULL,
+    home_display_order = COALESCE(review_home_defaults.display_order, 0),
+    updated_at = NOW()
+FROM review_home_defaults
+WHERE r.id = review_home_defaults.id;
