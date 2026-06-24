@@ -474,16 +474,20 @@ class AdminGatheringServiceTest {
     }
 
     @Test
-    @DisplayName("시작 시간이 종료 시간보다 늦거나 같으면 INVALID_GATHERING_TIME 예외 (KAN-221)")
-    void createGathering_startNotBeforeEnd_throwsException() {
+    @DisplayName("종료 시간이 시작 시간보다 이르면 다음날 새벽 종료로 보고 생성 허용 (KAN-293)")
+    void createGathering_overnightTime_allowsCreation() {
         GatheringCreateRequest request = GatheringCreateRequest.builder()
-                .title("시간역전 게더링").locationId(locationId)
+                .title("밤샘 게더링").locationId(locationId)
                 .eventDate(LocalDate.now().plusDays(7)).maxAttendees(10)
-                .startTime(LocalTime.of(20, 0)).endTime(LocalTime.of(19, 0)).build();
+                .startTime(LocalTime.of(20, 0)).endTime(LocalTime.of(2, 0)).build();
 
-        assertThatThrownBy(() -> adminGatheringService.createGathering(request))
-                .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_GATHERING_TIME);
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        given(gatheringRepository.save(any(Gathering.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+        GatheringDetailResponse result = adminGatheringService.createGathering(request);
+
+        assertThat(result.getStartTime()).isEqualTo(LocalTime.of(20, 0));
+        assertThat(result.getEndTime()).isEqualTo(LocalTime.of(2, 0));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

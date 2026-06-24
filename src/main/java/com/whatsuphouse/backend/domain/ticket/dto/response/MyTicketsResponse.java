@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.ticket.dto.response;
 
 import lombok.Builder;
 import lombok.Getter;
+import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatus;
 import com.whatsuphouse.backend.domain.participant.enums.RandomTableEligibility;
 
@@ -19,4 +20,5 @@ public class MyTicketsResponse {
     private List<TicketPassResponse> passes;
     private UUID applicationId;
     private UUID gatheringId;
+    private ApplicationStatus applicationStatus;
 }

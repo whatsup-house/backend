@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.application.client.dto.response;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -28,6 +29,7 @@ public class ApplicationListResponse {
         private String title;
         private String eventDate;
         private String thumbnailUrl;
+        private GatheringType gatheringType;
     }
 
     public static ApplicationListResponse from(Application application) {
@@ -41,6 +43,7 @@ public class ApplicationListResponse {
                         .title(application.getGathering().getTitle())
                         .eventDate(application.getGathering().getEventDate().toString())
                         .thumbnailUrl(application.getGathering().getThumbnailUrl())
+                        .gatheringType(application.getGathering().getGatheringType())
                         .build())
                 .createdAt(application.getCreatedAt())
                 .build();
