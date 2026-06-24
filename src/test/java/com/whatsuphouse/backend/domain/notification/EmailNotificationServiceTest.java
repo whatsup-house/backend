@@ -103,8 +103,8 @@ class EmailNotificationServiceTest {
     // ── sendApplicationPending() ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("신청 접수 이메일 - 회원(user != null)이면 send 호출")
-    void sendApplicationPending_member_sendCalled() {
+    @DisplayName("신청 접수 이메일 - 회원이면 마이페이지 신청 상세 링크를 포함한다")
+    void sendApplicationPending_member_containsMyApplicationDetailLink() {
         // given
         User user = buildUser("member@test.com");
         Gathering gathering = buildGathering();
@@ -117,7 +117,8 @@ class EmailNotificationServiceTest {
         then(mailSender).should().send(any(SimpleMailMessage.class));
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
                 "WH260428-TEST01".equals(vars.get("예약번호"))
-                        && vars.get("조회경로").contains("/applications/check?bookingNumber=WH260428-TEST01")));
+                        && vars.get("조회경로").equals(
+                        "http://localhost:3000/mypage/applications/00000000-0000-0000-0000-000000000101")));
     }
 
     @Test

@@ -108,12 +108,14 @@ public class TicketService {
         List<TicketPass> passes = ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
         UUID gatheringId = null;
         ApplicationStatus applicationStatus = null;
+        String bookingNumber = null;
         if (applicationId != null) {
             Application application = getMemberPaymentPendingOrConfirmedApplication(applicationId, userId);
             gatheringId = application.getGathering().getId();
             applicationStatus = application.getStatus();
+            bookingNumber = application.getBookingNumber();
         }
-        return buildTicketsResponse(participant, passes, applicationId, gatheringId, applicationStatus);
+        return buildTicketsResponse(participant, passes, applicationId, bookingNumber, gatheringId, applicationStatus);
     }
 
     /** 승인 메일의 예약번호로 비회원 자격과 이용권을 조회한다. */
@@ -128,7 +130,8 @@ public class TicketService {
         Participant participant = application.getParticipant();
         List<TicketPass> passes = ticketPassRepository
                 .findByParticipant_IdAndDeletedAtIsNullOrderByCreatedAtDesc(participant.getId());
-        return buildTicketsResponse(participant, passes, application.getId(), application.getGathering().getId(), application.getStatus());
+        return buildTicketsResponse(participant, passes, application.getId(), application.getBookingNumber(),
+                application.getGathering().getId(), application.getStatus());
     }
 
     private Application getMemberPaymentPendingApplication(UUID applicationId, UUID userId, Participant participant) {
@@ -188,7 +191,7 @@ public class TicketService {
     }
 
     private MyTicketsResponse buildTicketsResponse(
-            Participant participant, List<TicketPass> passes, UUID applicationId, UUID gatheringId,
+            Participant participant, List<TicketPass> passes, UUID applicationId, String bookingNumber, UUID gatheringId,
             ApplicationStatus applicationStatus) {
         int totalRemaining = passes.stream()
                 .filter(p -> p.getStatus() == TicketPassStatus.ACTIVE)
@@ -204,6 +207,7 @@ public class TicketService {
                 .totalRemaining(totalRemaining)
                 .passes(items)
                 .applicationId(applicationId)
+                .bookingNumber(bookingNumber)
                 .gatheringId(gatheringId)
                 .applicationStatus(applicationStatus)
                 .build();

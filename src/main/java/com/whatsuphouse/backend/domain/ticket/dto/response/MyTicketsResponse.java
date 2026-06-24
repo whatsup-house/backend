@@ -19,6 +19,7 @@ public class MyTicketsResponse {
     private int totalRemaining;
     private List<TicketPassResponse> passes;
     private UUID applicationId;
+    private String bookingNumber;
     private UUID gatheringId;
     private ApplicationStatus applicationStatus;
 }
