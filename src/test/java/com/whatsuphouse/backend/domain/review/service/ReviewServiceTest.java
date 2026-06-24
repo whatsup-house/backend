@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -686,6 +687,60 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> reviewService.locateReview(reviewId, ReviewSort.LIKES, otherGatheringId, 10))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REVIEW_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("관리자 홈 노출 후기가 있으면 설정 순서대로 반환하고 추천순 fallback을 사용하지 않는다")
+    void listHomeReviews_featuredExists_returnsFeaturedWithoutFallback() {
+        Review featured = buildReview(UUID.randomUUID(), "관리자 노출 후기");
+
+        given(reviewRepository.findByIsHomeFeaturedTrueAndDeletedAtIsNullOrderByHomeDisplayOrderAscCreatedAtDesc())
+                .willReturn(List.of(featured));
+        given(reviewImageRepository.findByReviewIdInAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+                .willReturn(List.of());
+
+        List<HomeReviewResponse> result = reviewService.listHomeReviews();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getReviewContent()).isEqualTo("관리자 노출 후기");
+        verify(reviewRepository, never()).findByDeletedAtIsNull(any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("관리자 홈 노출 후기가 없으면 추천순(좋아요 → 최신) 후기로 fallback 한다")
+    void listHomeReviews_noFeatured_fallsBackToRecommended() {
+        Review recommended = buildReview(UUID.randomUUID(), "추천 후기");
+
+        given(reviewRepository.findByIsHomeFeaturedTrueAndDeletedAtIsNullOrderByHomeDisplayOrderAscCreatedAtDesc())
+                .willReturn(List.of());
+        given(reviewRepository.findByDeletedAtIsNull(any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of(recommended)));
+        given(reviewImageRepository.findByReviewIdInAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+                .willReturn(List.of());
+
+        List<HomeReviewResponse> result = reviewService.listHomeReviews();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getReviewContent()).isEqualTo("추천 후기");
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(reviewRepository).findByDeletedAtIsNull(pageableCaptor.capture());
+        Pageable used = pageableCaptor.getValue();
+        assertThat(used.getPageSize()).isEqualTo(6);
+        assertThat(used.getSort().toString()).contains("likeCount: DESC", "createdAt: DESC");
+    }
+
+    @Test
+    @DisplayName("관리자 노출 후기도 추천 후기도 없으면 빈 배열을 반환한다")
+    void listHomeReviews_noReviews_returnsEmpty() {
+        given(reviewRepository.findByIsHomeFeaturedTrueAndDeletedAtIsNullOrderByHomeDisplayOrderAscCreatedAtDesc())
+                .willReturn(List.of());
+        given(reviewRepository.findByDeletedAtIsNull(any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of()));
+
+        List<HomeReviewResponse> result = reviewService.listHomeReviews();
+
+        assertThat(result).isEmpty();
     }
 
     private Review buildReview(UUID reviewId, String content) {
