@@ -60,8 +60,9 @@ class AdminMailTemplateServiceTest {
         MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("APPLICATION_PENDING");
 
         assertThat(result.getTemplateKey()).isEqualTo("APPLICATION_PENDING");
-        assertThat(result.getVariables()).contains("이름", "모임명", "예약번호");
-        assertThat(result.getBody()).contains("{{예약번호}}");
+        // 예약번호 안내를 제거하고 이메일 인증 기반 조회경로로 일원화 (KAN-309)
+        assertThat(result.getVariables()).contains("이름", "모임명", "조회경로").doesNotContain("예약번호");
+        assertThat(result.getBody()).contains("{{조회경로}}").doesNotContain("{{예약번호}}");
     }
 
     @Test
