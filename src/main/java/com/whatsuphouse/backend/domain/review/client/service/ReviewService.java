@@ -66,6 +66,9 @@ public class ReviewService {
     // 후기 좋아요 마일스톤 — 이 값에 도달하면 작성자에게 알림. (KAN-263)
     private static final Set<Integer> LIKE_MILESTONES = Set.of(10, 50, 100, 500, 1000);
 
+    // 관리자 홈 노출 후기가 없을 때 추천순으로 채우는 fallback 개수. (KAN-294)
+    private static final int HOME_REVIEW_FALLBACK_SIZE = 6;
+
     @Transactional
     public ReviewResponse createReview(ReviewCreateRequest request, UUID userId) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(request.getApplicationId())
@@ -186,6 +189,14 @@ public class ReviewService {
 
     public List<HomeReviewResponse> listHomeReviews() {
         List<Review> reviews = reviewRepository.findByIsHomeFeaturedTrueAndDeletedAtIsNullOrderByHomeDisplayOrderAscCreatedAtDesc();
+
+        // 관리자가 홈 노출 후기를 설정하지 않았으면 추천순(좋아요 → 최신) 후기로 fallback 한다. (KAN-294)
+        if (reviews.isEmpty()) {
+            Pageable pageable = PageRequest.of(0, HOME_REVIEW_FALLBACK_SIZE,
+                    Sort.by(Sort.Order.desc("likeCount"), Sort.Order.desc("createdAt")));
+            reviews = reviewRepository.findByDeletedAtIsNull(pageable).getContent();
+        }
+
         Map<UUID, List<ReviewImage>> imageMap = findImageMap(reviews);
 
         return reviews.stream()
