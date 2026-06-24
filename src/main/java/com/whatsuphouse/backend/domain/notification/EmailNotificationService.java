@@ -100,8 +100,8 @@ public class EmailNotificationService implements NotificationService {
 
     /**
      * 신청 접수(PENDING) 확인 이메일 (FR-NTF-01, 02).
-     * 예약번호를 포함하며, 신청자가 나중에 상태 조회(/api/applications/check)에 사용할 수 있습니다.
-     * 비회원(user == null)은 이메일 주소가 없으므로 발송을 건너뜁니다.
+     * 예약번호를 포함하며, 회원은 마이페이지 신청 상세, 비회원은 예약번호 조회 화면으로 안내합니다.
+     * 수신 이메일을 확인할 수 없는 신청은 발송을 건너뜁니다.
      */
     @Override
     @Async("emailTaskExecutor")
@@ -249,7 +249,9 @@ public class EmailNotificationService implements NotificationService {
         String encodedBookingNumber = URLEncoder.encode(application.getBookingNumber(), StandardCharsets.UTF_8);
         boolean member = application.getUser() != null;
         boolean randomTable = application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE;
-        variables.put("조회경로", frontendUrl + "/applications/check?bookingNumber=" + encodedBookingNumber);
+        variables.put("조회경로", member
+                ? frontendUrl + "/mypage/applications/" + application.getId()
+                : frontendUrl + "/applications/check?bookingNumber=" + encodedBookingNumber);
         variables.put("결제링크", member
                 ? frontendUrl + "/payments/random-table?applicationId=" + application.getId()
                 : frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
