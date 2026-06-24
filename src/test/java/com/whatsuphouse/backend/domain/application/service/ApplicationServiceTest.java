@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.client.dto.request.Applicatio
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
+import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
@@ -49,6 +50,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
@@ -86,6 +88,9 @@ class ApplicationServiceTest {
 
     @Mock
     private TicketService ticketService;
+
+    @Mock
+    private ApplicationLookupTokenService applicationLookupTokenService;
 
     @InjectMocks
     private ApplicationService applicationService;
@@ -198,6 +203,35 @@ class ApplicationServiceTest {
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+    }
+
+    @Test
+    @DisplayName("무료 우연한 식탁은 승인된 회원 신청 시 이용권 차감 없이 자동 확정된다")
+    void apply_freeRandomTable_approvedMember_confirmsWithoutTicket() {
+        Gathering randomTable = Gathering.builder()
+                .title("무료 우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(4)
+                .price(0)
+                .gatheringType(GatheringType.RANDOM_TABLE)
+                .build();
+        Participant participant = Participant.member(user);
+        participant.approveRandomTable();
+
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(ticketService).should(never()).tryUseOneTicket(eq(participant), any(Application.class));
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
     @Test
