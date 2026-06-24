@@ -164,7 +164,9 @@ public class AdminApplicationService {
         }
 
         participant.approveRandomTable();
-        if (ticketService.tryUseOneTicket(participant, application)) {
+        // 참가비 0원 우연한 식탁은 이용권 없이 승인만으로 즉시 확정한다.
+        // 그 외에는 기존대로 이용권을 차감하고, 잔여 이용권이 없으면 결제 대기로 전환한다.
+        if (application.getGathering().isFreeRandomTable() || ticketService.tryUseOneTicket(participant, application)) {
             enforceCapacityForNewSeat(application);
             application.confirm();
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));

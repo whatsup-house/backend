@@ -172,12 +172,18 @@ public class ApplicationService {
 
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
                 && participant.isApprovedForRandomTable()) {
-            autoConfirmed = ticketService.tryUseOneTicket(participant, saved);
-            paymentPending = !autoConfirmed;
-            if (autoConfirmed) {
+            if (gathering.isFreeRandomTable()) {
+                // 참가비 0원 우연한 식탁은 이용권 없이 즉시 확정한다.
+                autoConfirmed = true;
                 saved.confirm();
             } else {
-                saved.awaitPayment();
+                autoConfirmed = ticketService.tryUseOneTicket(participant, saved);
+                paymentPending = !autoConfirmed;
+                if (autoConfirmed) {
+                    saved.confirm();
+                } else {
+                    saved.awaitPayment();
+                }
             }
         }
 
