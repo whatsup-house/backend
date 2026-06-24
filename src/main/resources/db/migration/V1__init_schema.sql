@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS gatherings (
     title         VARCHAR(200) NOT NULL,
     description   TEXT,
     how_to_run    JSONB,
+    tags          JSONB,
     location_id   UUID         REFERENCES locations(id),
     event_date    DATE         NOT NULL,
     start_time    TIME,

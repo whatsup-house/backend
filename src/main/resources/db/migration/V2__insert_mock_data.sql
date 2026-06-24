@@ -5307,6 +5307,133 @@ WHERE gathering_id IN (
 DELETE FROM gatherings
 WHERE title = '웃지마 주인장 생일 파티';
 
+-- 운영 게더링 태그 보정.
+-- 태그 목록: 푸드, 파티, 자기계발, 외국어, 취미, 게임, 액티비티, 나들이
+UPDATE gatherings
+SET tags = CASE
+        WHEN title = '우연한 식탁' THEN '["푸드","나들이"]'::jsonb
+        WHEN title = '퇴근 게더링' THEN '["파티","푸드"]'::jsonb
+        WHEN title LIKE '%러닝%' THEN '["액티비티","취미"]'::jsonb
+        WHEN title = '경찰과 도둑' THEN '["게임","액티비티"]'::jsonb
+        WHEN title LIKE '%보드 게임%' THEN '["게임","취미"]'::jsonb
+        WHEN title LIKE '%영화%' THEN '["취미","푸드"]'::jsonb
+        WHEN title LIKE '%JAZZ%' OR title LIKE '%재즈%' THEN '["취미","푸드"]'::jsonb
+        WHEN title LIKE '%수다%' THEN '["자기계발","취미"]'::jsonb
+        WHEN title LIKE '%막걸리%' THEN '["푸드","자기계발"]'::jsonb
+        WHEN title LIKE '%할로윈%' THEN '["파티","게임"]'::jsonb
+        WHEN title LIKE '%초등학교%' THEN '["파티","게임","푸드"]'::jsonb
+        ELSE '["취미"]'::jsonb
+    END,
+    updated_at = NOW()
+WHERE deleted_at IS NULL;
+
+-- 히어로 캐러셀은 운영 게더링 대표 회차로 다시 연결한다.
+UPDATE gatherings
+SET title = '와썹 러닝 클럽',
+    updated_at = NOW()
+WHERE title = '와썹 러닝 크루';
+
+DELETE FROM carousel_slides
+WHERE id = 'd0000001-0000-0000-0000-000000000002'
+   OR title = '대학생 게더링';
+
+UPDATE carousel_slides
+SET type = 'CALENDAR',
+    title = '이번 달 게더링 일정',
+    content = '캘린더에서 일정을 한눈에 확인하세요',
+    image_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-8.png',
+    gathering_id = NULL,
+    sort_order = 1,
+    is_active = TRUE,
+    updated_at = NOW()
+WHERE id = 'd0000001-0000-0000-0000-000000000006';
+
+UPDATE carousel_slides
+SET type = 'GATHERING',
+    title = '퇴근 게더링',
+    content = NULL,
+    image_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-2.png',
+    gathering_id = (
+        SELECT id
+        FROM gatherings
+        WHERE title = '퇴근 게더링'
+          AND deleted_at IS NULL
+        ORDER BY CASE WHEN status = 'OPEN' THEN 0 ELSE 1 END, event_date ASC, created_at ASC
+        LIMIT 1
+    ),
+    sort_order = 2,
+    is_active = TRUE,
+    updated_at = NOW()
+WHERE id = 'd0000001-0000-0000-0000-000000000001';
+
+UPDATE carousel_slides
+SET type = 'GATHERING',
+    title = '와썹 러닝 클럽',
+    content = NULL,
+    image_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-6.png',
+    gathering_id = (
+        SELECT id
+        FROM gatherings
+        WHERE title = '와썹 러닝 클럽'
+          AND deleted_at IS NULL
+        ORDER BY event_date DESC, created_at DESC
+        LIMIT 1
+    ),
+    sort_order = 5,
+    is_active = TRUE,
+    updated_at = NOW()
+WHERE id = 'd0000001-0000-0000-0000-000000000003';
+
+UPDATE carousel_slides
+SET type = 'GATHERING',
+    title = '경찰과 도둑',
+    content = NULL,
+    image_url = 'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-3.png',
+    gathering_id = (
+        SELECT id
+        FROM gatherings
+        WHERE title = '경찰과 도둑'
+          AND deleted_at IS NULL
+        ORDER BY event_date DESC, created_at DESC
+        LIMIT 1
+    ),
+    sort_order = 4,
+    is_active = TRUE,
+    updated_at = NOW()
+WHERE id = 'd0000001-0000-0000-0000-000000000004';
+
+INSERT INTO carousel_slides (id, type, title, content, image_url, gathering_id, sort_order, is_active, created_at, updated_at)
+SELECT
+    'd0000001-0000-0000-0000-000000000007',
+    'GATHERING',
+    '우연한 식탁',
+    NULL,
+    'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/mock/home-7.png',
+    g.id,
+    3,
+    TRUE,
+    NOW(),
+    NOW()
+FROM gatherings g
+WHERE g.title = '우연한 식탁'
+  AND g.deleted_at IS NULL
+ORDER BY CASE WHEN g.status = 'OPEN' THEN 0 ELSE 1 END, g.event_date ASC, g.created_at ASC
+LIMIT 1
+ON CONFLICT (id) DO UPDATE SET
+    type = EXCLUDED.type,
+    title = EXCLUDED.title,
+    content = EXCLUDED.content,
+    image_url = EXCLUDED.image_url,
+    gathering_id = EXCLUDED.gathering_id,
+    sort_order = EXCLUDED.sort_order,
+    is_active = EXCLUDED.is_active,
+    updated_at = NOW();
+
+UPDATE carousel_slides
+SET sort_order = 6,
+    updated_at = NOW()
+WHERE id = 'd0000001-0000-0000-0000-000000000005';
+
 -- 홈 화면 후기 기본 노출은 좋아요가 1개 이상인 후기만 대상으로 한다.
 WITH liked_reviews AS (
     SELECT
