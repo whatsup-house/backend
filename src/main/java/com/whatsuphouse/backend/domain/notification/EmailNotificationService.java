@@ -249,9 +249,10 @@ public class EmailNotificationService implements NotificationService {
         String encodedBookingNumber = URLEncoder.encode(application.getBookingNumber(), StandardCharsets.UTF_8);
         boolean member = application.getUser() != null;
         boolean randomTable = application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE;
+        // 비회원 신청 조회는 전화번호+이메일 인증 기반 /guest/applications 로 일원화 (KAN-309)
         variables.put("조회경로", member
                 ? frontendUrl + "/mypage/applications/" + application.getId()
-                : frontendUrl + "/applications/check?bookingNumber=" + encodedBookingNumber);
+                : frontendUrl + "/guest/applications");
         variables.put("결제링크", member
                 ? frontendUrl + "/payments/random-table?applicationId=" + application.getId()
                 : frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
