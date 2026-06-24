@@ -17,6 +17,7 @@ public enum JobCategory {
     MEDIA("미디어·방송"),
     MARKETING("마케팅·광고"),
     FINANCE("금융"),
+    LEGAL("법조"),
     MEDICAL("의료·보건"),
     EDUCATION("교육"),
     PUBLIC("공무원·공공"),

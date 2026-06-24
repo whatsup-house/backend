@@ -82,6 +82,16 @@ public enum Job {
     FINANCE_OFFICE("재무·회계 사무", JobCategory.FINANCE),
     FINANCE_ETC("금융(기타)", JobCategory.FINANCE),
 
+    // 법조
+    LAWYER("변호사", JobCategory.LEGAL),
+    JUDGE("판사", JobCategory.LEGAL),
+    PROSECUTOR("검사", JobCategory.LEGAL),
+    JUDICIAL_SCRIVENER("법무사", JobCategory.LEGAL),
+    PATENT_ATTORNEY("변리사", JobCategory.LEGAL),
+    LABOR_ATTORNEY("노무사", JobCategory.LEGAL),
+    PARALEGAL("법무팀·사내변호사", JobCategory.LEGAL),
+    LEGAL_ETC("법조(기타)", JobCategory.LEGAL),
+
     // 의료·보건
     NURSE("간호사", JobCategory.MEDICAL),
     DOCTOR("의사", JobCategory.MEDICAL),
@@ -91,6 +101,7 @@ public enum Job {
     PHARMA_RESEARCHER("제약연구원", JobCategory.MEDICAL),
     DENTAL_COORDINATOR("치과코디네이터", JobCategory.MEDICAL),
     MEDICAL_TECH("임상병리사", JobCategory.MEDICAL),
+    VETERINARIAN("수의사", JobCategory.MEDICAL),
     MEDICAL_ETC("의료·보건(기타)", JobCategory.MEDICAL),
 
     // 교육
@@ -108,6 +119,7 @@ public enum Job {
     PUBLIC_CORP("공기업", JobCategory.PUBLIC),
     SOLDIER("군인", JobCategory.PUBLIC),
     FIREFIGHTER("소방관", JobCategory.PUBLIC),
+    SOCIAL_WORKER("사회복지사", JobCategory.PUBLIC),
     PUBLIC_ETC("공공(기타)", JobCategory.PUBLIC),
 
     // 서비스
@@ -122,6 +134,7 @@ public enum Job {
     HAIR_DESIGNER("헤어디자이너", JobCategory.SERVICE),
     BEAUTY_WORKER("미용인", JobCategory.SERVICE),
     FLIGHT_ATTENDANT("승무원", JobCategory.SERVICE),
+    REALTOR("공인중개사", JobCategory.SERVICE),
     SERVICE_ETC("서비스(기타)", JobCategory.SERVICE),
 
     // 제조·엔지니어링
@@ -132,6 +145,7 @@ public enum Job {
     PROCESS_OPERATOR("공정 오퍼레이터", JobCategory.MANUFACTURING),
     PRODUCTION_WORKER("생산직", JobCategory.MANUFACTURING),
     QUALITY_CONTROL("품질관리", JobCategory.MANUFACTURING),
+    ARCHITECT("건축사", JobCategory.MANUFACTURING),
     MANUFACTURING_ETC("제조·엔지니어링(기타)", JobCategory.MANUFACTURING),
 
     // 일반 사무·직장인
