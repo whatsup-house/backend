@@ -127,18 +127,31 @@ public class Application extends BaseEntity {
         this.paymentConfirmedAt = null;
     }
 
+    public boolean isFreeGathering() {
+        Integer price = gathering.getPrice();
+        return price != null && price == 0;
+    }
+
     // 일반 유료 게더링 여부. 우연한 식탁은 이용권 결제 축으로 처리하므로 여기서 제외한다. (KAN-289)
     public boolean isPaidGathering() {
         Integer price = gathering.getPrice();
         return gathering.getGatheringType() != GatheringType.RANDOM_TABLE && price != null && price > 0;
     }
 
+    public boolean requiresRandomTableTicket() {
+        Integer price = gathering.getPrice();
+        return gathering.getGatheringType() == GatheringType.RANDOM_TABLE && (price == null || price > 0);
+    }
+
     public boolean isPaymentConfirmed() {
         return paymentConfirmedAt != null;
     }
 
-    // 신청자 노출용 입금 상태. 무료 게더링은 null(표시하지 않음)을 반환한다.
+    // 신청자 노출용 결제 상태. 유료 우연한 식탁은 이용권 도메인에서 상태를 보여주므로 null을 반환한다.
     public PaymentStatus getPaymentStatus() {
+        if (isFreeGathering()) {
+            return PaymentStatus.FREE;
+        }
         if (!isPaidGathering()) {
             return null;
         }

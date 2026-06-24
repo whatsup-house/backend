@@ -64,6 +64,7 @@ public class ApplicationService {
     private final TicketService ticketService;
     private final ParticipantService participantService;
     private final AuthService authService;
+    private final ApplicationLookupTokenService applicationLookupTokenService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -172,12 +173,17 @@ public class ApplicationService {
 
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
                 && participant.isApprovedForRandomTable()) {
-            autoConfirmed = ticketService.tryUseOneTicket(participant, saved);
-            paymentPending = !autoConfirmed;
-            if (autoConfirmed) {
+            if (!saved.requiresRandomTableTicket()) {
                 saved.confirm();
+                autoConfirmed = true;
             } else {
-                saved.awaitPayment();
+                autoConfirmed = ticketService.tryUseOneTicket(participant, saved);
+                paymentPending = !autoConfirmed;
+                if (autoConfirmed) {
+                    saved.confirm();
+                } else {
+                    saved.awaitPayment();
+                }
             }
         }
 
@@ -275,6 +281,13 @@ public class ApplicationService {
 
     public ApplicationCheckResponse checkApplication(String phone, String bookingNumber) {
         Application application = applicationRepository.findByPhoneAndBookingNumberAndDeletedAtIsNull(phone, bookingNumber)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        return ApplicationCheckResponse.from(application, loadAnswers(application.getId()));
+    }
+
+    public ApplicationCheckResponse checkApplicationByToken(String token) {
+        String bookingNumber = applicationLookupTokenService.extractBookingNumber(token);
+        Application application = applicationRepository.findByBookingNumberAndDeletedAtIsNull(bookingNumber)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
         return ApplicationCheckResponse.from(application, loadAnswers(application.getId()));
     }

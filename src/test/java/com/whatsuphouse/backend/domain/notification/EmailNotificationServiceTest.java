@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -50,6 +51,9 @@ class EmailNotificationServiceTest {
     @Mock
     private MailTemplateRenderer mailTemplateRenderer;
 
+    @Mock
+    private ApplicationLookupTokenService applicationLookupTokenService;
+
     @InjectMocks
     private EmailNotificationService emailNotificationService;
 
@@ -60,6 +64,8 @@ class EmailNotificationServiceTest {
         // 템플릿 렌더링은 별도 단위 테스트에서 검증한다. 여기서는 발송(send) 동작만 보므로 렌더 결과를 고정한다.
         lenient().when(mailTemplateRenderer.render(any(), any()))
                 .thenReturn(new MailContent("제목", "본문"));
+        lenient().when(applicationLookupTokenService.createToken("WH260428-TEST01"))
+                .thenReturn("signed-token");
     }
 
     // ── sendWelcome() ─────────────────────────────────────────────────────────
@@ -119,6 +125,21 @@ class EmailNotificationServiceTest {
                 "WH260428-TEST01".equals(vars.get("예약번호"))
                         && vars.get("조회경로").equals(
                         "http://localhost:3000/mypage/applications/00000000-0000-0000-0000-000000000101")));
+    }
+
+    @Test
+    @DisplayName("신청 접수 이메일 - 비회원이면 인증 없이 신청 완료 화면으로 가는 토큰 링크를 포함한다")
+    void sendApplicationPending_guest_containsDirectCompleteLink() {
+        Gathering gathering = buildGathering();
+        Application application = buildApplication(null, gathering);
+        ReflectionTestUtils.setField(application, "email", "guest@test.com");
+
+        emailNotificationService.sendApplicationPending(application);
+
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
+                vars.get("조회경로").equals(
+                        "http://localhost:3000/gatherings/00000000-0000-0000-0000-000000000201/apply/complete?bookingNumber=WH260428-TEST01&token=signed-token")));
+        then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
     @Test
@@ -369,12 +390,14 @@ class EmailNotificationServiceTest {
     }
 
     private Gathering buildGathering() {
-        return Gathering.builder()
+        Gathering gathering = Gathering.builder()
                 .title("테스트 게더링")
                 .eventDate(LocalDate.now().plusDays(7))
                 .startTime(LocalTime.of(14, 0))
                 .maxAttendees(10)
                 .build();
+        ReflectionTestUtils.setField(gathering, "id", UUID.fromString("00000000-0000-0000-0000-000000000201"));
+        return gathering;
     }
 
     private Application buildApplication(User user, Gathering gathering) {

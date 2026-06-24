@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
@@ -57,6 +58,7 @@ public class EmailNotificationService implements NotificationService {
 
     private final JavaMailSender mailSender;
     private final MailTemplateRenderer mailTemplateRenderer;
+    private final ApplicationLookupTokenService applicationLookupTokenService;
 
     /**
      * 발신자 이메일 주소.
@@ -247,17 +249,25 @@ public class EmailNotificationService implements NotificationService {
         variables.put("시작시간", formatTime(application));
         variables.put("예약번호", application.getBookingNumber());
         String encodedBookingNumber = URLEncoder.encode(application.getBookingNumber(), StandardCharsets.UTF_8);
+        String encodedLookupToken = URLEncoder.encode(
+                applicationLookupTokenService.createToken(application.getBookingNumber()), StandardCharsets.UTF_8);
         boolean member = application.getUser() != null;
         boolean randomTable = application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE;
-        // 비회원 신청 조회는 전화번호+이메일 인증 기반 /guest/applications 로 일원화 (KAN-309)
+        String guestCompleteLink = frontendUrl + "/gatherings/" + application.getGathering().getId()
+                + "/apply/complete?bookingNumber=" + encodedBookingNumber + "&token=" + encodedLookupToken;
+        String guestConfirmedLink = frontendUrl + "/gatherings/" + application.getGathering().getId()
+                + "/apply/confirmed?bookingNumber=" + encodedBookingNumber + "&token=" + encodedLookupToken;
         variables.put("조회경로", member
                 ? frontendUrl + "/mypage/applications/" + application.getId()
-                : frontendUrl + "/guest/applications");
+                : guestCompleteLink);
         variables.put("결제링크", member
                 ? frontendUrl + "/payments/random-table?applicationId=" + application.getId()
                 : frontendUrl + "/payments/random-table?bookingNumber=" + encodedBookingNumber);
         variables.put("확정링크", frontendUrl + "/gatherings/" + application.getGathering().getId()
-                + "/apply/confirmed" + (member ? "" : "?bookingNumber=" + encodedBookingNumber));
+                + "/apply/confirmed" + (member ? "" : "?bookingNumber=" + encodedBookingNumber + "&token=" + encodedLookupToken));
+        if (!member) {
+            variables.put("확정링크", guestConfirmedLink);
+        }
         variables.put("확정안내문구", randomTable
                 ? "이용권 1회 사용이 완료되어 참가가 최종 확정되었습니다."
                 : "참가가 승인되었습니다. 아래 링크에서 입금 계좌를 확인하고 입금해 주세요. 입금 확인 후 예약이 최종 확정됩니다.");

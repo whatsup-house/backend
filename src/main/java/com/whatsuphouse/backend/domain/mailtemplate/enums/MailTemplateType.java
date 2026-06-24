@@ -71,7 +71,7 @@ public enum MailTemplateType {
             모임명: {{모임명}}
             일시: {{모임날짜}} {{시작시간}}
 
-            신청 내역은 아래 링크에서 이메일 인증 후 확인하실 수 있습니다.
+            신청 내역은 아래 링크에서 바로 확인하실 수 있습니다.
             {{조회경로}}
 
             신청 결과는 별도 이메일로 안내해 드리겠습니다.
@@ -79,7 +79,7 @@ public enum MailTemplateType {
             List.of("이름", "모임명", "모임날짜", "시작시간", "조회경로"),
             Map.of("이름", "홍길동", "모임명", "재즈가 흐르는 와인 모임",
                     "모임날짜", "2026년 06월 26일", "시작시간", "19:00",
-                    "조회경로", "https://www.whatsup.house/guest/applications")
+                    "조회경로", "https://www.whatsup.house/gatherings/00000000-0000-0000-0000-000000000000/apply/complete?bookingNumber=WH260626-AB12CD&token=sample-token")
     ),
 
     APPLICATION_APPROVED(

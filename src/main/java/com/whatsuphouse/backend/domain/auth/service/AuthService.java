@@ -44,8 +44,11 @@ public class AuthService {
     private static final long PASSWORD_RESET_TTL_MINUTES = 30L;
     private static final String GUEST_EMAIL_CODE_PREFIX = "guest-email-code:";
     private static final String GUEST_EMAIL_VERIFIED_PREFIX = "guest-email-verified:";
+    private static final String EMAIL_VERIFICATION_RATE_LIMIT_PREFIX = "email-verification-rate:";
     private static final long GUEST_EMAIL_CODE_TTL_MINUTES = 5L;
     private static final long GUEST_EMAIL_VERIFIED_TTL_MINUTES = 30L;
+    private static final long EMAIL_VERIFICATION_RATE_LIMIT_TTL_MINUTES = 30L;
+    private static final long EMAIL_VERIFICATION_RATE_LIMIT_COUNT = 10L;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
@@ -177,6 +180,7 @@ public class AuthService {
     public com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse requestGuestEmailVerification(
             com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationRequest request) {
         String email = normalizeEmail(request.getEmail());
+        enforceEmailVerificationRateLimit(email);
         String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
         redisTemplate.opsForValue().set(
                 GUEST_EMAIL_CODE_PREFIX + email, code,
@@ -213,6 +217,17 @@ public class AuthService {
 
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void enforceEmailVerificationRateLimit(String email) {
+        String key = EMAIL_VERIFICATION_RATE_LIMIT_PREFIX + email;
+        Long count = redisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1L) {
+            redisTemplate.expire(key, EMAIL_VERIFICATION_RATE_LIMIT_TTL_MINUTES, TimeUnit.MINUTES);
+        }
+        if (count != null && count > EMAIL_VERIFICATION_RATE_LIMIT_COUNT) {
+            throw new CustomException(ErrorCode.TOO_MANY_REQUESTS);
+        }
     }
 
     public void logout(UUID userId) {

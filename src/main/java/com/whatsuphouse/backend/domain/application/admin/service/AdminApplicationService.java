@@ -158,7 +158,11 @@ public class AdminApplicationService {
         }
 
         participant.approveRandomTable();
-        if (ticketService.tryUseOneTicket(participant, application)) {
+        if (!application.requiresRandomTableTicket()) {
+            enforceCapacityForNewSeat(application);
+            application.confirm();
+            eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
+        } else if (ticketService.tryUseOneTicket(participant, application)) {
             enforceCapacityForNewSeat(application);
             application.confirm();
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));

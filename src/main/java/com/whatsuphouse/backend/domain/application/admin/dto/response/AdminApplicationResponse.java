@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatus;
@@ -34,6 +35,8 @@ public class AdminApplicationResponse {
     private String referralSource;
     private ApplicationStatus status;
     private boolean paid;               // 유료 게더링 여부 (입금 컬럼 노출 대상인지)
+    private boolean free;               // 참가비 0원 여부
+    private PaymentStatus paymentStatus;
     private boolean paymentConfirmed;   // 입금 확인 여부
     private LocalDateTime paymentConfirmedAt;
     private UUID gatheringId;
@@ -70,6 +73,8 @@ public class AdminApplicationResponse {
                 .referralSource(firstString(answers, "referralSource", firstString(answers, "referral_source", null)))
                 .status(application.getStatus())
                 .paid(application.isPaidGathering())
+                .free(application.isFreeGathering())
+                .paymentStatus(application.getPaymentStatus())
                 .paymentConfirmed(application.isPaymentConfirmed())
                 .paymentConfirmedAt(application.getPaymentConfirmedAt())
                 .gatheringId(application.getGathering().getId())

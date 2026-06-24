@@ -264,6 +264,23 @@ class AdminApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("무료 우연한 식탁 승인 시 이용권 차감 없이 즉시 확정한다")
+    void changeStatus_freeRandomTableApproval_confirmsWithoutTicket() {
+        Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
+        ReflectionTestUtils.setField(randomTableApp.getGathering(), "price", 0);
+        Participant participant = randomTableApp.getParticipant();
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
+
+        ApplicationStatusResponse response = adminApplicationService.changeStatus(
+                applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
+
+        assertThat(participant.isApprovedForRandomTable()).isTrue();
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(ticketService).should(never()).tryUseOneTicket(participant, randomTableApp);
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    @Test
     @DisplayName("우연한 식탁 거절은 사람 자격과 신청에 함께 반영한다 (KAN-277)")
     void changeStatus_randomTableRejection_rejectsParticipantAndApplication() {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);

@@ -382,14 +382,31 @@ class AuthServiceTest {
     @DisplayName("비회원 이메일 인증번호를 5분 TTL로 저장하고 발송한다")
     void requestGuestEmailVerification_storesAndSendsCode() {
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.increment("email-verification-rate:guest@test.com")).willReturn(1L);
 
         GuestEmailVerificationResponse response = authService.requestGuestEmailVerification(
                 GuestEmailVerificationRequest.builder().email("Guest@Test.COM").build());
 
         assertThat(response.isAccepted()).isTrue();
+        verify(redisTemplate).expire("email-verification-rate:guest@test.com", 30L, TimeUnit.MINUTES);
         verify(valueOperations).set(eq("guest-email-code:guest@test.com"), matches("\\d{6}"),
                 eq(5L), eq(TimeUnit.MINUTES));
         verify(notificationService).sendGuestEmailVerification(eq("guest@test.com"), matches("\\d{6}"));
+    }
+
+    @Test
+    @DisplayName("같은 이메일 인증번호 요청은 30분 10회를 초과하면 거부한다")
+    void requestGuestEmailVerification_sameEmailTooManyRequests_throws() {
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.increment("email-verification-rate:guest@test.com")).willReturn(11L);
+
+        assertThatThrownBy(() -> authService.requestGuestEmailVerification(
+                GuestEmailVerificationRequest.builder().email("guest@test.com").build()))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TOO_MANY_REQUESTS);
+
+        verify(valueOperations, never()).set(eq("guest-email-code:guest@test.com"), anyString(), anyLong(), any());
+        verify(notificationService, never()).sendGuestEmailVerification(anyString(), anyString());
     }
 
     @Test
