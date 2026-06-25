@@ -5455,3 +5455,250 @@ SET is_home_featured = review_home_defaults.display_order IS NOT NULL,
     updated_at = NOW()
 FROM review_home_defaults
 WHERE r.id = review_home_defaults.id;
+
+-- 운영 데이터 보정: 퇴근 게더링 상세 및 게더링별 EAV 신청폼 최신화
+UPDATE gatherings
+SET description = $wh_commute_description$
+[와썹하우스 퇴근 게더링]
+퇴근 후, 새로운 사람들과 편하게 이야기 나누는 저녁 모임입니다.
+처음 만나는 사람들도 어색하지 않게 대화할 수 있도록 와썹하우스가 자연스러운 흐름을 만들어드립니다.
+
+가벼운 저녁, 무제한 주류, 대화 프로그램, 레크레이션까지. 편하고, 부담 없고, 기억에 남는 시간입니다.
+
+[모임 안내]
+
+금요일: 8:00pm ~ 11:00pm
+
+장소: 연남동 '팜팜발리'
+자세한 주소는 신청 후 문자로 안내드립니다.
+
+참가비: 신규 40,000원 / 재방문자 38,000원
+(식사, 주류, 프로그램, 공간 이용까지 모두 포함된 금액입니다.)
+
+*친구 동반 신청은 3000원씩 할인이 적용됩니다.
+
+포함 내역:
+저녁 식사, 주류 무제한, 대화 프로그램, 마니또 편지, 감성 콘텐츠, 조별 레크레이션, 와인 경품
+
+모집 인원: 12~16명 소수 정원
+
+정원이 적어 신청 순서에 따라 조기 마감될 수 있습니다. 참여를 고민 중이라면 가능한 날짜에 먼저 신청해두시는 걸 추천드립니다.
+$wh_commute_description$,
+    how_to_run = '["체크인", "가벼운 저녁과 무제한 주류", "대화 프로그램", "마니또 편지", "조별 레크레이션", "와인 경품"]'::jsonb,
+    location_id = 'a2000000-0000-0000-0000-000000000001',
+    start_time = '20:00',
+    end_time = '23:00',
+    price = 40000,
+    max_attendees = 16,
+    updated_at = NOW()
+WHERE title = '퇴근 게더링'
+  AND deleted_at IS NULL;
+
+UPDATE form_questions fq
+SET deleted_at = NOW(),
+    updated_at = NOW()
+FROM forms f
+WHERE fq.form_id = f.id
+  AND f.deleted_at IS NULL
+  AND fq.deleted_at IS NULL
+  AND f.gathering_id IN (
+      SELECT id
+      FROM gatherings
+      WHERE deleted_at IS NULL
+        AND (
+            title = '퇴근 게더링'
+            OR (gathering_type = 'RANDOM_TABLE' AND title IN ('우연한 식탁', '우연한 식탁 — 금요일 저녁'))
+        )
+  );
+
+UPDATE forms
+SET deleted_at = NOW(),
+    updated_at = NOW()
+WHERE deleted_at IS NULL
+  AND gathering_id IN (
+      SELECT id
+      FROM gatherings
+      WHERE deleted_at IS NULL
+        AND (
+            title = '퇴근 게더링'
+            OR (gathering_type = 'RANDOM_TABLE' AND title IN ('우연한 식탁', '우연한 식탁 — 금요일 저녁'))
+        )
+  );
+
+WITH target_gatherings AS (
+    SELECT
+        id AS gathering_id,
+        CASE WHEN title = '퇴근 게더링' THEN 'COMMUTE' ELSE 'RANDOM_TABLE' END AS form_type
+    FROM gatherings
+    WHERE deleted_at IS NULL
+      AND (
+          title = '퇴근 게더링'
+          OR (gathering_type = 'RANDOM_TABLE' AND title IN ('우연한 식탁', '우연한 식탁 — 금요일 저녁'))
+      )
+),
+target_forms AS (
+    SELECT
+        (
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 1, 8) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 9, 4) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 13, 4) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 17, 4) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 21, 12)
+        )::uuid AS form_id,
+        gathering_id,
+        form_type
+    FROM target_gatherings
+)
+INSERT INTO forms (id, gathering_id, is_template, gathering_type, guide_text, created_at, updated_at, deleted_at)
+SELECT
+    form_id,
+    gathering_id,
+    FALSE,
+    CASE WHEN form_type = 'RANDOM_TABLE' THEN 'RANDOM_TABLE' ELSE NULL END,
+    CASE
+        WHEN form_type = 'COMMUTE' THEN $wh_commute_form_guide$
+신청 후 3일 이내로 확인 문자 드려요. 문자를 못 받으셨다면 다음 기수를 신청해주세요:)
+마감은 인스타 스토리로 공지합니다.
+$wh_commute_form_guide$
+        ELSE $wh_random_table_form_guide$
+(필독) 주의 사항
+우연한 식탁은 소개팅이나 이성 만남을 목적으로 한 자리가 아닙니다. 성별 비율을 고려할 수는 있지만, 연애 목적의 매칭을 보장하지 않습니다. 서로에게 부담을 주는 행동이나 과도한 연락처 요구는 제한될 수 있습니다.
+
+매칭 및 식당 예약이 완료된 이후에는 단순 변심으로 인한 환불이 어렵습니다. 노쇼 발생 시 이후 우연한 식탁 및 와썹하우스 프로그램 참여가 제한될 수 있습니다.
+
+신청서를 바탕으로 분위기가 비슷한 분들을 우선 매칭합니다. 모든 신청자가 반드시 매칭되는 것은 아니며, 더 잘 맞는 날짜로 안내 드릴 수 있습니다.
+
+좋은 인연은 생각보다
+작은 계기에서 시작됩니다.
+매주 목요일, 우연한 식탁에서 만나요.
+$wh_random_table_form_guide$
+    END,
+    NOW(),
+    NOW(),
+    NULL
+FROM target_forms
+ON CONFLICT (id) DO UPDATE SET
+    gathering_id = EXCLUDED.gathering_id,
+    is_template = EXCLUDED.is_template,
+    gathering_type = EXCLUDED.gathering_type,
+    guide_text = EXCLUDED.guide_text,
+    updated_at = NOW(),
+    deleted_at = NULL;
+
+WITH target_gatherings AS (
+    SELECT
+        id AS gathering_id,
+        CASE WHEN title = '퇴근 게더링' THEN 'COMMUTE' ELSE 'RANDOM_TABLE' END AS form_type
+    FROM gatherings
+    WHERE deleted_at IS NULL
+      AND (
+          title = '퇴근 게더링'
+          OR (gathering_type = 'RANDOM_TABLE' AND title IN ('우연한 식탁', '우연한 식탁 — 금요일 저녁'))
+      )
+),
+target_forms AS (
+    SELECT
+        (
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 1, 8) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 9, 4) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 13, 4) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 17, 4) || '-' ||
+            SUBSTR(MD5('operating-form-' || gathering_id::text), 21, 12)
+        )::uuid AS form_id,
+        gathering_id,
+        form_type
+    FROM target_gatherings
+),
+question_seed AS (
+    SELECT *
+    FROM (VALUES
+        ('COMMUTE', 'gender', 'SINGLE_CHOICE', '성별', NULL, TRUE, 1, '{"choices":["MALE","FEMALE"]}'::jsonb, NULL::jsonb, TRUE, FALSE, 'DIVERSE', 1.00::numeric),
+        ('COMMUTE', 'name', 'SHORT_TEXT', '이름', NULL, TRUE, 2, NULL::jsonb, NULL::jsonb, FALSE, TRUE, NULL, NULL::numeric),
+        ('COMMUTE', 'age', 'NUMBER', '나이', '숫자만 입력', TRUE, 3, NULL::jsonb, NULL::jsonb, TRUE, FALSE, 'SAME', 1.00::numeric),
+        ('COMMUTE', 'phone', 'SHORT_TEXT', '연락처 (한 번 더 오타 확인!)', NULL, TRUE, 4, NULL::jsonb, NULL::jsonb, FALSE, TRUE, NULL, NULL::numeric),
+        ('COMMUTE', 'email', 'SHORT_TEXT', '이메일', NULL, TRUE, 5, NULL::jsonb, NULL::jsonb, FALSE, TRUE, NULL, NULL::numeric),
+        ('COMMUTE', 'job', 'SHORT_TEXT', '직업', NULL, TRUE, 6, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('COMMUTE', 'mbti', 'MBTI_INPUT', 'MBTI', NULL, TRUE, 7, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('COMMUTE', 'intro', 'LONG_TEXT', '간단한 자기소개, 참가 이유' || E'\n' || '(어떤 분인지 편하게 알려주세요!)', NULL, TRUE, 8, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('COMMUTE', 'instagram_id', 'SHORT_TEXT', 'Instagram ID' || E'\n' || '(신청 확인 후 바로 비공개로 돌리셔도 돼요!' || E'\n' || '분위기 맞는 분인지 확인용이에요!)', NULL, TRUE, 9, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('COMMUTE', 'question_to_ask', 'LONG_TEXT', '새로운 사람들에게 물어보고 싶은 질문 1개!', 'ex) 지금까지 살면서 가장 잘한 일이 무엇인가요?', FALSE, 10, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('COMMUTE', 'companion_referrer', 'SHORT_TEXT', '친구 동반 신청 및 추천인이 있으신가요?' || E'\n' || '(성함을 적어주세요!)', NULL, FALSE, 11, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('COMMUTE', 'photo_consent', 'SINGLE_CHOICE', '와썹하우스에서는 여러분의 소중한 추억과 설렘의 순간을 기록하기 위해 촬영을 진행합니다.' || E'\n' || '이는 와썹하우스 컨텐츠 광고에 활용될 수 있습니다. 이에 동의하시나요?', NULL, TRUE, 12, '{"choices":["동의합니다!"]}'::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('COMMUTE', 'privacy_consent', 'SINGLE_CHOICE', '와썹하우스는 일회성 인연이 아닌, 지속적인 관계 유지를 위해 단톡방이 만들어집니다. 개인정보 수집 및 이용 동의하시나요?' || E'\n' || '(모임 후 퇴장하셔도 무방합니다.)', NULL, TRUE, 13, '{"choices":["네 좋습니다!"]}'::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+
+        ('RANDOM_TABLE', 'name', 'SHORT_TEXT', '이름', NULL, TRUE, 1, NULL::jsonb, NULL::jsonb, FALSE, TRUE, NULL, NULL::numeric),
+        ('RANDOM_TABLE', 'phone', 'SHORT_TEXT', '연락처 (한 번 더 오타 확인!)', NULL, TRUE, 2, NULL::jsonb, NULL::jsonb, FALSE, TRUE, NULL, NULL::numeric),
+        ('RANDOM_TABLE', 'email', 'SHORT_TEXT', '이메일', NULL, TRUE, 3, NULL::jsonb, NULL::jsonb, FALSE, TRUE, NULL, NULL::numeric),
+        ('RANDOM_TABLE', 'instagram_id', 'SHORT_TEXT', 'Instagram ID' || E'\n' || '(어떤 분인지 확인하기 위한 단계입니다.' || E'\n' || '확인 후 바로 비공개로 돌리셔도 됩니다)', NULL, TRUE, 4, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('RANDOM_TABLE', 'age', 'NUMBER', '나이', '숫자만 입력', TRUE, 5, NULL::jsonb, NULL::jsonb, TRUE, FALSE, 'SAME', 1.00::numeric),
+        ('RANDOM_TABLE', 'gender', 'SINGLE_CHOICE', '성별', NULL, TRUE, 6, '{"choices":["MALE","FEMALE"]}'::jsonb, NULL::jsonb, TRUE, FALSE, 'DIVERSE', 1.00::numeric),
+        ('RANDOM_TABLE', 'job', 'SHORT_TEXT', '직업 (구체적으로)' || E'\n' || 'Ex. 마케터, 개발자, 간호사, 디자이너..', NULL, TRUE, 7, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('RANDOM_TABLE', 'mbti', 'MBTI_INPUT', 'MBTI', NULL, TRUE, 8, NULL::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('RANDOM_TABLE', 'interests', 'MULTI_CHOICE', '나의 요즘 관심사는? (복수 선택)', NULL, TRUE, 9, '{"choices":["영화·드라마","음악","독서·글쓰기","운동 (헬스, 러닝, 클라이밍 등)","맛집·카페 탐방","여행","사진·영상","전시·공연·아트","패션·뷰티","자기계발·공부"]}'::jsonb, NULL::jsonb, TRUE, FALSE, 'OVERLAP', 1.00::numeric),
+        ('RANDOM_TABLE', 'personality', 'MULTI_CHOICE', '나는 어떤 사람인가요? (복수 선택)', NULL, TRUE, 10, '{"choices":["잔잔하고 조용한 편","활기차고 에너지 있는 편","깊은 대화를 좋아함","가볍고 유머 있는 대화를 좋아함","경청을 잘 함","이야기를 이끄는 편"]}'::jsonb, NULL::jsonb, TRUE, FALSE, 'OVERLAP', 1.00::numeric),
+        ('RANDOM_TABLE', 'desired_people', 'MULTI_CHOICE', '어떤 사람을 만나고 싶으신가요? (복수 선택)', NULL, TRUE, 11, '{"choices":["나와 비슷한 사람","나와 다른 자극을 주는 사람","깊은 대화가 되는 사람","편하고 유머 있는 사람","열정 있는 사람","잔잔하고 안정적인 사람"]}'::jsonb, NULL::jsonb, TRUE, FALSE, 'OVERLAP', 1.00::numeric),
+        ('RANDOM_TABLE', 'budget', 'MULTI_CHOICE', '식사에 얼마까지 쓸 수 있으신가요? (복수 선택 가능)', NULL, TRUE, 12, '{"choices":["10,000~20,000원","20,000~30,000원","30,000원 이상 (상관 없음)"]}'::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric),
+        ('RANDOM_TABLE', 'privacy_consent', 'SINGLE_CHOICE', '와썹하우스는 일회성 인연이 아닌, 지속적인 관계 유지를 위해 오픈 단톡방이 만들어집니다. 개인정보 수집 및 이용 동의하시나요?' || E'\n' || '(식사 후 퇴장하셔도 무방합니다.)', NULL, TRUE, 13, '{"choices":["네 좋습니다!"]}'::jsonb, NULL::jsonb, FALSE, FALSE, NULL, NULL::numeric)
+    ) AS seed(form_type, question_key, type, label, placeholder, required, display_order, options, validation, is_matching_field, is_system_reserved, matching_strategy, matching_weight)
+)
+INSERT INTO form_questions (
+    id,
+    form_id,
+    question_key,
+    type,
+    label,
+    placeholder,
+    required,
+    display_order,
+    options,
+    validation,
+    is_matching_field,
+    is_system_reserved,
+    matching_strategy,
+    matching_weight,
+    created_at,
+    updated_at,
+    deleted_at
+)
+SELECT
+    (
+        SUBSTR(MD5('operating-form-question-' || tf.gathering_id::text || '-' || seed.question_key), 1, 8) || '-' ||
+        SUBSTR(MD5('operating-form-question-' || tf.gathering_id::text || '-' || seed.question_key), 9, 4) || '-' ||
+        SUBSTR(MD5('operating-form-question-' || tf.gathering_id::text || '-' || seed.question_key), 13, 4) || '-' ||
+        SUBSTR(MD5('operating-form-question-' || tf.gathering_id::text || '-' || seed.question_key), 17, 4) || '-' ||
+        SUBSTR(MD5('operating-form-question-' || tf.gathering_id::text || '-' || seed.question_key), 21, 12)
+    )::uuid,
+    tf.form_id,
+    seed.question_key,
+    seed.type,
+    seed.label,
+    seed.placeholder,
+    seed.required,
+    seed.display_order,
+    seed.options,
+    seed.validation,
+    seed.is_matching_field,
+    seed.is_system_reserved,
+    seed.matching_strategy,
+    seed.matching_weight,
+    NOW(),
+    NOW(),
+    NULL
+FROM target_forms tf
+JOIN question_seed seed ON seed.form_type = tf.form_type
+ON CONFLICT (id) DO UPDATE SET
+    form_id = EXCLUDED.form_id,
+    question_key = EXCLUDED.question_key,
+    type = EXCLUDED.type,
+    label = EXCLUDED.label,
+    placeholder = EXCLUDED.placeholder,
+    required = EXCLUDED.required,
+    display_order = EXCLUDED.display_order,
+    options = EXCLUDED.options,
+    validation = EXCLUDED.validation,
+    is_matching_field = EXCLUDED.is_matching_field,
+    is_system_reserved = EXCLUDED.is_system_reserved,
+    matching_strategy = EXCLUDED.matching_strategy,
+    matching_weight = EXCLUDED.matching_weight,
+    updated_at = NOW(),
+    deleted_at = NULL;
