@@ -22,6 +22,9 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -88,6 +91,9 @@ class ApplicationServiceTest {
 
     @Mock
     private TicketService ticketService;
+
+    @Mock
+    private TicketTransactionRepository ticketTransactionRepository;
 
     @Mock
     private ApplicationLookupTokenService applicationLookupTokenService;
@@ -473,6 +479,30 @@ class ApplicationServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 확정 조회는 이용권 사용 후 남은 회차를 포함한다")
+    void checkApplication_randomTableConfirmed_includesTicketRemainingCount() {
+        Gathering randomTable = Gathering.builder()
+                .title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(4)
+                .gatheringType(GatheringType.RANDOM_TABLE)
+                .build();
+        Application application = buildApplication(ApplicationStatus.CONFIRMED, user, randomTable);
+        ReflectionTestUtils.setField(application, "id", applicationId);
+        TicketTransaction transaction = org.mockito.Mockito.mock(TicketTransaction.class);
+
+        given(applicationRepository.findByPhoneAndBookingNumberAndDeletedAtIsNull("01012345678", "WH260428-ABC123"))
+                .willReturn(Optional.of(application));
+        given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(
+                applicationId, TicketTransactionType.USE)).willReturn(Optional.of(transaction));
+        given(transaction.getBalanceAfter()).willReturn(3);
+
+        ApplicationCheckResponse response = applicationService.checkApplication("01012345678", "WH260428-ABC123");
+
+        assertThat(response.getTicketRemainingCount()).isEqualTo(3);
     }
 
     @Test
