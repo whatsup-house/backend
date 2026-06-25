@@ -36,10 +36,11 @@ public class GatheringService {
 
     private List<Gathering> findGatherings(LocalDate date, GatheringStatus status) {
         if (date != null && status != null) {
-            return gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNull(date, status);
+            return gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+                    date, status);
         }
         if (date != null) {
-            return gatheringRepository.findByEventDateAndDeletedAtIsNull(date);
+            return gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(date);
         }
         if (status != null) {
             return gatheringRepository.findByStatusAndDeletedAtIsNull(status);

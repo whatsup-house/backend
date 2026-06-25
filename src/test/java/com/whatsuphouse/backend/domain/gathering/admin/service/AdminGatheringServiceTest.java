@@ -157,7 +157,8 @@ class AdminGatheringServiceTest {
     void listGatherings_withEventDate_returnsFiltered() {
         // given
         LocalDate eventDate = LocalDate.now().plusDays(7);
-        given(gatheringRepository.findByEventDateAndDeletedAtIsNull(eventDate)).willReturn(List.of(gathering));
+        given(gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(eventDate))
+                .willReturn(List.of(gathering));
         given(applicationRepository.countByGatheringIdsGroupByStatus(List.of(gatheringId)))
                 .willReturn(List.of());
 

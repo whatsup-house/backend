@@ -1,4 +1,4 @@
--- SSAFY 15반 1학기 종강파티: 운영 DB에 등록된 게더링/신청폼 데이터를 V3 시드로 고정한다.
+-- 15반 1학기 종강파티: 운영 DB에 등록된 게더링/신청폼 데이터를 V3 시드로 고정한다.
 INSERT INTO locations (id, name, address, naver_map_url, kakao_map_url, status, max_capacity, memo, created_at, updated_at)
 VALUES (
     '0266fc6b-5cf3-41da-a4b7-2a703b2fb526',
@@ -29,7 +29,7 @@ INSERT INTO gatherings (
 )
 VALUES (
     '30a84e09-ecb0-4803-b597-60e4f22e0dba',
-    'SSAFY15반 1학기 종강파티',
+    '15반 1학기 종강파티',
     'SSAFY 15반의 1학기를 마무리하며 함께 웃고, 먹고, 추억을 나누는 종강파티입니다.
 열심히 달려온 우리 모두를 위해 준비한 자리인 만큼 편하게 즐기고 서로의 이야기를 나눠보세요!',
     '["15반 반장의 개회사", "웃고 떠들며 맛있는 식사", "권태혁의 장기자랑", "15반 CA의 폐회사"]'::jsonb,
@@ -146,7 +146,7 @@ INSERT INTO carousel_slides (id, type, title, content, image_url, gathering_id, 
 SELECT
     'd0000001-0000-0000-0000-000000000008',
     'GATHERING',
-    'SSAFY15반 1학기 종강파티',
+    '15반 1학기 종강파티',
     NULL,
     'https://mcvtfdwsxmtqgxzlfqjx.supabase.co/storage/v1/object/public/whatsup-images/gatherings/ssafy15-party.png',
     g.id,
@@ -155,7 +155,7 @@ SELECT
     NOW(),
     NOW()
 FROM gatherings g
-WHERE g.title = 'SSAFY15반 1학기 종강파티'
+WHERE g.title = '15반 1학기 종강파티'
   AND g.deleted_at IS NULL
 ORDER BY g.event_date ASC, g.created_at ASC
 LIMIT 1
