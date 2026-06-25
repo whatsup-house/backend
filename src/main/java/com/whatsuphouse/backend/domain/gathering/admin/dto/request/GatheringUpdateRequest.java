@@ -31,9 +31,6 @@ public class GatheringUpdateRequest {
     @Schema(example = "[\"아이스브레이킹\", \"식사와 대화\", \"마무리 인사\"]")
     private List<String> howToRun;
 
-    @Schema(example = "독서모임", description = "게더링 카테고리 (선택)")
-    private String category;
-
     @Schema(example = "[\"취미\", \"2030\", \"소규모\"]", description = "게더링 태그 목록 (선택)")
     private List<String> tags;
 

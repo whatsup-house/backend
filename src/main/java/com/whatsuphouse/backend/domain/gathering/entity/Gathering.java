@@ -37,10 +37,6 @@ public class Gathering extends BaseEntity {
     @Column(name = "how_to_run", columnDefinition = "jsonb")
     private List<String> howToRun = List.of();
 
-    // 게더링 카테고리/태그 — 분류·필터용. 미지정 가능 (KAN-304)
-    @Column(length = 50)
-    private String category;
-
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private List<String> tags = List.of();
@@ -83,11 +79,10 @@ public class Gathering extends BaseEntity {
     @Builder
     public Gathering(String title, String description, Location location, LocalDate eventDate,
                      LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl,
-                     GatheringType gatheringType, List<String> howToRun, String category, List<String> tags) {
+                     GatheringType gatheringType, List<String> howToRun, List<String> tags) {
         this.title = title;
         this.description = description;
         this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
-        this.category = category;
         this.tags = tags != null ? List.copyOf(tags) : List.of();
         this.location = location;
         this.eventDate = eventDate;
@@ -125,11 +120,10 @@ public class Gathering extends BaseEntity {
 
     public void update(String title, String description, Location location, LocalDate eventDate,
                        LocalTime startTime, LocalTime endTime, Integer price, int maxAttendees, String thumbnailUrl,
-                       List<String> howToRun, String category, List<String> tags) {
+                       List<String> howToRun, List<String> tags) {
         this.title = title;
         this.description = description;
         this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
-        this.category = category;
         this.tags = tags != null ? List.copyOf(tags) : List.of();
         this.location = location;
         this.eventDate = eventDate;

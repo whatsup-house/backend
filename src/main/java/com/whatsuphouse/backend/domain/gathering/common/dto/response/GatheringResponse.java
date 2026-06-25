@@ -29,8 +29,6 @@ public class GatheringResponse {
     private LocationSummary location;
     // 게더링 등록일 — 목록 정렬(최신순/오래된순)용. (KAN-295)
     private LocalDateTime createdAt;
-    // 카테고리/태그 — 미지정 시 null/빈 배열 (KAN-304)
-    private String category;
     private List<String> tags;
 
     public static GatheringResponse from(Gathering gathering) {
@@ -56,7 +54,6 @@ public class GatheringResponse {
                 .thumbnailUrl(gathering.getThumbnailUrl())
                 .location(locationSummary)
                 .createdAt(gathering.getCreatedAt())
-                .category(gathering.getCategory())
                 .tags(gathering.getTags())
                 .build();
     }

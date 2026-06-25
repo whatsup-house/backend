@@ -125,7 +125,6 @@ public class AdminGatheringService {
                 .title(request.getTitle())
                 .description(request.getDescription())
                 .howToRun(request.getHowToRun())
-                .category(request.getCategory())
                 .tags(request.getTags())
                 .location(location)
                 .eventDate(request.getEventDate())
@@ -159,7 +158,7 @@ public class AdminGatheringService {
         gathering.update(request.getTitle(), request.getDescription(), location,
                 request.getEventDate(), request.getStartTime(), request.getEndTime(),
                 request.getPrice(), request.getMaxAttendees(), thumbnailUrl, request.getHowToRun(),
-                request.getCategory(), request.getTags());
+                request.getTags());
         // 변경된 ko 원문 재번역 (원문 미변경 필드는 해시 비교로 자동 스킵) (KAN-267)
         publishTranslation(gathering);
         return GatheringDetailResponse.from(gathering);
