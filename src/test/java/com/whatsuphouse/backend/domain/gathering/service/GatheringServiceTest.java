@@ -68,7 +68,8 @@ class GatheringServiceTest {
     @Test
     @DisplayName("날짜 필터만 적용하여 조회")
     void getGatherings_byDate_returnsFiltered() {
-        given(gatheringRepository.findByEventDateAndDeletedAtIsNull(eventDate)).willReturn(List.of(gathering));
+        given(gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(eventDate))
+                .willReturn(List.of(gathering));
 
         List<GatheringResponse> result = gatheringService.listGatherings(eventDate, null);
 
@@ -89,7 +90,8 @@ class GatheringServiceTest {
     @Test
     @DisplayName("날짜와 상태 복합 필터 적용하여 조회")
     void getGatherings_byDateAndStatus_returnsFiltered() {
-        given(gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNull(eventDate, GatheringStatus.OPEN))
+        given(gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+                eventDate, GatheringStatus.OPEN))
                 .willReturn(List.of(gathering));
 
         List<GatheringResponse> result = gatheringService.listGatherings(eventDate, GatheringStatus.OPEN);

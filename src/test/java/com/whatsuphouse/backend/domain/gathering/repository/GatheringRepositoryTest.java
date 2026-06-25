@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,16 +59,32 @@ class GatheringRepositoryTest {
 
     @Test
     @DisplayName("날짜로 게더링 조회")
-    void findByEventDateAndDeletedAtIsNull() {
+    void findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc() {
         saveGathering("오늘 게더링", eventDate);
         saveGathering("내일 게더링", eventDate.plusDays(1));
         em.flush();
         em.clear();
 
-        List<Gathering> result = gatheringRepository.findByEventDateAndDeletedAtIsNull(eventDate);
+        List<Gathering> result = gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+                eventDate);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getTitle()).isEqualTo("오늘 게더링");
+    }
+
+    @Test
+    @DisplayName("날짜로 게더링 조회 시 시작 시간 오름차순으로 정렬")
+    void findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc_sortsByStartTime() {
+        saveGathering("퇴근 게더링", eventDate, LocalTime.of(19, 30));
+        saveGathering("15반 1학기 종강파티", eventDate, LocalTime.of(18, 30));
+        em.flush();
+        em.clear();
+
+        List<Gathering> result = gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+                eventDate);
+
+        assertThat(result).extracting(Gathering::getTitle)
+                .containsExactly("15반 1학기 종강파티", "퇴근 게더링");
     }
 
     @Test
@@ -87,14 +104,15 @@ class GatheringRepositoryTest {
 
     @Test
     @DisplayName("날짜와 상태로 게더링 복합 조회")
-    void findByEventDateAndStatusAndDeletedAtIsNull() {
+    void findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc() {
         saveGathering("대상 게더링", eventDate);
         saveGathering("다른 날짜 게더링", eventDate.plusDays(1));
         em.flush();
         em.clear();
 
         List<Gathering> result = gatheringRepository
-                .findByEventDateAndStatusAndDeletedAtIsNull(eventDate, GatheringStatus.OPEN);
+                .findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+                        eventDate, GatheringStatus.OPEN);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getTitle()).isEqualTo("대상 게더링");
@@ -117,9 +135,14 @@ class GatheringRepositoryTest {
     // ── helper ───────────────────────────────────────────────────────────────
 
     private Gathering saveGathering(String title, LocalDate date) {
+        return saveGathering(title, date, null);
+    }
+
+    private Gathering saveGathering(String title, LocalDate date, LocalTime startTime) {
         return gatheringRepository.save(Gathering.builder()
                 .title(title)
                 .eventDate(date)
+                .startTime(startTime)
                 .maxAttendees(10)
                 .build());
     }

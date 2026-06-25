@@ -83,8 +83,9 @@ public class AdminGatheringService {
 
         if (eventDate != null) {
             return status != null
-                    ? gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNull(eventDate, status)
-                    : gatheringRepository.findByEventDateAndDeletedAtIsNull(eventDate);
+                    ? gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+                            eventDate, status)
+                    : gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(eventDate);
         }
         if (from != null && to != null) {
             return status != null

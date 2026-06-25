@@ -16,13 +16,14 @@ public interface GatheringRepository extends JpaRepository<Gathering, UUID> {
     List<Gathering> findByDeletedAtIsNull();
 
     @EntityGraph(attributePaths = "location")
-    List<Gathering> findByEventDateAndDeletedAtIsNull(LocalDate eventDate);
+    List<Gathering> findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(LocalDate eventDate);
 
     @EntityGraph(attributePaths = "location")
     List<Gathering> findByStatusAndDeletedAtIsNull(GatheringStatus status);
 
     @EntityGraph(attributePaths = "location")
-    List<Gathering> findByEventDateAndStatusAndDeletedAtIsNull(LocalDate eventDate, GatheringStatus status);
+    List<Gathering> findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+            LocalDate eventDate, GatheringStatus status);
 
     @EntityGraph(attributePaths = "location")
     Optional<Gathering> findByIdAndDeletedAtIsNull(UUID id);
