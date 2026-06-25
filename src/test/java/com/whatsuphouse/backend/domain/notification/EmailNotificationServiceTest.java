@@ -109,7 +109,7 @@ class EmailNotificationServiceTest {
     // ── sendApplicationPending() ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("신청 접수 이메일 - 회원이면 마이페이지 신청 상세 링크를 포함한다")
+    @DisplayName("신청 접수 이메일 - 회원도 단일 결과 URL(토큰) 링크를 포함한다")
     void sendApplicationPending_member_containsMyApplicationDetailLink() {
         // given
         User user = buildUser("member@test.com");
@@ -122,13 +122,12 @@ class EmailNotificationServiceTest {
         // then
         then(mailSender).should().send(any(SimpleMailMessage.class));
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
-                "WH260428-TEST01".equals(vars.get("예약번호"))
-                        && vars.get("조회경로").equals(
-                        "http://localhost:3000/mypage/applications/00000000-0000-0000-0000-000000000101")));
+                !vars.containsKey("예약번호")
+                        && vars.get("조회경로").equals("http://localhost:3000/applications/result?token=signed-token")));
     }
 
     @Test
-    @DisplayName("신청 접수 이메일 - 비회원이면 인증 없이 신청 완료 화면으로 가는 토큰 링크를 포함한다")
+    @DisplayName("신청 접수 이메일 - 비회원도 인증 없이 단일 결과 URL(토큰) 링크를 포함한다")
     void sendApplicationPending_guest_containsDirectCompleteLink() {
         Gathering gathering = buildGathering();
         Application application = buildApplication(null, gathering);
@@ -138,7 +137,7 @@ class EmailNotificationServiceTest {
 
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
                 vars.get("조회경로").equals(
-                        "http://localhost:3000/gatherings/00000000-0000-0000-0000-000000000201/apply/complete?bookingNumber=WH260428-TEST01&token=signed-token")));
+                        "http://localhost:3000/applications/result?token=signed-token")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
@@ -151,7 +150,7 @@ class EmailNotificationServiceTest {
 
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_APPROVED), argThat(vars ->
                 vars.get("결제링크").equals(
-                        "http://localhost:3000/payments/random-table?applicationId=00000000-0000-0000-0000-000000000101")));
+                        "http://localhost:3000/applications/result?token=signed-token")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
@@ -171,7 +170,7 @@ class EmailNotificationServiceTest {
                 "우연한 식탁 4회권".equals(vars.get("이용권명"))
                         && "18,000".equals(vars.get("결제금액"))
                         && "우리은행 1002-157-849052".equals(vars.get("입금계좌"))
-                        && vars.get("결제링크").contains("applicationId=00000000-0000-0000-0000-000000000101")));
+                        && vars.get("결제링크").equals("http://localhost:3000/applications/result?token=signed-token")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 

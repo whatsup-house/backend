@@ -28,6 +28,8 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEven
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -62,6 +64,7 @@ public class ApplicationService {
     private final ApplicationEventPublisher eventPublisher;
     private final FormProvisionService formProvisionService;
     private final TicketService ticketService;
+    private final TicketTransactionRepository ticketTransactionRepository;
     private final ParticipantService participantService;
     private final AuthService authService;
     private final ApplicationLookupTokenService applicationLookupTokenService;
@@ -282,14 +285,14 @@ public class ApplicationService {
     public ApplicationCheckResponse checkApplication(String phone, String bookingNumber) {
         Application application = applicationRepository.findByPhoneAndBookingNumberAndDeletedAtIsNull(phone, bookingNumber)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        return ApplicationCheckResponse.from(application, loadAnswers(application.getId()));
+        return ApplicationCheckResponse.from(application, loadAnswers(application.getId()), findTicketRemainingCount(application));
     }
 
     public ApplicationCheckResponse checkApplicationByToken(String token) {
         String bookingNumber = applicationLookupTokenService.extractBookingNumber(token);
         Application application = applicationRepository.findByBookingNumberAndDeletedAtIsNull(bookingNumber)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        return ApplicationCheckResponse.from(application, loadAnswers(application.getId()));
+        return ApplicationCheckResponse.from(application, loadAnswers(application.getId()), findTicketRemainingCount(application));
     }
 
     public ApplicationCheckResponse getMyApplication(UUID applicationId, UUID userId) {
@@ -298,7 +301,18 @@ public class ApplicationService {
         if (application.getUser() == null || !application.getUser().getId().equals(userId)) {
             throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
         }
-        return ApplicationCheckResponse.from(application, loadAnswers(applicationId));
+        return ApplicationCheckResponse.from(application, loadAnswers(applicationId), findTicketRemainingCount(application));
+    }
+
+    private Integer findTicketRemainingCount(Application application) {
+        if (application.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE) {
+            return null;
+        }
+        return ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(
+                        application.getId(), TicketTransactionType.USE)
+                .map(transaction -> transaction.getBalanceAfter())
+                .orElse(null);
     }
 
     private List<AnswerView> loadAnswers(UUID applicationId) {
