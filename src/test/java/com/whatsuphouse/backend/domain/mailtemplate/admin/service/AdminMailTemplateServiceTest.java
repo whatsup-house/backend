@@ -95,7 +95,7 @@ class AdminMailTemplateServiceTest {
         MailTemplateDetailResponse result = adminMailTemplateService.getTemplate("PAYMENT_CONFIRMED");
 
         assertThat(result.getTemplateKey()).isEqualTo("PAYMENT_CONFIRMED");
-        assertThat(result.getVariables()).contains("이름", "모임명", "예약번호");
+        assertThat(result.getVariables()).contains("이름", "모임명", "확정링크").doesNotContain("예약번호");
     }
 
     @Test

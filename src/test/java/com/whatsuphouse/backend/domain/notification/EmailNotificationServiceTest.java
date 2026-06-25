@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -50,6 +51,9 @@ class EmailNotificationServiceTest {
     @Mock
     private MailTemplateRenderer mailTemplateRenderer;
 
+    @Mock
+    private ApplicationLookupTokenService applicationLookupTokenService;
+
     @InjectMocks
     private EmailNotificationService emailNotificationService;
 
@@ -60,6 +64,8 @@ class EmailNotificationServiceTest {
         // 템플릿 렌더링은 별도 단위 테스트에서 검증한다. 여기서는 발송(send) 동작만 보므로 렌더 결과를 고정한다.
         lenient().when(mailTemplateRenderer.render(any(), any()))
                 .thenReturn(new MailContent("제목", "본문"));
+        lenient().when(applicationLookupTokenService.createToken("WH260428-TEST01"))
+                .thenReturn("signed-token");
     }
 
     // ── sendWelcome() ─────────────────────────────────────────────────────────
@@ -103,7 +109,7 @@ class EmailNotificationServiceTest {
     // ── sendApplicationPending() ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("신청 접수 이메일 - 회원이면 마이페이지 신청 상세 링크를 포함한다")
+    @DisplayName("신청 접수 이메일 - 회원도 단일 결과 URL(토큰) 링크를 포함한다")
     void sendApplicationPending_member_containsMyApplicationDetailLink() {
         // given
         User user = buildUser("member@test.com");
@@ -116,9 +122,23 @@ class EmailNotificationServiceTest {
         // then
         then(mailSender).should().send(any(SimpleMailMessage.class));
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
-                "WH260428-TEST01".equals(vars.get("예약번호"))
-                        && vars.get("조회경로").equals(
-                        "http://localhost:3000/mypage/applications/00000000-0000-0000-0000-000000000101")));
+                !vars.containsKey("예약번호")
+                        && vars.get("조회경로").equals("http://localhost:3000/applications/result?token=signed-token")));
+    }
+
+    @Test
+    @DisplayName("신청 접수 이메일 - 비회원도 인증 없이 단일 결과 URL(토큰) 링크를 포함한다")
+    void sendApplicationPending_guest_containsDirectCompleteLink() {
+        Gathering gathering = buildGathering();
+        Application application = buildApplication(null, gathering);
+        ReflectionTestUtils.setField(application, "email", "guest@test.com");
+
+        emailNotificationService.sendApplicationPending(application);
+
+        then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_PENDING), argThat(vars ->
+                vars.get("조회경로").equals(
+                        "http://localhost:3000/applications/result?token=signed-token")));
+        then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
     @Test
@@ -130,7 +150,7 @@ class EmailNotificationServiceTest {
 
         then(mailTemplateRenderer).should().render(eq(MailTemplateType.APPLICATION_APPROVED), argThat(vars ->
                 vars.get("결제링크").equals(
-                        "http://localhost:3000/payments/random-table?applicationId=00000000-0000-0000-0000-000000000101")));
+                        "http://localhost:3000/applications/result?token=signed-token")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
@@ -150,7 +170,7 @@ class EmailNotificationServiceTest {
                 "우연한 식탁 4회권".equals(vars.get("이용권명"))
                         && "18,000".equals(vars.get("결제금액"))
                         && "우리은행 1002-157-849052".equals(vars.get("입금계좌"))
-                        && vars.get("결제링크").contains("applicationId=00000000-0000-0000-0000-000000000101")));
+                        && vars.get("결제링크").equals("http://localhost:3000/applications/result?token=signed-token")));
         then(mailSender).should().send(any(SimpleMailMessage.class));
     }
 
@@ -369,12 +389,14 @@ class EmailNotificationServiceTest {
     }
 
     private Gathering buildGathering() {
-        return Gathering.builder()
+        Gathering gathering = Gathering.builder()
                 .title("테스트 게더링")
                 .eventDate(LocalDate.now().plusDays(7))
                 .startTime(LocalTime.of(14, 0))
                 .maxAttendees(10)
                 .build();
+        ReflectionTestUtils.setField(gathering, "id", UUID.fromString("00000000-0000-0000-0000-000000000201"));
+        return gathering;
     }
 
     private Application buildApplication(User user, Gathering gathering) {

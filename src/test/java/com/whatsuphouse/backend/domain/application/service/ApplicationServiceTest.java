@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.client.dto.request.Applicatio
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
+import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
@@ -21,6 +22,9 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
+import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -49,6 +53,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
@@ -86,6 +91,12 @@ class ApplicationServiceTest {
 
     @Mock
     private TicketService ticketService;
+
+    @Mock
+    private TicketTransactionRepository ticketTransactionRepository;
+
+    @Mock
+    private ApplicationLookupTokenService applicationLookupTokenService;
 
     @InjectMocks
     private ApplicationService applicationService;
@@ -198,6 +209,35 @@ class ApplicationServiceTest {
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+    }
+
+    @Test
+    @DisplayName("무료 우연한 식탁은 승인된 회원 신청 시 이용권 차감 없이 자동 확정된다")
+    void apply_freeRandomTable_approvedMember_confirmsWithoutTicket() {
+        Gathering randomTable = Gathering.builder()
+                .title("무료 우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(4)
+                .price(0)
+                .gatheringType(GatheringType.RANDOM_TABLE)
+                .build();
+        Participant participant = Participant.member(user);
+        participant.approveRandomTable();
+
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
+        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(ticketService).should(never()).tryUseOneTicket(eq(participant), any(Application.class));
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
     @Test
@@ -439,6 +479,30 @@ class ApplicationServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 확정 조회는 이용권 사용 후 남은 회차를 포함한다")
+    void checkApplication_randomTableConfirmed_includesTicketRemainingCount() {
+        Gathering randomTable = Gathering.builder()
+                .title("우연한 식탁")
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(4)
+                .gatheringType(GatheringType.RANDOM_TABLE)
+                .build();
+        Application application = buildApplication(ApplicationStatus.CONFIRMED, user, randomTable);
+        ReflectionTestUtils.setField(application, "id", applicationId);
+        TicketTransaction transaction = org.mockito.Mockito.mock(TicketTransaction.class);
+
+        given(applicationRepository.findByPhoneAndBookingNumberAndDeletedAtIsNull("01012345678", "WH260428-ABC123"))
+                .willReturn(Optional.of(application));
+        given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(
+                applicationId, TicketTransactionType.USE)).willReturn(Optional.of(transaction));
+        given(transaction.getBalanceAfter()).willReturn(3);
+
+        ApplicationCheckResponse response = applicationService.checkApplication("01012345678", "WH260428-ABC123");
+
+        assertThat(response.getTicketRemainingCount()).isEqualTo(3);
     }
 
     @Test

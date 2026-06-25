@@ -21,6 +21,8 @@ public class ApplicationCheckResponse {
     private ApplicationStatus status;
     // 입금 상태. 무료 게더링은 null(표시하지 않음). (KAN-242)
     private PaymentStatus paymentStatus;
+    // 우연한 식탁에서 이 신청으로 이용권 1회가 사용된 뒤 남은 회차. 미사용/비대상은 null.
+    private Integer ticketRemainingCount;
     private LocalDateTime reviewedAt;
     private String rejectionReason;
     private GatheringInfo gathering;
@@ -37,6 +39,10 @@ public class ApplicationCheckResponse {
     }
 
     public static ApplicationCheckResponse from(Application application, List<AnswerView> answers) {
+        return from(application, answers, null);
+    }
+
+    public static ApplicationCheckResponse from(Application application, List<AnswerView> answers, Integer ticketRemainingCount) {
         return ApplicationCheckResponse.builder()
                 .id(application.getId())
                 .bookingNumber(application.getBookingNumber())
@@ -44,6 +50,7 @@ public class ApplicationCheckResponse {
                 .phone(application.getPhone())
                 .status(application.getStatus())
                 .paymentStatus(application.getPaymentStatus())
+                .ticketRemainingCount(ticketRemainingCount)
                 .reviewedAt(application.getReviewedAt())
                 .rejectionReason(application.getRejectionReason())
                 .gathering(GatheringInfo.builder()
