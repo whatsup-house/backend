@@ -115,14 +115,6 @@ public class Gathering extends BaseEntity {
         return status;
     }
 
-    /**
-     * 참가비를 0원으로 설정한 우연한 식탁 여부.
-     * 발표·체험용 무료 게더링으로, 이용권을 차감하지 않고 승인만으로 바로 확정한다.
-     */
-    public boolean isFreeRandomTable() {
-        return gatheringType == GatheringType.RANDOM_TABLE && price != null && price == 0;
-    }
-
     public void updateCuration(boolean isCurated) {
         this.isCurated = isCurated;
     }
