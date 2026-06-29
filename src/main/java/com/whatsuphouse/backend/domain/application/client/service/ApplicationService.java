@@ -84,6 +84,8 @@ public class ApplicationService {
         return applyInternal(gatheringId, request, null);
     }
 
+    // applyInternal은 @Transactional 퍼블릭 메서드에서만 호출되므로 self-invocation 트랜잭션 누락 위험 없음
+    @SuppressWarnings("java:S6809")
     private ApplicationResponse applyInternal(UUID gatheringId, ApplicationRequest request, UUID userId) {
         Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));

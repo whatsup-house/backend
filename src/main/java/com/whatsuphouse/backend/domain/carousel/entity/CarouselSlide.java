@@ -78,7 +78,4 @@ public class CarouselSlide extends BaseEntity {
         this.sortOrder = sortOrder;
     }
 
-    public void delete() {
-        super.delete();
-    }
 }
