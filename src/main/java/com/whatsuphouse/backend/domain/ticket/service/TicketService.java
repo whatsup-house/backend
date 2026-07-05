@@ -15,7 +15,6 @@ import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketProductRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
@@ -54,15 +53,7 @@ public class TicketService {
     }
 
     /** 이용권 구매(선결제) 요청. 입금 확인 전이므로 PENDING으로 생성된다. */
-    public TicketPassResponse purchase(UUID userId, TicketProduct product) {
-        return purchase(userId, null, product, null);
-    }
-
-    public TicketPassResponse purchase(UUID userId, TicketProduct product, UUID applicationId) {
-        return purchase(userId, null, product, applicationId);
-    }
-
-    public TicketPassResponse purchase(UUID userId, UUID productId, TicketProduct product, UUID applicationId) {
+    public TicketPassResponse purchase(UUID userId, UUID productId, UUID applicationId) {
         User user = userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         Participant participant = participantService.getOrCreateForUser(user);
@@ -73,7 +64,7 @@ public class TicketService {
         if (applicationId != null) {
             application = getMemberPaymentPendingApplication(applicationId, userId, participant);
         }
-        TicketPass pass = createPendingPass(participant, application, productId, product);
+        TicketPass pass = createPendingPass(participant, application, productId);
         if (application != null) {
             eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
         }
@@ -81,16 +72,12 @@ public class TicketService {
     }
 
     /** 승인 메일의 예약번호로 비회원 이용권 구매 요청을 생성한다. */
-    public TicketPassResponse purchaseGuest(String bookingNumber, TicketProduct product) {
-        return purchaseGuest(bookingNumber, null, product);
-    }
-
-    public TicketPassResponse purchaseGuest(String bookingNumber, UUID productId, TicketProduct product) {
+    public TicketPassResponse purchaseGuest(String bookingNumber, UUID productId) {
         Application application = getGuestApplication(bookingNumber);
         if (application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
             throw new CustomException(ErrorCode.TICKET_PURCHASE_NOT_ALLOWED);
         }
-        TicketPass pass = createPendingPass(application.getParticipant(), application, productId, product);
+        TicketPass pass = createPendingPass(application.getParticipant(), application, productId);
         eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
         return TicketPassResponse.from(pass);
     }
@@ -170,22 +157,13 @@ public class TicketService {
         return application;
     }
 
-    private TicketPass createPendingPass(
-            Participant participant, Application application, UUID productId, TicketProduct legacyProduct) {
-        TicketPass pass;
-        if (productId != null) {
-            TicketProductOption productOption = ticketProductRepository.findByIdAndDeletedAtIsNull(productId)
-                    .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND));
-            pass = new TicketPass(participant, application, productOption);
-        } else if (legacyProduct != null) {
-            pass = TicketPass.builder()
-                    .participant(participant)
-                    .application(application)
-                    .product(legacyProduct)
-                    .build();
-        } else {
+    private TicketPass createPendingPass(Participant participant, Application application, UUID productId) {
+        if (productId == null) {
             throw new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND);
         }
+        TicketProductOption productOption = ticketProductRepository.findByIdAndDeletedAtIsNull(productId)
+                .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND));
+        TicketPass pass = new TicketPass(participant, application, productOption);
         ticketPassRepository.save(pass);
         return pass;
     }
@@ -213,19 +191,7 @@ public class TicketService {
                 .build();
     }
 
-    /** 우연한 식탁 신청 시 1회 차감한다. 사용 가능한 이용권이 없으면 NO_AVAILABLE_TICKET. */
-    public void useOneTicket(User user) {
-        Participant participant = participantService.getOrCreateForUser(user);
-        if (!tryUseOneTicket(participant)) {
-            throw new CustomException(ErrorCode.NO_AVAILABLE_TICKET);
-        }
-    }
-
     /** 참가자 기준으로 잔여 이용권을 1회 차감한다. 이용권이 없으면 상태 변경 없이 false를 반환한다. */
-    public boolean tryUseOneTicket(Participant participant) {
-        return tryUseOneTicket(participant, null);
-    }
-
     public boolean tryUseOneTicket(Participant participant, Application application) {
         if (application != null && ticketTransactionRepository.existsByApplication_IdAndTransactionType(
                 application.getId(), TicketTransactionType.USE)) {
@@ -241,15 +207,6 @@ public class TicketService {
         ticketTransactionRepository.save(TicketTransaction.of(
                 pass, application, TicketTransactionType.USE, -1, "우연한 식탁 참가 확정"));
         return true;
-    }
-
-    /** 우연한 식탁 신청 취소 시 차감했던 이용권을 1회 환불한다. 환불 대상이 없으면 무시. */
-    public void refundOneTicket(User user) {
-        ticketPassRepository.findByParticipant_User_IdAndDeletedAtIsNullOrderByCreatedAtDesc(user.getId()).stream()
-                .filter(p -> p.getStatus() == TicketPassStatus.USED_UP
-                        || (p.getStatus() == TicketPassStatus.ACTIVE && p.getRemainingCount() < p.getTotalCount()))
-                .findFirst()
-                .ifPresent(TicketPass::refundOne);
     }
 
     /** 신청에 기록된 USE 거래를 기준으로 1회 복구한다. 동일 신청 중복 복구는 무시한다. */

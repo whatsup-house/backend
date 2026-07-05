@@ -3,14 +3,12 @@ package com.whatsuphouse.backend.domain.ticket.entity;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -36,10 +34,6 @@ public class TicketPass extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "application_id")
     private Application application;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 40)
-    private TicketProduct product;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id")
@@ -70,19 +64,6 @@ public class TicketPass extends BaseEntity {
     @Column(name = "payment_confirmed_at")
     private LocalDateTime paymentConfirmedAt;
 
-    @Builder
-    public TicketPass(Participant participant, Application application, TicketProduct product) {
-        this.participant = participant;
-        this.application = application;
-        this.product = product;
-        this.productName = product.getLabel();
-        this.totalCount = product.getSessionCount();
-        this.remainingCount = 0;            // 입금 확인 전까지 사용 불가
-        this.purchaseAmount = product.getPrice();
-        this.status = TicketPassStatus.PENDING;
-        this.paymentDeadline = LocalDateTime.now().plusDays(3);
-    }
-
     public TicketPass(Participant participant, Application application, TicketProductOption productOption) {
         this.participant = participant;
         this.application = application;
@@ -96,16 +77,20 @@ public class TicketPass extends BaseEntity {
     }
 
     public String getProductLabel() {
-        if (productName != null && !productName.isBlank()) {
-            return productName;
-        }
-        return product != null ? product.getLabel() : "이용권";
+        return productName != null && !productName.isBlank() ? productName : "이용권";
     }
 
     /** 소유자가 회원이면 그 User를, 비회원이면 null을 반환한다. (KAN-276) */
     public User getUser() {
         return participant != null ? participant.getUser() : null;
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // [잔액-원장 불변식] 아래 잔여 수 변경 메서드(activate/deductOne/refundOne/adjustRemaining)는
+    // 반드시 TicketTransaction 기록을 함께 남기는 서비스 메서드에서만 호출한다.
+    // 원장 없이 잔액만 바꾸는 경로가 생기면 잔여 수와 거래내역이 어긋나 복구가 불가능해진다.
+    // 검증: sum(transaction.amount) == totalCount - remainingCount (TicketServiceTest 참조)
+    // ─────────────────────────────────────────────────────────────
 
     /** 관리자 입금 확인 시 활성화하고 잔여를 충전한다. PENDING이 아니면 예외. */
     public void activate() {

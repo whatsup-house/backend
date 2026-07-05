@@ -1,7 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.entity;
 
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -20,7 +19,7 @@ class TicketPassTest {
                 .email("t@example.com").password("p").name("홍길동")
                 .gender(Gender.MALE).age(25).nickname("nick").phone("01012345678")
                 .build();
-        return TicketPass.builder().participant(Participant.member(user)).product(TicketProduct.RANDOM_TABLE_FOUR).build();
+        return new TicketPass(Participant.member(user), null, new TicketProductOption("우연한 식탁 4회권", 4, 18000));
     }
 
     @Test
@@ -37,8 +36,8 @@ class TicketPassTest {
     void oneSessionPass_hasOneSessionPolicy() {
         User user = User.builder().email("one@example.com").password("p").name("회원")
                 .gender(Gender.FEMALE).age(25).nickname("one").phone("01012345678").build();
-        TicketPass pass = TicketPass.builder().participant(Participant.member(user))
-                .product(TicketProduct.RANDOM_TABLE_ONE).build();
+        TicketPass pass = new TicketPass(Participant.member(user), null,
+                new TicketProductOption("우연한 식탁 1회권", 1, 8000));
 
         assertThat(pass.getTotalCount()).isEqualTo(1);
         assertThat(pass.getPurchaseAmount()).isEqualTo(8000);

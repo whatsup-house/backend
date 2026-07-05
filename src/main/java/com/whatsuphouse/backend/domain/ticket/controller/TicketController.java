@@ -45,7 +45,7 @@ public class TicketController {
             @Valid @RequestBody TicketPurchaseRequest request
     ) {
         return ResponseEntity.ok(ApiResult.success(
-                ticketService.purchase(principal.getUserId(), request.getProductId(), request.getProduct(), request.getApplicationId())));
+                ticketService.purchase(principal.getUserId(), request.getProductId(), request.getApplicationId())));
     }
 
     @Operation(summary = "비회원 이용권 구매 요청", description = "승인 메일의 예약번호로 구매 요청을 생성한다.")
@@ -54,7 +54,7 @@ public class TicketController {
             @Valid @RequestBody GuestTicketPurchaseRequest request
     ) {
         return ResponseEntity.ok(ApiResult.success(ticketService.purchaseGuest(
-                request.getBookingNumber(), request.getProductId(), request.getProduct())));
+                request.getBookingNumber(), request.getProductId())));
     }
 
     @Operation(summary = "비회원 이용권/자격 조회")

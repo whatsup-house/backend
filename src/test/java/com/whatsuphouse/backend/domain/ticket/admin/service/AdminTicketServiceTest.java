@@ -4,8 +4,8 @@ import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminPendingDep
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminTicketPassResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketAdjustmentRequest;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
@@ -62,7 +62,7 @@ class AdminTicketServiceTest {
     }
 
     private TicketPass pendingPass() {
-        return TicketPass.builder().participant(Participant.member(user)).product(TicketProduct.RANDOM_TABLE_FOUR).build();
+        return new TicketPass(Participant.member(user), null, new TicketProductOption("우연한 식탁 4회권", 4, 18000));
     }
 
     @Test
@@ -189,8 +189,8 @@ class AdminTicketServiceTest {
         AdminPendingDepositResponse row = result.get(0);
         assertThat(row.getApplicantName()).isEqualTo("홍길동");
         assertThat(row.isMember()).isTrue();
-        assertThat(row.getProductLabel()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getLabel());
-        assertThat(row.getAmount()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getPrice());
+        assertThat(row.getProductLabel()).isEqualTo("우연한 식탁 4회권");
+        assertThat(row.getAmount()).isEqualTo(18000);
         assertThat(row.getBookingNumber()).isEqualTo("WH-PAY-002");
         assertThat(row.getGatheringTitle()).isEqualTo("우연한 식탁");
     }

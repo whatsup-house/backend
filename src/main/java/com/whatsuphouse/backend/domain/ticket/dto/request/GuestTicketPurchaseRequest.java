@@ -1,6 +1,5 @@
 package com.whatsuphouse.backend.domain.ticket.dto.request;
 
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -19,6 +18,4 @@ public class GuestTicketPurchaseRequest {
     private String bookingNumber;
 
     private UUID productId;
-
-    private TicketProduct product;
 }

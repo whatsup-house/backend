@@ -3,7 +3,6 @@ package com.whatsuphouse.backend.domain.ticket.admin.dto.response;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -24,7 +23,6 @@ public class AdminPendingDepositResponse {
     private UUID participantId;
     private boolean member;          // 회원 여부 (비회원이면 false)
     private String applicantName;    // 회원=계정 이름, 비회원=참가자 이름
-    private TicketProduct product;
     private String productLabel;
     private int amount;              // 입금 안내 금액
     private LocalDateTime requestedAt;
@@ -43,7 +41,6 @@ public class AdminPendingDepositResponse {
                 .participantId(participant.getId())
                 .member(participant.getUser() != null)
                 .applicantName(participant.getName())
-                .product(pass.getProduct())
                 .productLabel(pass.getProductLabel())
                 .amount(pass.getPurchaseAmount())
                 .requestedAt(pass.getCreatedAt())

@@ -17,7 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
 import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailTemplateRenderer;
 import org.springframework.mail.MailSendException;
@@ -159,10 +159,8 @@ class EmailNotificationServiceTest {
     void sendTicketPurchaseRequested_containsPaymentDetails() {
         User user = buildUser("ticket@test.com");
         Application application = buildApplication(user, buildGathering());
-        TicketPass pass = TicketPass.builder()
-                .participant(Participant.member(user))
-                .product(TicketProduct.RANDOM_TABLE_FOUR)
-                .build();
+        TicketPass pass = new TicketPass(Participant.member(user), null,
+                new TicketProductOption("우연한 식탁 4회권", 4, 18000));
 
         emailNotificationService.sendTicketPurchaseRequested(application, pass);
 
