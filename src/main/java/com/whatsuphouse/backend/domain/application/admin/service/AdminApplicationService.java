@@ -10,8 +10,9 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerVie
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
-import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
+import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
@@ -41,6 +42,7 @@ public class AdminApplicationService {
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
+    private final GatheringRepository gatheringRepository;
     private final MileageService mileageService;
     private final TicketService ticketService;
     private final ApplicationEventPublisher eventPublisher;
@@ -210,6 +212,8 @@ public class AdminApplicationService {
         if (ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus())) {
             return;
         }
+        // 동시 승인에 의한 정원 초과를 막기 위해 게더링 행을 잠근 뒤 좌석을 센다.
+        gatheringRepository.findByIdAndDeletedAtIsNullForUpdate(application.getGathering().getId());
         int occupiedSeats = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
                 application.getGathering().getId(), ApplicationStatus.SEAT_OCCUPYING);
         if (occupiedSeats >= application.getGathering().getMaxAttendees()) {

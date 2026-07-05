@@ -10,11 +10,13 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.Applicati
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.auth.event.GuestEmailVerificationConsumedEvent;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
-import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.form.enums.SystemQuestionKey;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.entity.Form;
-import com.whatsuphouse.backend.domain.form.repository.ApplicationAnswerRepository;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
@@ -84,7 +86,8 @@ public class ApplicationService {
     // applyInternal은 @Transactional 퍼블릭 메서드에서만 호출되므로 self-invocation 트랜잭션 누락 위험 없음
     @SuppressWarnings("java:S6809")
     private ApplicationResponse applyInternal(UUID gatheringId, ApplicationRequest request, UUID userId) {
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
+        // 정원 체크~신청 저장 구간의 동시 신청 race를 막기 위해 게더링 행을 잠근다.
+        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNullForUpdate(gatheringId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
         // eventDate가 지난 모집중 게더링은 effective status가 COMPLETED로 계산되어 신청이 차단된다. (KAN-163)
@@ -129,7 +132,7 @@ public class ApplicationService {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         } else {
-            String guestPhone = extractString(byKey, "phone");
+            String guestPhone = extractString(byKey, SystemQuestionKey.PHONE.getKey());
             if (guestPhone == null || guestPhone.isBlank()) {
                 throw new CustomException(ErrorCode.GUEST_PHONE_REQUIRED);
             }
@@ -138,7 +141,7 @@ public class ApplicationService {
             }
             // 이메일 누락은 시스템 예약 질문(required)에서 REQUIRED_ANSWER_MISSING으로 처리된다.
             // 여기서는 값이 있을 때 형식만 검증한다. (폼에 email 질문이 없는 구버전은 통과)
-            String guestEmail = extractString(byKey, "email");
+            String guestEmail = extractString(byKey, SystemQuestionKey.EMAIL.getKey());
             if (guestEmail != null && !guestEmail.isBlank() && !EMAIL_PATTERN.matcher(guestEmail).matches()) {
                 throw new CustomException(ErrorCode.INVALID_EMAIL_FORMAT);
             }
@@ -147,10 +150,10 @@ public class ApplicationService {
             }
         }
 
-        String name = user != null ? user.getName() : extractString(byKey, "name");
-        String phone = user != null ? user.getPhone() : extractString(byKey, "phone");
+        String name = user != null ? user.getName() : extractString(byKey, SystemQuestionKey.NAME.getKey());
+        String phone = user != null ? user.getPhone() : extractString(byKey, SystemQuestionKey.PHONE.getKey());
         // 알림 발송용 이메일: 회원=계정 이메일, 비회원=신청서 답변 이메일
-        String email = user != null ? user.getEmail() : extractString(byKey, "email");
+        String email = user != null ? user.getEmail() : extractString(byKey, SystemQuestionKey.EMAIL.getKey());
 
         boolean autoConfirmed = false;
         boolean paymentPending = false;
@@ -170,7 +173,8 @@ public class ApplicationService {
 
         Application saved = applicationRepository.save(application);
         if (user == null) {
-            authService.consumeGuestEmailVerification(email);
+            // 트랜잭션 커밋 후에만 인증을 소비한다. 롤백 시 인증이 남아 재신청 가능. (AFTER_COMMIT 리스너)
+            eventPublisher.publishEvent(new GuestEmailVerificationConsumedEvent(email));
         }
 
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
