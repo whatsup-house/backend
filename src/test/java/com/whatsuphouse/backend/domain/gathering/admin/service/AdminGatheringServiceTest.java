@@ -15,7 +15,6 @@ import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.enums.LocationStatus;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -441,7 +440,7 @@ class AdminGatheringServiceTest {
         Application app = Application.builder()
                 .bookingNumber("WH260618-RT" + UUID.randomUUID().toString().substring(0, 4))
                 .gathering(targetGathering)
-                .participant(user != null ? Participant.member(user) : Participant.guest("비회원", "g@test.com", "01000000000"))
+                .user(user)
                 .name(user != null ? user.getName() : "비회원")
                 .phone("01000000000")
                 .build();

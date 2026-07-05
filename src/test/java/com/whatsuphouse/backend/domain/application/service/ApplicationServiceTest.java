@@ -25,8 +25,6 @@ import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
-import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -70,9 +68,6 @@ class ApplicationServiceTest {
 
     @Mock
     private UserRepository userRepository;
-
-    @Mock
-    private ParticipantService participantService;
 
     @Mock
     private AuthService authService;
@@ -146,8 +141,7 @@ class ApplicationServiceTest {
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
-        given(participantService.getOrCreateForUser(any())).willReturn(Participant.member(user));
+        given(applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
@@ -173,17 +167,15 @@ class ApplicationServiceTest {
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
-        Participant participant = Participant.member(user);
-        participant.approveRandomTable();
-        given(participantService.getOrCreateForUser(any())).willReturn(participant);
-        given(ticketService.tryUseOneTicket(eq(participant), any(Application.class))).willReturn(true);
+        given(applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        user.approveRandomTable();
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(true);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
-        then(ticketService).should().tryUseOneTicket(eq(participant), any(Application.class));
+        then(ticketService).should().tryUseOneTicket(eq(user), any(Application.class));
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
@@ -193,17 +185,15 @@ class ApplicationServiceTest {
         Gathering randomTable = Gathering.builder()
                 .title("우연한 식탁").eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
                 .gatheringType(GatheringType.RANDOM_TABLE).build();
-        Participant participant = Participant.member(user);
-        participant.approveRandomTable();
+        user.approveRandomTable();
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
         given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
-        given(participantService.getOrCreateForUser(user)).willReturn(participant);
-        given(ticketService.tryUseOneTicket(eq(participant), any(Application.class))).willReturn(false);
+        given(applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
@@ -221,22 +211,20 @@ class ApplicationServiceTest {
                 .price(0)
                 .gatheringType(GatheringType.RANDOM_TABLE)
                 .build();
-        Participant participant = Participant.member(user);
-        participant.approveRandomTable();
+        user.approveRandomTable();
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
         given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
-        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+        given(applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
-        then(ticketService).should(never()).tryUseOneTicket(eq(participant), any(Application.class));
+        then(ticketService).should(never()).tryUseOneTicket(eq(user), any(Application.class));
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
@@ -246,16 +234,14 @@ class ApplicationServiceTest {
         Gathering randomTable = Gathering.builder()
                 .title("우연한 식탁").eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
                 .gatheringType(GatheringType.RANDOM_TABLE).build();
-        Participant participant = Participant.member(user);
-        participant.rejectRandomTable();
+        user.rejectRandomTable();
 
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
         given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
-        given(participantService.getOrCreateForUser(user)).willReturn(participant);
+        given(applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
 
         assertThatThrownBy(() -> applicationService.apply(gatheringId, request, userId))
                 .isInstanceOf(CustomException.class)
@@ -279,7 +265,6 @@ class ApplicationServiceTest {
                 .willReturn(List.of(phoneQuestion, emailQuestion));
         given(applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(authService.isGuestEmailVerified("g@test.com")).willReturn(true);
-        given(participantService.getOrCreateVerifiedGuest(any(), any(), any())).willReturn(Participant.guest("비회원", "g@test.com", "01098765432"));
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(gatheringId, request, null);
@@ -368,7 +353,7 @@ class ApplicationServiceTest {
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(any(), any())).willReturn(true);
+        given(applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(true);
 
         assertThatThrownBy(() -> applicationService.apply(gatheringId, request, userId))
                 .isInstanceOf(CustomException.class)
@@ -522,7 +507,7 @@ class ApplicationServiceTest {
     @DisplayName("내 신청 목록 반환")
     void getMyApplications_returnsApplications() {
         Application application = buildApplication(ApplicationStatus.PENDING, user, gathering);
-        given(applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(userId)).willReturn(List.of(application));
+        given(applicationRepository.findByUser_IdAndDeletedAtIsNull(userId)).willReturn(List.of(application));
 
         List<ApplicationListResponse> result = applicationService.getMyApplications(userId);
 
@@ -532,7 +517,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("신청 내역이 없으면 빈 리스트 반환")
     void getMyApplications_empty_returnsEmptyList() {
-        given(applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(userId)).willReturn(List.of());
+        given(applicationRepository.findByUser_IdAndDeletedAtIsNull(userId)).willReturn(List.of());
 
         List<ApplicationListResponse> result = applicationService.getMyApplications(userId);
 
@@ -545,7 +530,7 @@ class ApplicationServiceTest {
         Application application = Application.builder()
                 .bookingNumber("WH260428-ABC123")
                 .gathering(applicationGathering)
-                .participant(applicationUser != null ? Participant.member(applicationUser) : Participant.guest("비회원", "g@test.com", "01012345678"))
+                .user(applicationUser)
                 .name(applicationUser != null ? applicationUser.getName() : "비회원")
                 .phone(applicationUser != null ? applicationUser.getPhone() : "01012345678")
                 .build();

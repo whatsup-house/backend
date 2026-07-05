@@ -1,7 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.controller;
 
 import com.whatsuphouse.backend.domain.ticket.dto.request.TicketPurchaseRequest;
-import com.whatsuphouse.backend.domain.ticket.dto.request.GuestTicketPurchaseRequest;
 import com.whatsuphouse.backend.domain.ticket.dto.response.MyTicketsResponse;
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketProductResponse;
@@ -46,23 +45,6 @@ public class TicketController {
     ) {
         return ResponseEntity.ok(ApiResult.success(
                 ticketService.purchase(principal.getUserId(), request.getProductId(), request.getApplicationId())));
-    }
-
-    @Operation(summary = "비회원 이용권 구매 요청", description = "승인 메일의 예약번호로 구매 요청을 생성한다.")
-    @PostMapping("/guest/purchase")
-    public ResponseEntity<ApiResult<TicketPassResponse>> purchaseGuest(
-            @Valid @RequestBody GuestTicketPurchaseRequest request
-    ) {
-        return ResponseEntity.ok(ApiResult.success(ticketService.purchaseGuest(
-                request.getBookingNumber(), request.getProductId())));
-    }
-
-    @Operation(summary = "비회원 이용권/자격 조회")
-    @GetMapping("/guest")
-    public ResponseEntity<ApiResult<MyTicketsResponse>> getGuestTickets(
-            @RequestParam String bookingNumber
-    ) {
-        return ResponseEntity.ok(ApiResult.success(ticketService.getGuestTickets(bookingNumber)));
     }
 
     @Operation(summary = "내 이용권/잔여 조회")

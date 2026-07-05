@@ -15,7 +15,6 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.enums.MileageType;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -235,14 +234,14 @@ class AdminApplicationServiceTest {
     @DisplayName("우연한 식탁 최초 승인 시 사람 자격을 승인하고 이용권이 없으면 결제 대기한다 (KAN-277)")
     void changeStatus_randomTableApprovalWithoutTicket_awaitsPayment() {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
-        Participant participant = randomTableApp.getParticipant();
+        User participantUser = randomTableApp.getUser();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
-        given(ticketService.tryUseOneTicket(participant, randomTableApp)).willReturn(false);
+        given(ticketService.tryUseOneTicket(participantUser, randomTableApp)).willReturn(false);
 
         ApplicationStatusResponse response = adminApplicationService.changeStatus(
                 applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
 
-        assertThat(participant.isApprovedForRandomTable()).isTrue();
+        assertThat(participantUser.isApprovedForRandomTable()).isTrue();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
         then(eventPublisher).should(never()).publishEvent(any(ApplicationConfirmedEvent.class));
     }
@@ -251,14 +250,14 @@ class AdminApplicationServiceTest {
     @DisplayName("우연한 식탁 승인 시 잔여 이용권이 있으면 즉시 확정한다 (KAN-277)")
     void changeStatus_randomTableApprovalWithTicket_confirms() {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
-        Participant participant = randomTableApp.getParticipant();
+        User participantUser = randomTableApp.getUser();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
-        given(ticketService.tryUseOneTicket(participant, randomTableApp)).willReturn(true);
+        given(ticketService.tryUseOneTicket(participantUser, randomTableApp)).willReturn(true);
 
         ApplicationStatusResponse response = adminApplicationService.changeStatus(
                 applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
 
-        assertThat(participant.isApprovedForRandomTable()).isTrue();
+        assertThat(participantUser.isApprovedForRandomTable()).isTrue();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
@@ -268,21 +267,21 @@ class AdminApplicationServiceTest {
     void changeStatus_freeRandomTableApproval_confirmsWithoutTicket() {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
         ReflectionTestUtils.setField(randomTableApp.getGathering(), "price", 0);
-        Participant participant = randomTableApp.getParticipant();
+        User participantUser = randomTableApp.getUser();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
 
         ApplicationStatusResponse response = adminApplicationService.changeStatus(
                 applicationId, buildStatusRequest(ApplicationStatus.CONFIRMED));
 
-        assertThat(participant.isApprovedForRandomTable()).isTrue();
+        assertThat(participantUser.isApprovedForRandomTable()).isTrue();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
-        then(ticketService).should(never()).tryUseOneTicket(participant, randomTableApp);
+        then(ticketService).should(never()).tryUseOneTicket(participantUser, randomTableApp);
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
     @Test
     @DisplayName("우연한 식탁 거절은 사람 자격과 신청에 함께 반영한다 (KAN-277)")
-    void changeStatus_randomTableRejection_rejectsParticipantAndApplication() {
+    void changeStatus_randomTableRejection_rejectsUserAndApplication() {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
         ApplicationStatusRequest request = ApplicationStatusRequest.builder()
@@ -294,7 +293,7 @@ class AdminApplicationServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
         assertThat(randomTableApp.getRejectionReason()).isEqualTo("운영 기준에 맞지 않음");
-        assertThat(randomTableApp.getParticipant().isRandomTableEligibilityRestricted()).isTrue();
+        assertThat(randomTableApp.getUser().isRandomTableEligibilityRestricted()).isTrue();
     }
 
     @Test
@@ -379,7 +378,7 @@ class AdminApplicationServiceTest {
         Application memberApplication = Application.builder()
                 .bookingNumber("WH260428-XYZ999")
                 .gathering(gathering)
-                .participant(Participant.member(user))
+                .user(user)
                 .name("홍길동")
                 .phone("01012345678")
                 .build();
@@ -540,7 +539,7 @@ class AdminApplicationServiceTest {
         Application app = Application.builder()
                 .bookingNumber("WH260618-RT0001")
                 .gathering(randomTable)
-                .participant(Participant.member(member))
+                .user(member)
                 .name(member.getName())
                 .phone(member.getPhone())
                 .build();

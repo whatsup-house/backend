@@ -20,7 +20,6 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEv
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -129,7 +128,9 @@ public class AdminApplicationService {
                 }
                 application.reject(reason.trim());
                 if (application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE) {
-                    application.getParticipant().rejectRandomTable();
+                    if (application.getUser() != null) {
+                        application.getUser().rejectRandomTable();
+                    }
                     // 반려 시 승인 단계에서 차감했던 이용권을 1회 복구한다. (KAN-261 연장)
                     // refundOneTicket은 USE 거래가 있을 때만 복구하고 중복 복구를 막으므로 멱등하다.
                     // 게더링이 이미 취소된 경우엔 게더링 취소 시점에 일괄 환불되므로 중복 복구하지 않는다.
@@ -155,20 +156,24 @@ public class AdminApplicationService {
     }
 
     private void approveRandomTableApplication(Application application) {
-        Participant participant = application.getParticipant();
-        if (participant.isAccountBlocked()) {
+        User user = application.getUser();
+        // 우연한 식탁은 회원 전용이다. 전환 이전의 레거시 비회원 신청은 승인할 수 없다.
+        if (user == null) {
+            throw new CustomException(ErrorCode.RANDOM_TABLE_MEMBERS_ONLY);
+        }
+        if (user.isAccountSuspended()) {
             throw new CustomException(ErrorCode.PARTICIPANT_BLOCKED);
         }
-        if (participant.isRandomTableEligibilityRestricted()) {
+        if (user.isRandomTableEligibilityRestricted()) {
             throw new CustomException(ErrorCode.RANDOM_TABLE_ELIGIBILITY_RESTRICTED);
         }
 
-        participant.approveRandomTable();
+        user.approveRandomTable();
         if (!application.requiresRandomTableTicket()) {
             enforceCapacityForNewSeat(application);
             application.confirm();
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
-        } else if (ticketService.tryUseOneTicket(participant, application)) {
+        } else if (ticketService.tryUseOneTicket(user, application)) {
             enforceCapacityForNewSeat(application);
             application.confirm();
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));

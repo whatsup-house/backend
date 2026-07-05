@@ -25,8 +25,6 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEv
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
-import com.whatsuphouse.backend.domain.participant.service.ParticipantService;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
@@ -65,7 +63,6 @@ public class ApplicationService {
     private final FormProvisionService formProvisionService;
     private final TicketService ticketService;
     private final TicketTransactionRepository ticketTransactionRepository;
-    private final ParticipantService participantService;
     private final AuthService authService;
     private final ApplicationLookupTokenService applicationLookupTokenService;
 
@@ -93,6 +90,11 @@ public class ApplicationService {
         // eventDate가 지난 모집중 게더링은 effective status가 COMPLETED로 계산되어 신청이 차단된다. (KAN-163)
         if (gathering.getEffectiveStatus() != GatheringStatus.OPEN) {
             throw new CustomException(ErrorCode.GATHERING_NOT_RECRUITING);
+        }
+
+        // 우연한 식탁은 회원 전용이다. 비회원은 신청 단계에서 차단한다.
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE && userId == null) {
+            throw new CustomException(ErrorCode.RANDOM_TABLE_MEMBERS_ONLY);
         }
 
         // 정원은 관리자가 승인(CONFIRMED)·출석(ATTENDED) 처리한 인원만 차지한다. PENDING 신청은 정원과 무관. (KAN-236)
@@ -123,7 +125,7 @@ public class ApplicationService {
         if (userId != null) {
             user = userRepository.findByIdAndDeletedAtIsNull(userId)
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-            if (applicationRepository.existsByGatheringIdAndParticipant_User_IdAndDeletedAtIsNull(gathering.getId(), userId)) {
+            if (applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(gathering.getId(), userId)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         } else {
@@ -150,21 +152,16 @@ public class ApplicationService {
         // 알림 발송용 이메일: 회원=계정 이메일, 비회원=신청서 답변 이메일
         String email = user != null ? user.getEmail() : extractString(byKey, "email");
 
-        // 신청 주체를 participant로 연결한다. 회원은 user당 1개 보장, 비회원은 신청마다 새 GUEST. (KAN-276)
-        Participant participant = user != null
-                ? participantService.getOrCreateForUser(user)
-                : participantService.getOrCreateVerifiedGuest(name, email, phone);
-
         boolean autoConfirmed = false;
         boolean paymentPending = false;
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
-            validateRandomTableEligibility(participant);
+            validateRandomTableEligibility(user);
         }
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
                 .gathering(gathering)
-                .participant(participant)
+                .user(user)
                 .name(name)
                 .phone(phone)
                 .email(email)
@@ -177,12 +174,12 @@ public class ApplicationService {
         }
 
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
-                && participant.isApprovedForRandomTable()) {
+                && user.isApprovedForRandomTable()) {
             if (!saved.requiresRandomTableTicket()) {
                 saved.confirm();
                 autoConfirmed = true;
             } else {
-                autoConfirmed = ticketService.tryUseOneTicket(participant, saved);
+                autoConfirmed = ticketService.tryUseOneTicket(user, saved);
                 paymentPending = !autoConfirmed;
                 if (autoConfirmed) {
                     saved.confirm();
@@ -204,11 +201,11 @@ public class ApplicationService {
         return ApplicationResponse.from(saved);
     }
 
-    private void validateRandomTableEligibility(Participant participant) {
-        if (participant.isAccountBlocked()) {
+    private void validateRandomTableEligibility(User user) {
+        if (user.isAccountSuspended()) {
             throw new CustomException(ErrorCode.PARTICIPANT_BLOCKED);
         }
-        if (participant.isRandomTableEligibilityRestricted()) {
+        if (user.isRandomTableEligibilityRestricted()) {
             throw new CustomException(ErrorCode.RANDOM_TABLE_ELIGIBILITY_RESTRICTED);
         }
     }
@@ -325,7 +322,7 @@ public class ApplicationService {
     }
 
     public List<ApplicationListResponse> getMyApplications(UUID userId) {
-        return applicationRepository.findByParticipant_User_IdAndDeletedAtIsNull(userId)
+        return applicationRepository.findByUser_IdAndDeletedAtIsNull(userId)
                 .stream()
                 .map(ApplicationListResponse::from)
                 .toList();

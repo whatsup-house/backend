@@ -1,7 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.entity;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
@@ -25,10 +24,11 @@ public class TicketPass extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    // 이용권 소유자. 회원/비회원 모두 participant로 연결한다. (KAN-276)
+    // 이용권 소유자. 우연한 식탁 회원 전용 전환으로 항상 회원(User)이다.
+    // DB 컬럼은 레거시 비회원 이용권 정리 전까지 nullable 유지 (V4 마이그레이션 참고).
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "participant_id", nullable = false)
-    private Participant participant;
+    @JoinColumn(name = "user_id")
+    private User user;
 
     // 특정 신청의 결제 대기 상태에서 생성된 이용권 구매 요청이면 해당 신청과 직접 연결한다. (KAN-289)
     @ManyToOne(fetch = FetchType.LAZY)
@@ -64,8 +64,8 @@ public class TicketPass extends BaseEntity {
     @Column(name = "payment_confirmed_at")
     private LocalDateTime paymentConfirmedAt;
 
-    public TicketPass(Participant participant, Application application, TicketProductOption productOption) {
-        this.participant = participant;
+    public TicketPass(User user, Application application, TicketProductOption productOption) {
+        this.user = user;
         this.application = application;
         this.productOption = productOption;
         this.productName = productOption.getName();
@@ -78,11 +78,6 @@ public class TicketPass extends BaseEntity {
 
     public String getProductLabel() {
         return productName != null && !productName.isBlank() ? productName : "이용권";
-    }
-
-    /** 소유자가 회원이면 그 User를, 비회원이면 null을 반환한다. (KAN-276) */
-    public User getUser() {
-        return participant != null ? participant.getUser() : null;
     }
 
     // ─────────────────────────────────────────────────────────────

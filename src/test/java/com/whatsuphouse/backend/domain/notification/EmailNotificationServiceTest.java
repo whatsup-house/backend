@@ -3,7 +3,6 @@ package com.whatsuphouse.backend.domain.notification;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,7 +14,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import com.whatsuphouse.backend.domain.mailtemplate.enums.MailTemplateType;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.mailtemplate.service.MailContent;
@@ -159,7 +157,7 @@ class EmailNotificationServiceTest {
     void sendTicketPurchaseRequested_containsPaymentDetails() {
         User user = buildUser("ticket@test.com");
         Application application = buildApplication(user, buildGathering());
-        TicketPass pass = new TicketPass(Participant.member(user), null,
+        TicketPass pass = new TicketPass(user, null,
                 new TicketProductOption("우연한 식탁 4회권", 4, 18000));
 
         emailNotificationService.sendTicketPurchaseRequested(application, pass);
@@ -401,7 +399,7 @@ class EmailNotificationServiceTest {
         Application application = Application.builder()
                 .bookingNumber("WH260428-TEST01")
                 .gathering(gathering)
-                .participant(user != null ? Participant.member(user) : Participant.guest("비회원", "g@test.com", "01099999999"))
+                .user(user)
                 .name(user != null ? user.getName() : "비회원")
                 .phone(user != null ? user.getPhone() : "01099999999")
                 .build();

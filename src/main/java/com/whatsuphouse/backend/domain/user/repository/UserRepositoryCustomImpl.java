@@ -44,7 +44,7 @@ public class UserRepositoryCustomImpl implements UserRepositoryCustom {
                 .select(user, application.id.count(), attendedCount)
                 .from(user)
                 .leftJoin(application).on(
-                        application.participant.user.eq(user)
+                        application.user.eq(user)
                                 .and(application.deletedAt.isNull())
                 )
                 .where(builder)

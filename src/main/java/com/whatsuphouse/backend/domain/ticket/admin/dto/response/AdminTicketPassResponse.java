@@ -15,7 +15,6 @@ public class AdminTicketPassResponse {
 
     private UUID id;
     private UUID userId;
-    private UUID participantId;
     private String userNickname;
     private String userName;
     private String productLabel;
@@ -32,7 +31,6 @@ public class AdminTicketPassResponse {
         return AdminTicketPassResponse.builder()
                 .id(pass.getId())
                 .userId(user != null ? user.getId() : null)
-                .participantId(pass.getParticipant().getId())
                 .userNickname(user != null ? user.getNickname() : null)
                 .userName(user != null ? user.getName() : null)
                 .productLabel(pass.getProductLabel())

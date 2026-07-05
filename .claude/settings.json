@@ -8,7 +8,6 @@
       "Grep",
       "WebSearch",
       "Agent",
-      "mcp__*",
       "Bash(git *)"
     ],
     "deny": []

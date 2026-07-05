@@ -1,7 +1,7 @@
 package com.whatsuphouse.backend.domain.ticket.admin.dto.response;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
+import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import lombok.Builder;
 import lombok.Getter;
@@ -20,9 +20,9 @@ public class AdminPendingDepositResponse {
 
     // 입금 확인 대상. PATCH /api/admin/tickets/{ticketPassId}/confirm 으로 확정한다.
     private UUID ticketPassId;
-    private UUID participantId;
-    private boolean member;          // 회원 여부 (비회원이면 false)
-    private String applicantName;    // 회원=계정 이름, 비회원=참가자 이름
+    private UUID userId;
+    private boolean member;          // 회원 여부 (레거시 비회원 이용권이면 false)
+    private String applicantName;
     private String productLabel;
     private int amount;              // 입금 안내 금액
     private LocalDateTime requestedAt;
@@ -35,12 +35,13 @@ public class AdminPendingDepositResponse {
     private String gatheringTitle;
 
     public static AdminPendingDepositResponse from(TicketPass pass, Application application) {
-        Participant participant = pass.getParticipant();
+        User user = pass.getUser();
         AdminPendingDepositResponseBuilder builder = AdminPendingDepositResponse.builder()
                 .ticketPassId(pass.getId())
-                .participantId(participant.getId())
-                .member(participant.getUser() != null)
-                .applicantName(participant.getName())
+                .userId(user != null ? user.getId() : null)
+                .member(user != null)
+                .applicantName(user != null ? user.getName()
+                        : application != null ? application.getName() : "비회원")
                 .productLabel(pass.getProductLabel())
                 .amount(pass.getPurchaseAmount())
                 .requestedAt(pass.getCreatedAt())
