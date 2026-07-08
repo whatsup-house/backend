@@ -6,9 +6,8 @@
       "env": {
         "SONARQUBE_URL": "https://sonarcloud.io",
         "SONARQUBE_ORGANIZATION": "whatsup-house",
-        "SONARQUBE_TOKEN": "43fa8c7fe4fe7fb586cbcf5ffe4c85319dbeb670"
+        "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}"
       }
     }
   }
 }
-치
