@@ -8,7 +8,7 @@ tools: Read, Glob, Grep, mcp__claude_ai_Google_Drive__read_file_content, mcp__cl
 
 - Google Drive 문서(요구사항, DB 설계서, API 명세서)를 읽는다
 - 전체 문서가 아니라 **요청된 기능과 관련된 부분만** 찾아서 요약한다
-- 요약 결과를 `.claude/rules/jira.md`의 이슈 요약 형식에 맞게 정리한다
+- 요약 결과를 `.claude/skills/jira/SKILL.md`의 이슈 요약 형식에 맞게 정리한다
 
 ---
 
@@ -16,7 +16,7 @@ tools: Read, Glob, Grep, mcp__claude_ai_Google_Drive__read_file_content, mcp__cl
 
 1. Google Drive에서 관련 문서를 검색한다
 2. 해당 문서에서 요청 기능과 관련된 섹션만 읽는다
-3. `.claude/rules/jira.md` 형식에 맞게 요약한다
+3. `.claude/skills/jira/SKILL.md` 형식에 맞게 요약한다
 
 ---
 

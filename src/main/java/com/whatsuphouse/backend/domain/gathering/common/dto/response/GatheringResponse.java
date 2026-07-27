@@ -7,7 +7,9 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -25,6 +27,9 @@ public class GatheringResponse {
     private GatheringStatus status;
     private String thumbnailUrl;
     private LocationSummary location;
+    // 게더링 등록일 — 목록 정렬(최신순/오래된순)용. (KAN-295)
+    private LocalDateTime createdAt;
+    private List<String> tags;
 
     public static GatheringResponse from(Gathering gathering) {
         LocationSummary locationSummary = null;
@@ -45,9 +50,11 @@ public class GatheringResponse {
                 .endTime(gathering.getEndTime())
                 .price(gathering.getPrice())
                 .maxAttendees(gathering.getMaxAttendees())
-                .status(gathering.getStatus())
+                .status(gathering.getEffectiveStatus())
                 .thumbnailUrl(gathering.getThumbnailUrl())
                 .location(locationSummary)
+                .createdAt(gathering.getCreatedAt())
+                .tags(gathering.getTags())
                 .build();
     }
 

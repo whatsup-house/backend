@@ -20,7 +20,7 @@ generatedFiles 목록의 파일만 명시적으로 스테이징한다.
 
 ### 2. git commit
 
-`.claude/rules/git.md` 커밋 규칙을 따른다. 브랜치 prefix로 커밋 타입 결정.
+`.claude/skills/git/SKILL.md` 커밋 규칙을 따른다. 브랜치 prefix로 커밋 타입 결정.
 
 ```bash
 git commit -m "{type}: {이슈 제목 한 줄 요약}"

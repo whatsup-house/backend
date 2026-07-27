@@ -6,9 +6,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface UserRepository extends JpaRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<User, UUID>, UserRepositoryCustom {
 
     Optional<User> findByEmail(String email);
+
+    Optional<User> findByEmailAndDeletedAtIsNull(String email);
+
+    Optional<User> findFirstByNameAndPhoneAndDeletedAtIsNullOrderByCreatedAtDesc(String name, String phone);
 
     boolean existsByEmail(String email);
 

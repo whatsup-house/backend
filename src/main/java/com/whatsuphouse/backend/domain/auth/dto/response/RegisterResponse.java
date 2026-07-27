@@ -7,6 +7,8 @@ import lombok.Getter;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import static com.whatsuphouse.backend.domain.mileage.service.MileageService.SIGNUP_REWARD_AMOUNT;
+
 @Getter
 @Builder
 public class RegisterResponse {
@@ -14,6 +16,8 @@ public class RegisterResponse {
     private UUID id;
     private String email;
     private String nickname;
+    private Integer mileageRewarded;
+    private Integer mileageBalance;
     private LocalDateTime createdAt;
 
     public static RegisterResponse from(User user) {
@@ -21,6 +25,8 @@ public class RegisterResponse {
                 .id(user.getId())
                 .email(user.getEmail())
                 .nickname(user.getNickname())
+                .mileageRewarded(SIGNUP_REWARD_AMOUNT)
+                .mileageBalance(user.getMileageBalance())
                 .createdAt(user.getCreatedAt())
                 .build();
     }

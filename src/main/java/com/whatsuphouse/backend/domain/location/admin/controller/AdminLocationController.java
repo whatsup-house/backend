@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.location.admin.controller;
 
 import com.whatsuphouse.backend.domain.location.admin.dto.request.LocationCreateRequest;
 import com.whatsuphouse.backend.domain.location.admin.dto.request.LocationUpdateRequest;
+import com.whatsuphouse.backend.domain.location.admin.dto.response.AdminLocationResponse;
 import com.whatsuphouse.backend.domain.location.admin.service.AdminLocationService;
 import com.whatsuphouse.backend.domain.location.common.dto.response.LocationDetailResponse;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -14,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "장소 관리 (관리자)", description = "관리자 장소 등록 및 수정 API")
@@ -23,6 +25,12 @@ import java.util.UUID;
 public class AdminLocationController {
 
     private final AdminLocationService adminLocationService;
+
+    @Operation(summary = "장소 목록 조회 (관리자)", description = "수용 인원/계약 상태/메모 등 운영 필드를 포함한 장소 목록입니다.")
+    @GetMapping
+    public ResponseEntity<ApiResult<List<AdminLocationResponse>>> getLocations() {
+        return ResponseEntity.ok(ApiResult.success(adminLocationService.getLocations()));
+    }
 
     @Operation(summary = "장소 등록", description = "관리자 권한이 필요합니다.")
     @PostMapping

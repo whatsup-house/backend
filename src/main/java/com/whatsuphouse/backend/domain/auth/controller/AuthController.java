@@ -1,8 +1,14 @@
 package com.whatsuphouse.backend.domain.auth.controller;
 
 import com.whatsuphouse.backend.domain.auth.dto.request.LoginRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.FindEmailRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetConfirmRequest;
+import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.RegisterRequest;
+import com.whatsuphouse.backend.domain.auth.dto.response.FindEmailResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.LoginResponse;
+import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetConfirmResponse;
+import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetRequestResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.RegisterResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.TokenRefreshResponse;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
@@ -29,6 +35,9 @@ import java.util.Arrays;
 @RequiredArgsConstructor
 public class AuthController {
 
+    private static final String ACCESS_TOKEN = "accessToken";
+    private static final String REFRESH_TOKEN = "refreshToken";
+
     private final AuthService authService;
 
     @Operation(summary = "회원가입", description = "이메일, 비밀번호, 닉네임 등 기본 정보로 회원가입한다.")
@@ -44,8 +53,8 @@ public class AuthController {
     public ResponseEntity<ApiResult<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = authService.login(request);
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, buildCookie("accessToken", response.getAccessToken()).toString())
-                .header(HttpHeaders.SET_COOKIE, buildCookie("refreshToken", response.getRefreshToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, buildCookie(ACCESS_TOKEN, response.getAccessToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, buildCookie(REFRESH_TOKEN, response.getRefreshToken()).toString())
                 .body(ApiResult.success("로그인되었습니다.", response));
     }
 
@@ -54,20 +63,71 @@ public class AuthController {
     public ResponseEntity<ApiResult<Void>> logout(@AuthenticationPrincipal UserPrincipal principal) {
         authService.logout(principal.getUserId());
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, expireCookie("accessToken").toString())
-                .header(HttpHeaders.SET_COOKIE, expireCookie("refreshToken").toString())
+                .header(HttpHeaders.SET_COOKIE, expireCookie(ACCESS_TOKEN).toString())
+                .header(HttpHeaders.SET_COOKIE, expireCookie(REFRESH_TOKEN).toString())
                 .body(ApiResult.success("로그아웃되었습니다.", null));
     }
 
     @Operation(summary = "토큰 갱신", description = "refreshToken 쿠키로 새 accessToken, refreshToken을 HttpOnly 쿠키로 재발급한다.")
     @PostMapping("/refresh")
     public ResponseEntity<ApiResult<Void>> refresh(HttpServletRequest request) {
-        String refreshToken = extractCookie(request, "refreshToken");
+        String refreshToken = extractCookie(request, REFRESH_TOKEN);
         TokenRefreshResponse response = authService.refresh(refreshToken);
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, buildCookie("accessToken", response.getAccessToken()).toString())
-                .header(HttpHeaders.SET_COOKIE, buildCookie("refreshToken", response.getRefreshToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, buildCookie(ACCESS_TOKEN, response.getAccessToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, buildCookie(REFRESH_TOKEN, response.getRefreshToken()).toString())
                 .body(ApiResult.success("토큰이 갱신되었습니다.", null));
+    }
+
+    @Operation(summary = "아이디 찾기", description = "이름과 전화번호로 가입 이메일을 찾고 마스킹된 이메일을 반환한다.")
+    @PostMapping("/find-email")
+    public ResponseEntity<ApiResult<FindEmailResponse>> findEmail(@Valid @RequestBody FindEmailRequest request) {
+        FindEmailResponse response = authService.findEmail(request);
+        return ResponseEntity.ok(ApiResult.success("가입 이메일을 확인했습니다.", response));
+    }
+
+    @Operation(summary = "비밀번호 재설정 요청", description = "가입 이메일로 비밀번호 재설정 링크를 발송한다.")
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<ApiResult<PasswordResetRequestResponse>> requestPasswordReset(
+            @Valid @RequestBody PasswordResetRequest request) {
+        PasswordResetRequestResponse response = authService.requestPasswordReset(request);
+        return ResponseEntity.ok(ApiResult.success("비밀번호 재설정 요청을 접수했습니다.", response));
+    }
+
+    @Operation(summary = "비밀번호 재설정 확정", description = "재설정 토큰으로 새 비밀번호를 저장한다.")
+    @PostMapping("/password-reset/confirm")
+    public ResponseEntity<ApiResult<PasswordResetConfirmResponse>> confirmPasswordReset(
+            @Valid @RequestBody PasswordResetConfirmRequest request) {
+        PasswordResetConfirmResponse response = authService.confirmPasswordReset(request);
+        return ResponseEntity.ok(ApiResult.success("비밀번호가 재설정되었습니다.", response));
+    }
+
+    @Operation(summary = "비회원 이메일 인증번호 요청")
+    @PostMapping("/guest-email-verification/request")
+    public ResponseEntity<ApiResult<com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse>> requestGuestEmailVerification(
+            @Valid @RequestBody com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationRequest request) {
+        return ResponseEntity.ok(ApiResult.success(authService.requestGuestEmailVerification(request)));
+    }
+
+    @Operation(summary = "비회원 이메일 인증번호 확인")
+    @PostMapping("/guest-email-verification/confirm")
+    public ResponseEntity<ApiResult<com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse>> confirmGuestEmailVerification(
+            @Valid @RequestBody com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationConfirmRequest request) {
+        return ResponseEntity.ok(ApiResult.success(authService.confirmGuestEmailVerification(request)));
+    }
+
+    @Operation(summary = "회원가입 이메일 인증번호 요청")
+    @PostMapping("/register-email-verification/request")
+    public ResponseEntity<ApiResult<com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse>> requestRegisterEmailVerification(
+            @Valid @RequestBody com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationRequest request) {
+        return ResponseEntity.ok(ApiResult.success(authService.requestGuestEmailVerification(request)));
+    }
+
+    @Operation(summary = "회원가입 이메일 인증번호 확인")
+    @PostMapping("/register-email-verification/confirm")
+    public ResponseEntity<ApiResult<com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse>> confirmRegisterEmailVerification(
+            @Valid @RequestBody com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationConfirmRequest request) {
+        return ResponseEntity.ok(ApiResult.success(authService.confirmGuestEmailVerification(request)));
     }
 
     private ResponseCookie buildCookie(String name, String value) {

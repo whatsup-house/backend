@@ -2,6 +2,8 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.5.13'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.sonarqube' version '6.0.1.5171'
+	id 'jacoco'
 }
 
 group = 'com.whatsuphouse'
@@ -11,6 +13,11 @@ java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(17)
 	}
+}
+
+// 배포 단계가 build/libs/*.jar 단일 파일을 전제하므로 plain jar 생성 비활성화
+jar {
+	enabled = false
 }
 
 configurations {
@@ -41,6 +48,10 @@ dependencies {
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
+	// Cache (Caffeine - 번역 조회 서빙 레이어, KAN-280)
+	implementation 'org.springframework.boot:spring-boot-starter-cache'
+	implementation 'com.github.ben-manes.caffeine:caffeine'
+
 	// JWT
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
@@ -48,6 +59,15 @@ dependencies {
 
 	// API 문서 (Swagger)
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9'
+
+	// Querydsl
+	implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
+	annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
+	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
+	annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
+
+	// Mail
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
 
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
@@ -62,6 +82,25 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+	dependsOn test
+	reports {
+		xml.required = true
+	}
+}
+
+sonar {
+	properties {
+		property 'sonar.projectKey', 'whatsup-house-backend'
+		property 'sonar.projectName', 'whatsup-house-backend'
+		property 'sonar.host.url', 'http://localhost:9000'
+		property 'sonar.coverage.jacoco.xmlReportPaths', 'build/reports/jacoco/test/jacocoTestReport.xml'
+		property 'sonar.java.source', '17'
+		property 'sonar.exclusions', '**/dto/**,**/entity/**,**/global/config/**,**/Q*.java'
+	}
 }
 
 tasks.named('bootRun') {

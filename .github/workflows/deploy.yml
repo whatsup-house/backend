@@ -3,6 +3,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -96,11 +97,16 @@ jobs:
             "JWT_SECRET=${{ secrets.JWT_SECRET }}" \
             "REDIS_HOST=redis" \
             "REDIS_PORT=6379" \
+            "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
+            "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" \
+            "SUPABASE_BUCKET=${{ secrets.SUPABASE_BUCKET }}" \
+            "MAIL_FROM=${{ secrets.MAIL_FROM }}" \
+            "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" \
             | ssh ec2-user@${{ secrets.EC2_HOST }} "cat > ~/whatsup/.env"
 
       - name: Copy docker-compose
         run: |
-          scp docker-compose.prod.yml \
+          scp docker-compose.prod.yml Caddyfile \
             ec2-user@${{ secrets.EC2_HOST }}:~/whatsup/
 
       - name: Deploy

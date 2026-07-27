@@ -17,8 +17,7 @@ tools: Read, Glob, Grep
 
 아래 규칙 문서를 기반으로 검토한다 (규칙 재서술 금지, 원문 참고):
 
-- `.claude/rules/backend/api.md`
-- `.claude/rules/backend/jpa.md`
+- `.claude/skills/backend/SKILL.md` (Controller, JPA, 네이밍 규칙 포함)
 
 ---
 

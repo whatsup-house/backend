@@ -21,5 +21,34 @@ spring:
       host: localhost
       port: 6379
 
+  mail:
+    host: localhost
+    port: 1025
+    username: ''
+    password: ''
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
 jwt:
   secret: test-secret-key-for-ci-only-minimum-32-chars
+
+supabase:
+  url: http://localhost
+  key: test-key
+  bucket: test-bucket
+
+# 테스트에서는 GMS 자동 번역 비활성 (외부 호출 차단)
+gms:
+  base-url: http://localhost
+  key: ''
+  model: gpt-4o-mini
+  enabled: false
+  max-input-chars: 2000
+
+notification:
+  email:
+    from: noreply@test.com

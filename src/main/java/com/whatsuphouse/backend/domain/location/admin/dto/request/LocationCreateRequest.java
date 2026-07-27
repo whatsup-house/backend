@@ -6,9 +6,15 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 @Getter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class LocationCreateRequest {
 
     @Schema(example = "홍대 카페")
@@ -19,8 +25,11 @@ public class LocationCreateRequest {
     @NotBlank
     private String address;
 
-    @Schema(example = "https://map.kakao.com/link/map/12345678")
-    private String mapUrl;
+    @Schema(description = "네이버 지도 URL", example = "https://naver.me/xHgIyXJR")
+    private String naverMapUrl;
+
+    @Schema(description = "카카오 지도 URL", example = "https://kko.kakao.com/abcdEFGH")
+    private String kakaoMapUrl;
 
     @Schema(example = "20")
     @NotNull
@@ -28,6 +37,7 @@ public class LocationCreateRequest {
     private Integer maxCapacity;
 
     @Schema(example = "ACTIVE")
+    @Builder.Default
     private LocationStatus status = LocationStatus.ACTIVE;
 
     @Schema(example = "주차 불가, 지하철 2호선 홍대입구역 도보 5분")
@@ -37,7 +47,8 @@ public class LocationCreateRequest {
         return Location.builder()
                 .name(name)
                 .address(address)
-                .mapUrl(mapUrl)
+                .naverMapUrl(naverMapUrl)
+                .kakaoMapUrl(kakaoMapUrl)
                 .maxCapacity(maxCapacity)
                 .status(status != null ? status : LocationStatus.ACTIVE)
                 .memo(memo)

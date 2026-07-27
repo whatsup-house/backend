@@ -4,7 +4,7 @@
 관리자가 소규모 게더링(최대 20명)을 주최, 유저는 신청만 함. 유저 간 매칭 없음.
 
 ## 프로젝트
-Spring Boot REST API 서버. 도메인 중심 구조. 세부 규칙은 `.claude/rules/` 참고.
+Spring Boot REST API 서버. 도메인 중심 구조.
 
 ## 명령어
 ```bash

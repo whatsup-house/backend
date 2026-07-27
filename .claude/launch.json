@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "/Users/jaeryeong/whatsup_house_git/whatsup-house-frontend"
+      ],
+      "port": 3000,
+      "autoPort": false
+    }
+  ]
+}
