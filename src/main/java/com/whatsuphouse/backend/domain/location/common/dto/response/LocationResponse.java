@@ -13,16 +13,14 @@ public class LocationResponse {
     private UUID id;
     private String name;
     private String address;
-    private String naverMapUrl;
-    private String kakaoMapUrl;
+    private String mapUrl;
 
     public static LocationResponse from(Location location) {
         return LocationResponse.builder()
                 .id(location.getId())
                 .name(location.getName())
                 .address(location.getAddress())
-                .naverMapUrl(location.getNaverMapUrl())
-                .kakaoMapUrl(location.getKakaoMapUrl())
+                .mapUrl(location.getMapUrl())
                 .build();
     }
 }

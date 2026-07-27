@@ -1,6 +1,5 @@
 package com.whatsuphouse.backend.global.config;
 
-import com.whatsuphouse.backend.global.auth.CustomAuthEntryPoint;
 import com.whatsuphouse.backend.global.auth.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -26,14 +25,11 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
-    private final CustomAuthEntryPoint customAuthEntryPoint;
 
     private static final String[] PERMIT_ALL = {
         "/api/auth/**",
-        "/api/guest/**",
         "/swagger-ui/**",
-        "/api-docs/**",
-        "/actuator/health"
+        "/api-docs/**"
     };
 
     //GET 요청만 허용
@@ -41,13 +37,7 @@ public class SecurityConfig {
         "/api/gatherings/**",
         "/api/locations/**",
         "/api/users/check-nickname",
-        "/api/users/check-email",
-        "/api/home/carousel",
-        "/api/home/curated",
-        "/api/home/reviews",
-        "/api/reviews",
-        "/api/reviews/locate",
-        "/api/jobs"
+        "/api/users/check-email"
     };
 
     @Bean
@@ -56,19 +46,14 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(customAuthEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PERMIT_ALL).permitAll()
                         .requestMatchers(HttpMethod.GET, PERMIT_GET).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/gatherings/*/applications/guest").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/applications/check").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/tickets/products").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/tickets/guest").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/tickets/guest/purchase").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/**").authenticated()
-                        .anyRequest().denyAll()
+                        .anyRequest().permitAll()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -78,12 +63,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-                "http://localhost:3000",
-                "https://whatsup-house.vercel.app",
-                "https://whatsup.house",
-                "https://www.whatsup.house"
-        ));
+        config.setAllowedOrigins(List.of("http://localhost:3000", "https://whatsup-house.vercel.app"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

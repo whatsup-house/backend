@@ -23,19 +23,19 @@
 
 ## 1단계 — 문서 읽기
 
-`.claude/agents/spec-reader.md` 역할을 수행한다.
+`.claude/agent/spec-reader.md` 역할을 수행한다.
 
 ---
 
 ## 2단계 — Jira 이슈 생성 + 브랜치 생성
 
-`.claude/agents/jira-manager.md` 역할을 수행한다. (이슈 생성 + 브랜치 생성)
+`.claude/agent/jira-manager.md` 역할을 수행한다. (이슈 생성 + 브랜치 생성)
 
 ---
 
 ## 3단계 — 코드 구현
 
-`.claude/agents/api-creator.md` 역할을 수행한다.
+`.claude/agent/api-creator.md` 역할을 수행한다.
 
 - 구현 전, 동일/인접 도메인의 기존 코드를 읽어 스타일을 파악한다
   - **Controller, Service, Repository, DTO 각 1개 파일씩만** 읽는다
@@ -43,24 +43,18 @@
 
 ---
 
-## 4단계 — 테스트 작성
+## 4단계 — 코드 검토
 
-`.claude/agents/test-generator.md` 역할을 수행한다.
-
----
-
-## 5단계 — 코드 검토
-
-`.claude/agents/backend-reviewer.md` 역할을 수행한다. 문제가 있으면 즉시 수정한다.
+`.claude/agent/backend-reviewer.md` 역할을 수행한다. 문제가 있으면 즉시 수정한다.
 
 ---
 
-## 6단계 — Jira 완료 처리
+## 5단계 — Jira 완료 처리
 
-`.claude/agents/jira-manager.md` 역할을 수행한다. (검토 결과 코멘트 추가 + 상태 완료 전환)
+`.claude/agent/jira-manager.md` 역할을 수행한다. (검토 결과 코멘트 추가 + 상태 완료 전환)
 
 ---
 
-## 7단계 — 커밋 & PR
+## 6단계 — 커밋 & PR
 
-`.claude/agents/pr-creator.md` 역할을 수행한다.
+`.claude/agent/pr-creator.md` 역할을 수행한다.

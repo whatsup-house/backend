@@ -26,11 +26,8 @@ public class Location extends BaseEntity {
     @Column(nullable = false, length = 255)
     private String address;
 
-    @Column(name = "naver_map_url", length = 500)
-    private String naverMapUrl;
-
-    @Column(name = "kakao_map_url", length = 500)
-    private String kakaoMapUrl;
+    @Column(name = "map_url", length = 500)
+    private String mapUrl;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -43,23 +40,19 @@ public class Location extends BaseEntity {
     private String memo;
 
     @Builder
-    public Location(String name, String address, String naverMapUrl, String kakaoMapUrl,
-                    LocationStatus status, int maxCapacity, String memo) {
+    public Location(String name, String address, String mapUrl, LocationStatus status, int maxCapacity, String memo) {
         this.name = name;
         this.address = address;
-        this.naverMapUrl = naverMapUrl;
-        this.kakaoMapUrl = kakaoMapUrl;
+        this.mapUrl = mapUrl;
         this.status = status;
         this.maxCapacity = maxCapacity;
         this.memo = memo;
     }
 
-    public void update(String name, String address, String naverMapUrl, String kakaoMapUrl,
-                       int maxCapacity, LocationStatus status, String memo) {
+    public void update(String name, String address, String mapUrl, int maxCapacity, LocationStatus status, String memo) {
         this.name = name;
         this.address = address;
-        this.naverMapUrl = naverMapUrl;
-        this.kakaoMapUrl = kakaoMapUrl;
+        this.mapUrl = mapUrl;
         this.maxCapacity = maxCapacity;
         this.status = status;
         this.memo = memo;

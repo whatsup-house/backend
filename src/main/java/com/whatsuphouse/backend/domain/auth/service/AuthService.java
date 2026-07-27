@@ -1,37 +1,23 @@
 package com.whatsuphouse.backend.domain.auth.service;
 
-import com.whatsuphouse.backend.domain.auth.dto.request.FindEmailRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.LoginRequest;
-import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetConfirmRequest;
-import com.whatsuphouse.backend.domain.auth.dto.request.PasswordResetRequest;
 import com.whatsuphouse.backend.domain.auth.dto.request.RegisterRequest;
-import com.whatsuphouse.backend.domain.auth.dto.response.FindEmailResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.LoginResponse;
-import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetConfirmResponse;
-import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetRequestResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.RegisterResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.TokenRefreshResponse;
-import com.whatsuphouse.backend.domain.mileage.service.MileageService;
-import com.whatsuphouse.backend.domain.notification.NotificationService;
-import com.whatsuphouse.backend.domain.notification.event.WelcomeEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
-import com.whatsuphouse.backend.domain.user.enums.Job;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
-import java.security.SecureRandom;
-import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -40,40 +26,18 @@ import java.util.concurrent.TimeUnit;
 public class AuthService {
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh:";
-    private static final String PASSWORD_RESET_PREFIX = "password-reset:";
-    private static final long PASSWORD_RESET_TTL_MINUTES = 30L;
-    private static final String GUEST_EMAIL_CODE_PREFIX = "guest-email-code:";
-    private static final String GUEST_EMAIL_VERIFIED_PREFIX = "guest-email-verified:";
-    private static final String EMAIL_VERIFICATION_RATE_LIMIT_PREFIX = "email-verification-rate:";
-    private static final long GUEST_EMAIL_CODE_TTL_MINUTES = 5L;
-    private static final long GUEST_EMAIL_VERIFIED_TTL_MINUTES = 30L;
-    private static final long EMAIL_VERIFICATION_RATE_LIMIT_TTL_MINUTES = 30L;
-    private static final long EMAIL_VERIFICATION_RATE_LIMIT_COUNT = 10L;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final StringRedisTemplate redisTemplate;
-    private final MileageService mileageService;
-    private final ApplicationEventPublisher eventPublisher;
-    private final NotificationService notificationService;
-
-    @Value("${app.frontend-url:https://www.whatsup.house}")
-    private String frontendUrl;
 
     public RegisterResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
-        if (!isGuestEmailVerified(request.getEmail())) {
-            throw new CustomException(ErrorCode.EMAIL_NOT_VERIFIED);
-        }
         if (userRepository.existsByNickname(request.getNickname())) {
             throw new CustomException(ErrorCode.DUPLICATE_NICKNAME);
-        }
-        if (!Job.isAcceptable(request.getJob())) {
-            throw new CustomException(ErrorCode.INVALID_JOB);
         }
 
         User user = User.builder()
@@ -82,25 +46,17 @@ public class AuthService {
                 .name(request.getName())
                 .gender(request.getGender())
                 .age(request.getAge())
-                .birthDate(request.getBirthDate())
                 .nickname(request.getNickname())
                 .phone(request.getPhone())
-                .instagramId(request.getInstagramId())
-                .mbti(request.getMbti())
-                .job(request.getJob())
-                .intro(request.getIntro())
                 .build();
 
         userRepository.save(user);
-        mileageService.rewardSignup(user);
-        consumeGuestEmailVerification(request.getEmail());
-        // 트랜잭션 커밋 후 환영 이메일 발송
-        eventPublisher.publishEvent(new WelcomeEvent(user));
         return RegisterResponse.from(user);
     }
 
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmailAndDeletedAtIsNull(request.getEmail())
+        User user = userRepository.findByEmail(request.getEmail())
+                .filter(u -> u.getDeletedAt() == null)
                 .orElseThrow(() -> new CustomException(ErrorCode.INVALID_CREDENTIALS));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
@@ -121,113 +77,8 @@ public class AuthService {
                         .email(user.getEmail())
                         .nickname(user.getNickname())
                         .isAdmin(user.isAdmin())
-                        .mileage(user.getMileageBalance())
                         .build())
                 .build();
-    }
-
-    @Transactional(readOnly = true)
-    public FindEmailResponse findEmail(FindEmailRequest request) {
-        User user = userRepository.findFirstByNameAndPhoneAndDeletedAtIsNullOrderByCreatedAtDesc(
-                        request.getName(),
-                        request.getPhone()
-                )
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-
-        return FindEmailResponse.builder()
-                .maskedEmail(maskEmail(user.getEmail()))
-                .build();
-    }
-
-    public PasswordResetRequestResponse requestPasswordReset(PasswordResetRequest request) {
-        userRepository.findByEmailAndDeletedAtIsNull(request.getEmail())
-                .ifPresent(user -> {
-                    String token = UUID.randomUUID().toString();
-                    redisTemplate.opsForValue().set(
-                            PASSWORD_RESET_PREFIX + token,
-                            user.getId().toString(),
-                            PASSWORD_RESET_TTL_MINUTES,
-                            TimeUnit.MINUTES
-                    );
-                    notificationService.sendPasswordReset(user, buildPasswordResetUrl(token));
-                });
-
-        return PasswordResetRequestResponse.builder()
-                .accepted(true)
-                .build();
-    }
-
-    public PasswordResetConfirmResponse confirmPasswordReset(PasswordResetConfirmRequest request) {
-        String redisKey = PASSWORD_RESET_PREFIX + request.getToken();
-        String userId = redisTemplate.opsForValue().get(redisKey);
-
-        if (userId == null) {
-            throw new CustomException(ErrorCode.INVALID_PASSWORD_RESET_TOKEN);
-        }
-
-        User user = userRepository.findByIdAndDeletedAtIsNull(UUID.fromString(userId))
-                .orElseThrow(() -> new CustomException(ErrorCode.INVALID_PASSWORD_RESET_TOKEN));
-
-        user.changePassword(passwordEncoder.encode(request.getNewPassword()));
-        redisTemplate.delete(redisKey);
-        logout(user.getId());
-
-        return PasswordResetConfirmResponse.builder()
-                .reset(true)
-                .build();
-    }
-
-    public com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse requestGuestEmailVerification(
-            com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationRequest request) {
-        String email = normalizeEmail(request.getEmail());
-        enforceEmailVerificationRateLimit(email);
-        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-        redisTemplate.opsForValue().set(
-                GUEST_EMAIL_CODE_PREFIX + email, code,
-                GUEST_EMAIL_CODE_TTL_MINUTES, TimeUnit.MINUTES);
-        notificationService.sendGuestEmailVerification(email, code);
-        return com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse.builder()
-                .accepted(true).verified(false).build();
-    }
-
-    public com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse confirmGuestEmailVerification(
-            com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationConfirmRequest request) {
-        String email = normalizeEmail(request.getEmail());
-        String codeKey = GUEST_EMAIL_CODE_PREFIX + email;
-        String storedCode = redisTemplate.opsForValue().get(codeKey);
-        if (storedCode == null || !storedCode.equals(request.getCode())) {
-            throw new CustomException(ErrorCode.INVALID_EMAIL_VERIFICATION_CODE);
-        }
-        redisTemplate.delete(codeKey);
-        redisTemplate.opsForValue().set(
-                GUEST_EMAIL_VERIFIED_PREFIX + email, "true",
-                GUEST_EMAIL_VERIFIED_TTL_MINUTES, TimeUnit.MINUTES);
-        return com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse.builder()
-                .accepted(true).verified(true).build();
-    }
-
-    public boolean isGuestEmailVerified(String email) {
-        return email != null && Boolean.TRUE.equals(redisTemplate.hasKey(
-                GUEST_EMAIL_VERIFIED_PREFIX + normalizeEmail(email)));
-    }
-
-    public void consumeGuestEmailVerification(String email) {
-        redisTemplate.delete(GUEST_EMAIL_VERIFIED_PREFIX + normalizeEmail(email));
-    }
-
-    private String normalizeEmail(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private void enforceEmailVerificationRateLimit(String email) {
-        String key = EMAIL_VERIFICATION_RATE_LIMIT_PREFIX + email;
-        Long count = redisTemplate.opsForValue().increment(key);
-        if (count != null && count == 1L) {
-            redisTemplate.expire(key, EMAIL_VERIFICATION_RATE_LIMIT_TTL_MINUTES, TimeUnit.MINUTES);
-        }
-        if (count != null && count > EMAIL_VERIFICATION_RATE_LIMIT_COUNT) {
-            throw new CustomException(ErrorCode.TOO_MANY_REQUESTS);
-        }
     }
 
     public void logout(UUID userId) {
@@ -235,16 +86,8 @@ public class AuthService {
     }
 
     public TokenRefreshResponse refresh(String refreshToken) {
-        if (refreshToken == null) {
+        if (refreshToken == null || !jwtTokenProvider.validateToken(refreshToken)) {
             throw new CustomException(ErrorCode.INVALID_REFRESH_TOKEN);
-        }
-        try {
-            jwtTokenProvider.validateToken(refreshToken);
-        } catch (CustomException e) {
-            ErrorCode code = e.getErrorCode() == ErrorCode.TOKEN_EXPIRED
-                    ? ErrorCode.EXPIRED_REFRESH_TOKEN
-                    : ErrorCode.INVALID_REFRESH_TOKEN;
-            throw new CustomException(code);
         }
 
         UUID userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
@@ -254,7 +97,8 @@ public class AuthService {
             throw new CustomException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
-        User user = userRepository.findByIdAndDeletedAtIsNull(userId)
+        User user = userRepository.findById(userId)
+                .filter(u -> u.getDeletedAt() == null)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
         UserPrincipal principal = new UserPrincipal(user.getId(), user.getEmail(), user.isAdmin());
@@ -276,30 +120,5 @@ public class AuthService {
                 jwtTokenProvider.getRefreshExpiration(),
                 TimeUnit.MILLISECONDS
         );
-    }
-
-    private String buildPasswordResetUrl(String token) {
-        String baseUrl = frontendUrl.endsWith("/")
-                ? frontendUrl.substring(0, frontendUrl.length() - 1)
-                : frontendUrl;
-        return baseUrl + "/password-reset/confirm?token=" + token;
-    }
-
-    private String maskEmail(String email) {
-        int atIndex = email.indexOf('@');
-        if (atIndex <= 0) {
-            return email;
-        }
-
-        String localPart = email.substring(0, atIndex);
-        String domain = email.substring(atIndex);
-        if (localPart.length() <= 2) {
-            return localPart.charAt(0) + "*" + domain;
-        }
-
-        return localPart.charAt(0)
-                + "*".repeat(localPart.length() - 2)
-                + localPart.charAt(localPart.length() - 1)
-                + domain;
     }
 }

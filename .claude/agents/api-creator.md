@@ -15,7 +15,8 @@ tools: Read, Edit, Write, Glob, Grep
 
 코드 생성 시 아래 규칙을 준수한다 (규칙 재서술 금지, 원문 참고):
 
-- `.claude/skills/backend/SKILL.md` (Controller, JPA, 네이밍 규칙 포함)
+- `.claude/rules/backend/api.md`
+- `.claude/rules/backend/jpa.md`
 
 ---
 

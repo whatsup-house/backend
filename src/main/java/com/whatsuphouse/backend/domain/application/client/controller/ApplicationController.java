@@ -15,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.UUID;
@@ -46,16 +45,12 @@ public class ApplicationController {
         return ResponseEntity.ok(ApiResult.success(applicationService.applyAsGuest(gatheringId, request)));
     }
 
-    @Operation(summary = "신청 조회 (비회원)", description = "전화번호와 예약번호 또는 메일 링크 토큰으로 신청 내역을 조회합니다.")
+    @Operation(summary = "신청 조회 (비회원)", description = "전화번호와 예약번호로 신청 내역을 조회합니다.")
     @GetMapping("/api/applications/check")
     public ResponseEntity<ApiResult<ApplicationCheckResponse>> checkApplication(
-            @Parameter(description = "전화번호", example = "01012345678") @RequestParam(required = false) String phone,
-            @Parameter(description = "예약번호", example = "WH260415-A1B2C3") @RequestParam(required = false) String bookingNumber,
-            @Parameter(description = "메일 링크 조회 토큰") @RequestParam(required = false) String token
+            @Parameter(description = "전화번호", example = "01012345678") @RequestParam String phone,
+            @Parameter(description = "예약번호", example = "WH260415-A1B2C3") @RequestParam String bookingNumber
     ) {
-        if (StringUtils.hasText(token)) {
-            return ResponseEntity.ok(ApiResult.success(applicationService.checkApplicationByToken(token)));
-        }
         return ResponseEntity.ok(ApiResult.success(applicationService.checkApplication(phone, bookingNumber)));
     }
 
@@ -65,15 +60,6 @@ public class ApplicationController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(ApiResult.success(applicationService.getMyApplications(principal.getUserId())));
-    }
-
-    @Operation(summary = "내 신청 상세 조회 (회원)", description = "로그인된 회원이 자신의 신청 내역과 작성한 답변을 조회합니다.")
-    @GetMapping("/api/applications/{id}")
-    public ResponseEntity<ApiResult<ApplicationCheckResponse>> getMyApplication(
-            @PathVariable UUID id,
-            @AuthenticationPrincipal UserPrincipal principal
-    ) {
-        return ResponseEntity.ok(ApiResult.success(applicationService.getMyApplication(id, principal.getUserId())));
     }
 
     @Operation(summary = "신청 취소 (회원)", description = "로그인된 회원이 자신의 신청을 취소합니다.")
