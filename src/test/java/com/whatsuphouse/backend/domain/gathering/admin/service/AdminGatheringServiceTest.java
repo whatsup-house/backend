@@ -309,6 +309,41 @@ class AdminGatheringServiceTest {
     }
 
     @Test
+    @DisplayName("이미 저장된 공개 URL을 그대로 되돌려보내면 move() 미호출, 사진 그대로 유지하고 수정 성공")
+    void updateGathering_withAlreadyStoredPublicUrl_doesNotMoveAndKeepsUrl() {
+        // given: 수정 폼은 저장된 thumbnailUrl을 prefill 해서 그대로 되돌려보낸다.
+        // 이 값을 다시 move() 하면 sourceKey가 없어 IMAGE_UPLOAD_FAILED로 수정이 막혔다.
+        String storedUrl = "https://storage.example.com/gathering/550e8400.jpg";
+        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", storedUrl);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+
+        // when
+        GatheringDetailResponse response = adminGatheringService.updateGathering(gatheringId, request);
+
+        // then
+        then(storageService).should(never()).move(any(), any());
+        assertThat(response.getThumbnailUrl()).isEqualTo(storedUrl);
+    }
+
+    @Test
+    @DisplayName("temp 경로가 아닌 외부 이미지 URL로 생성하면 move() 미호출, 입력값 그대로 저장")
+    void createGathering_withExternalImageUrl_doesNotMoveAndStoresAsIs() {
+        // given
+        String externalUrl = "https://example.com/thumbnail.jpg";
+        GatheringCreateRequest request = buildCreateRequest("재즈 게더링", externalUrl);
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        GatheringDetailResponse response = adminGatheringService.createGathering(request);
+
+        // then
+        then(storageService).should(never()).move(any(), any());
+        assertThat(response.getThumbnailUrl()).isEqualTo(externalUrl);
+    }
+
+    @Test
     @DisplayName("게더링 수정 성공 - 기본 필드 검증")
     void updateGathering_success() {
         // given
