@@ -76,7 +76,7 @@ class GatheringRepositoryTest {
     @DisplayName("날짜로 게더링 조회 시 시작 시간 오름차순으로 정렬")
     void findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc_sortsByStartTime() {
         saveGathering("퇴근 게더링", eventDate, LocalTime.of(19, 30));
-        saveGathering("15반 1학기 종강파티", eventDate, LocalTime.of(18, 30));
+        saveGathering("이른 저녁 게더링", eventDate, LocalTime.of(18, 30));
         em.flush();
         em.clear();
 
@@ -84,7 +84,7 @@ class GatheringRepositoryTest {
                 eventDate);
 
         assertThat(result).extracting(Gathering::getTitle)
-                .containsExactly("15반 1학기 종강파티", "퇴근 게더링");
+                .containsExactly("이른 저녁 게더링", "퇴근 게더링");
     }
 
     @Test
