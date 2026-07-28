@@ -46,6 +46,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminGatheringService {
 
+    // StorageService.upload()가 반환하는 임시 경로 접두사. 이 값으로 시작할 때만 move 대상이다.
+    private static final String TEMP_PATH_PREFIX = "temp/";
+
     private final GatheringRepository gatheringRepository;
     private final LocationRepository locationRepository;
     private final ApplicationRepository applicationRepository;
@@ -117,11 +120,7 @@ public class AdminGatheringService {
         validateSchedule(request.getEventDate(), request.getStartTime(), request.getEndTime());
         Location location = locationRepository.findByIdAndDeletedAtIsNull(request.getLocationId())
                 .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
-        // Storage move는 @Transactional 내부에서 호출됨. DB save 실패 시 파일은 롤백 불가.
-        // 소규모 어드민 API 특성상 현 구조를 유지하며 trade-off를 허용함 (Carousel과 동일 패턴).
-        String thumbnailUrl = StringUtils.hasText(request.getThumbnailUrl())
-                ? storageService.move(request.getThumbnailUrl(), "gathering")
-                : null;
+        String thumbnailUrl = resolveThumbnailUrl(request.getThumbnailUrl(), null);
         Gathering gathering = Gathering.builder()
                 .title(request.getTitle())
                 .description(request.getDescription())
@@ -151,11 +150,7 @@ public class AdminGatheringService {
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
         Location location = locationRepository.findByIdAndDeletedAtIsNull(request.getLocationId())
                 .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
-        // Storage move는 @Transactional 내부에서 호출됨. DB save 실패 시 파일은 롤백 불가.
-        // 소규모 어드민 API 특성상 현 구조를 유지하며 trade-off를 허용함 (Carousel과 동일 패턴).
-        String thumbnailUrl = StringUtils.hasText(request.getThumbnailUrl())
-                ? storageService.move(request.getThumbnailUrl(), "gathering")
-                : gathering.getThumbnailUrl();
+        String thumbnailUrl = resolveThumbnailUrl(request.getThumbnailUrl(), gathering.getThumbnailUrl());
         gathering.update(request.getTitle(), request.getDescription(), location,
                 request.getEventDate(), request.getStartTime(), request.getEndTime(),
                 request.getPrice(), request.getMaxAttendees(), thumbnailUrl, request.getHowToRun(),
@@ -163,6 +158,27 @@ public class AdminGatheringService {
         // 변경된 ko 원문 재번역 (원문 미변경 필드는 해시 비교로 자동 스킵) (KAN-267)
         publishTranslation(gathering);
         return GatheringDetailResponse.from(gathering);
+    }
+
+    /**
+     * 요청으로 들어온 thumbnailUrl을 저장할 최종 URL로 변환한다.
+     *
+     * upload()가 돌려주는 임시 경로(temp/...)일 때만 정식 폴더로 move 한다.
+     * 수정 폼은 이미 저장된 공개 URL을 그대로 prefill 해서 되돌려보내는데, 그 값을 다시 move 하면
+     * sourceKey가 존재하지 않아 IMAGE_UPLOAD_FAILED로 수정 자체가 막힌다. 이미 정식 URL인 값은
+     * 이동 없이 그대로 사용한다. (외부 이미지 URL을 직접 입력하는 경우도 동일하게 처리된다.)
+     *
+     * Storage move는 @Transactional 내부에서 호출됨. DB save 실패 시 파일은 롤백 불가.
+     * 소규모 어드민 API 특성상 현 구조를 유지하며 trade-off를 허용함 (Carousel과 동일 패턴).
+     */
+    private String resolveThumbnailUrl(String requestedThumbnailUrl, String currentThumbnailUrl) {
+        if (!StringUtils.hasText(requestedThumbnailUrl)) {
+            return currentThumbnailUrl;
+        }
+        if (requestedThumbnailUrl.startsWith(TEMP_PATH_PREFIX)) {
+            return storageService.move(requestedThumbnailUrl, "gathering");
+        }
+        return requestedThumbnailUrl;
     }
 
     // 게더링의 번역 대상 ko 필드(title/description)를 자동 번역 이벤트로 발행한다. (KAN-267)
