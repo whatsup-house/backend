@@ -28,8 +28,17 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final CustomAuthEntryPoint customAuthEntryPoint;
 
+    // CORS 허용 출처. WebSocketConfig(/ws-chat)도 같은 목록을 쓴다.
+    public static final List<String> ALLOWED_ORIGINS = List.of(
+            "http://localhost:3000",
+            "https://whatsup-house.vercel.app",
+            "https://whatsup.house",
+            "https://www.whatsup.house"
+    );
+
     private static final String[] PERMIT_ALL = {
         "/api/auth/**",
+        "/ws-chat", // STOMP 핸드셰이크. 인증은 CONNECT 프레임의 Authorization 헤더(ChatStompInterceptor)
         "/swagger-ui/**",
         "/api-docs/**",
         "/actuator/health"
@@ -75,12 +84,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-                "http://localhost:3000",
-                "https://whatsup-house.vercel.app",
-                "https://whatsup.house",
-                "https://www.whatsup.house"
-        ));
+        config.setAllowedOrigins(ALLOWED_ORIGINS);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

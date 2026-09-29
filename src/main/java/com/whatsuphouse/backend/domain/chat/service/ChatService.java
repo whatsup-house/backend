@@ -17,6 +17,7 @@ import com.whatsuphouse.backend.domain.chat.enums.ChatMessageType;
 import com.whatsuphouse.backend.domain.chat.event.ChatMemberChangedEvent;
 import com.whatsuphouse.backend.domain.chat.event.ChatMessageCreatedEvent;
 import com.whatsuphouse.backend.domain.chat.event.ChatMessageDeletedEvent;
+import com.whatsuphouse.backend.domain.chat.event.ChatMessageReadEvent;
 import com.whatsuphouse.backend.domain.chat.event.ChatMessageUpdatedEvent;
 import com.whatsuphouse.backend.domain.chat.event.ChatReactionChangedEvent;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMemberRepository;
@@ -247,6 +248,22 @@ public class ChatService {
             }
         }
         me.markRead(messageId);
+        eventPublisher.publishEvent(new ChatMessageReadEvent(roomId, userId, messageId));
+    }
+
+    /** STOMP CONNECT: 정지·탈퇴 계정은 소켓 연결을 거부한다(설계 8절). */
+    @Transactional(readOnly = true)
+    public void checkConnectable(UUID userId) {
+        if (!isActiveAccount(userId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    /** STOMP SUBSCRIBE /topic/rooms/{roomId}: 참여 중(left_at NULL) 멤버만. */
+    @Transactional(readOnly = true)
+    public void checkSubscribe(UUID roomId, UUID userId) {
+        findRoom(roomId);
+        accessPolicy.checkMember(findMemberOrNull(roomId, userId));
     }
 
     private void validateContent(ChatMessageType type, String content, UUID userId) {

@@ -235,7 +235,7 @@ public class ChatResponseAssembler {
                 .toList();
     }
 
-    private ChatLastMessageResponse toLastMessage(ChatMessage m) {
+    public ChatLastMessageResponse toLastMessage(ChatMessage m) {
         return ChatLastMessageResponse.builder()
                 .id(m.getId())
                 .type(m.getType())
