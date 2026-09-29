@@ -12,6 +12,7 @@ import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetRequestRes
 import com.whatsuphouse.backend.domain.auth.dto.response.RegisterResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.TokenRefreshResponse;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
+import com.whatsuphouse.backend.global.auth.AuthCookieProvider;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,7 +23,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -35,10 +35,8 @@ import java.util.Arrays;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private static final String ACCESS_TOKEN = "accessToken";
-    private static final String REFRESH_TOKEN = "refreshToken";
-
     private final AuthService authService;
+    private final AuthCookieProvider authCookieProvider;
 
     @Operation(summary = "회원가입", description = "이메일, 비밀번호, 닉네임 등 기본 정보로 회원가입한다.")
     @PostMapping("/register")
@@ -53,8 +51,7 @@ public class AuthController {
     public ResponseEntity<ApiResult<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = authService.login(request);
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, buildCookie(ACCESS_TOKEN, response.getAccessToken()).toString())
-                .header(HttpHeaders.SET_COOKIE, buildCookie(REFRESH_TOKEN, response.getRefreshToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, authCookieProvider.issue(response.getAccessToken(), response.getRefreshToken()))
                 .body(ApiResult.success("로그인되었습니다.", response));
     }
 
@@ -63,19 +60,17 @@ public class AuthController {
     public ResponseEntity<ApiResult<Void>> logout(@AuthenticationPrincipal UserPrincipal principal) {
         authService.logout(principal.getUserId());
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, expireCookie(ACCESS_TOKEN).toString())
-                .header(HttpHeaders.SET_COOKIE, expireCookie(REFRESH_TOKEN).toString())
+                .header(HttpHeaders.SET_COOKIE, authCookieProvider.expire())
                 .body(ApiResult.success("로그아웃되었습니다.", null));
     }
 
     @Operation(summary = "토큰 갱신", description = "refreshToken 쿠키로 새 accessToken, refreshToken을 HttpOnly 쿠키로 재발급한다.")
     @PostMapping("/refresh")
     public ResponseEntity<ApiResult<Void>> refresh(HttpServletRequest request) {
-        String refreshToken = extractCookie(request, REFRESH_TOKEN);
+        String refreshToken = extractCookie(request, AuthCookieProvider.REFRESH_TOKEN);
         TokenRefreshResponse response = authService.refresh(refreshToken);
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, buildCookie(ACCESS_TOKEN, response.getAccessToken()).toString())
-                .header(HttpHeaders.SET_COOKIE, buildCookie(REFRESH_TOKEN, response.getRefreshToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, authCookieProvider.issue(response.getAccessToken(), response.getRefreshToken()))
                 .body(ApiResult.success("토큰이 갱신되었습니다.", null));
     }
 
@@ -128,25 +123,6 @@ public class AuthController {
     public ResponseEntity<ApiResult<com.whatsuphouse.backend.domain.auth.dto.response.GuestEmailVerificationResponse>> confirmRegisterEmailVerification(
             @Valid @RequestBody com.whatsuphouse.backend.domain.auth.dto.request.GuestEmailVerificationConfirmRequest request) {
         return ResponseEntity.ok(ApiResult.success(authService.confirmGuestEmailVerification(request)));
-    }
-
-    private ResponseCookie buildCookie(String name, String value) {
-        return ResponseCookie.from(name, value)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("Lax")
-                .path("/")
-                .build();
-    }
-
-    private ResponseCookie expireCookie(String name) {
-        return ResponseCookie.from(name, "")
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("Lax")
-                .path("/")
-                .maxAge(0)
-                .build();
     }
 
     private String extractCookie(HttpServletRequest request, String name) {
