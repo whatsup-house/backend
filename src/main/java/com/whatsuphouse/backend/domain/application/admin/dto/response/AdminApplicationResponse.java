@@ -6,10 +6,8 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
-import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatus;
-import com.whatsuphouse.backend.domain.participant.enums.ParticipantType;
-import com.whatsuphouse.backend.domain.participant.enums.RandomTableEligibility;
+import com.whatsuphouse.backend.domain.user.enums.RandomTableEligibility;
+import com.whatsuphouse.backend.domain.user.enums.UserAccountStatus;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import lombok.Builder;
 import lombok.Getter;
@@ -42,9 +40,7 @@ public class AdminApplicationResponse {
     private UUID gatheringId;
     private GatheringType gatheringType;
     private UUID userId;
-    private UUID participantId;
-    private ParticipantType participantType;
-    private ParticipantAccountStatus participantAccountStatus;
+    private UserAccountStatus accountStatus;
     private RandomTableEligibility randomTableEligibility;
     private LocalDateTime reviewedAt;
     private String rejectionReason;
@@ -59,7 +55,6 @@ public class AdminApplicationResponse {
 
     public static AdminApplicationResponse from(Application application, List<AnswerView> answers) {
         User user = application.getUser();
-        Participant participant = application.getParticipant();
         return AdminApplicationResponse.builder()
                 .id(application.getId())
                 .bookingNumber(application.getBookingNumber())
@@ -80,10 +75,8 @@ public class AdminApplicationResponse {
                 .gatheringId(application.getGathering().getId())
                 .gatheringType(application.getGathering().getGatheringType())
                 .userId(user != null ? user.getId() : null)
-                .participantId(participant != null ? participant.getId() : null)
-                .participantType(participant != null ? participant.getParticipantType() : null)
-                .participantAccountStatus(participant != null ? participant.getAccountStatus() : null)
-                .randomTableEligibility(participant != null ? participant.getRandomTableEligibility() : null)
+                .accountStatus(user != null ? user.getEffectiveAccountStatus() : null)
+                .randomTableEligibility(user != null ? user.getRandomTableEligibility() : null)
                 .reviewedAt(application.getReviewedAt())
                 .rejectionReason(application.getRejectionReason())
                 .createdAt(application.getCreatedAt())

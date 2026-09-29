@@ -67,6 +67,7 @@ public enum ErrorCode {
     ALREADY_ATTENDED("이미 출석 처리된 신청입니다.", HttpStatus.CONFLICT),
     PARTICIPANT_BLOCKED("차단된 참가자는 우연한 식탁을 신청할 수 없습니다.", HttpStatus.FORBIDDEN),
     RANDOM_TABLE_ELIGIBILITY_RESTRICTED("우연한 식탁 참여 자격이 제한된 상태입니다.", HttpStatus.FORBIDDEN),
+    RANDOM_TABLE_MEMBERS_ONLY("우연한 식탁은 회원만 신청할 수 있습니다.", HttpStatus.FORBIDDEN),
     REJECTION_REASON_REQUIRED("신청 거절 사유는 필수입니다.", HttpStatus.BAD_REQUEST),
 
     // Location

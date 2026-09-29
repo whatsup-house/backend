@@ -34,3 +34,8 @@ logging:
   level:
     root: WARN
     com.whatsuphouse: INFO
+
+# 인증 쿠키 Domain (KAN-324). www 의 Next.js 서버도 로그인 쿠키를 받도록 상위 도메인으로 발급한다.
+# local 은 미설정(localhost 는 Domain 지정 불가) → host-only 쿠키.
+app:
+  cookie-domain: .whatsup.house

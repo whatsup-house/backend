@@ -1,6 +1,6 @@
-package com.whatsuphouse.backend.domain.form.repository;
+package com.whatsuphouse.backend.domain.application.repository;
 
-import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
