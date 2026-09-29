@@ -2,18 +2,14 @@ package com.whatsuphouse.backend.domain.gathering.admin.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.SuperBuilder;
 
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
-import java.util.UUID;
 
+// 모임 종류 필드. 날짜·장소·정원 등 회차 필드는 GatheringSessionRequest. (KAN-338)
 @Getter
 @SuperBuilder
 @NoArgsConstructor
@@ -32,28 +28,9 @@ public abstract class GatheringBaseRequest {
     @Schema(example = "[\"취미\", \"2030\", \"소규모\"]", description = "게더링 태그 목록 (선택)")
     private List<String> tags;
 
-    @Schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
-    @NotNull
-    private UUID locationId;
-
-    @Schema(example = "2026-05-10")
-    @NotNull
-    private LocalDate eventDate;
-
-    @Schema(example = "19:00:00")
-    private LocalTime startTime;
-
-    @Schema(example = "21:00:00")
-    private LocalTime endTime;
-
-    @Schema(example = "15000")
+    @Schema(example = "15000", description = "기본 가격. 회차에서 priceOverride로 덮어쓸 수 있다")
     @PositiveOrZero
-    private Integer price;
-
-    @Schema(example = "10")
-    @NotNull
-    @Positive
-    private Integer maxAttendees;
+    private Integer basePrice;
 
     @Schema(example = "https://example.com/thumbnail.jpg")
     private String thumbnailUrl;

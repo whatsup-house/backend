@@ -1,9 +1,11 @@
 package com.whatsuphouse.backend.domain.application.repository;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -34,6 +36,9 @@ class ApplicationRepositoryTest {
 
     @Autowired
     private ApplicationRepository applicationRepository;
+
+    @Autowired
+    private ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
 
     @Autowired
     private GatheringRepository gatheringRepository;
@@ -227,7 +232,82 @@ class ApplicationRepositoryTest {
         assertThat(total).isEqualTo(1);
     }
 
+    // ── 우연한 식탁 희망 회차 (KAN-338) ─────────────────────────────────────
+
+    @Test
+    @DisplayName("회차별 신청 목록에는 배정 전 우연한 식탁 신청 중 그 회차를 희망한 신청도 포함된다")
+    void findApplications_includesUnassignedCandidates() {
+        // given
+        Gathering randomTable = gatheringRepository.save(Gathering.builder()
+                .title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
+        GatheringSession week1 = saveSession(randomTable, LocalDate.now().plusDays(7));
+        GatheringSession week2 = saveSession(randomTable, LocalDate.now().plusDays(14));
+        Application wantsBoth = saveUnassigned("WH-RT-0001", randomTable, week1, week2);
+        Application wantsWeek2 = saveUnassigned("WH-RT-0002", randomTable, week2);
+        em.flush();
+        em.clear();
+
+        // when
+        List<Application> week1Applicants = applicationRepository.findApplications(week1.getId(), null);
+        List<Application> week2Applicants = applicationRepository.findApplications(week2.getId(), null);
+
+        // then
+        assertThat(week1Applicants).extracting(Application::getId).containsExactly(wantsBoth.getId());
+        assertThat(week2Applicants).extracting(Application::getId)
+                .containsExactlyInAnyOrder(wantsBoth.getId(), wantsWeek2.getId());
+    }
+
+    @Test
+    @DisplayName("희망 회차 중복 검사·신청 존재 검사는 취소(soft delete)된 신청을 제외한다")
+    void candidateExistsQueries_excludeCancelledApplications() {
+        // given
+        Gathering randomTable = gatheringRepository.save(Gathering.builder()
+                .title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
+        GatheringSession week1 = saveSession(randomTable, LocalDate.now().plusDays(7));
+        GatheringSession week2 = saveSession(randomTable, LocalDate.now().plusDays(14));
+        Application active = saveUnassigned("WH-RT-0003", randomTable, week1);
+        Application cancelled = saveUnassigned("WH-RT-0004", randomTable, week2);
+        cancelled.cancel();
+        em.flush();
+        em.clear();
+
+        // when & then
+        assertThat(applicationCandidateSessionRepository
+                .existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(List.of(week1.getId()), user.getId()))
+                .isTrue();
+        assertThat(applicationCandidateSessionRepository
+                .existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(List.of(week2.getId()), user.getId()))
+                .isFalse();
+        assertThat(applicationCandidateSessionRepository
+                .existsBySession_IdInAndApplication_DeletedAtIsNull(List.of(week2.getId()))).isFalse();
+        assertThat(applicationRepository.existsBySession_IdInAndDeletedAtIsNull(List.of(week1.getId()))).isFalse();
+        assertThat(active.getSession()).isNull();
+    }
+
     // ── helper ───────────────────────────────────────────────────────────────
+
+    private GatheringSession saveSession(Gathering kind, LocalDate eventDate) {
+        return gatheringSessionRepository.save(GatheringSession.builder()
+                .gathering(kind)
+                .eventDate(eventDate)
+                .maxAttendees(10)
+                .build());
+    }
+
+    // 배정 회차 없이 희망 회차만 가진 우연한 식탁 신청(회원).
+    private Application saveUnassigned(String bookingNumber, Gathering kind, GatheringSession... candidates) {
+        Application saved = applicationRepository.save(Application.builder()
+                .bookingNumber(bookingNumber)
+                .gathering(kind)
+                .user(user)
+                .name(user.getName())
+                .phone(user.getPhone())
+                .build());
+        for (int i = 0; i < candidates.length; i++) {
+            applicationCandidateSessionRepository.save(new ApplicationCandidateSession(saved, candidates[i], i + 1));
+        }
+        return saved;
+    }
 
     private GatheringSession saveSession(LocalDate eventDate) {
         return gatheringSessionRepository.save(GatheringSession.builder()

@@ -36,6 +36,11 @@ public enum ErrorCode {
     GATHERING_NOT_RECRUITING("모집중인 게더링이 아닙니다.", HttpStatus.BAD_REQUEST),
     INVALID_GATHERING_DATE("게더링 날짜는 오늘 이후로 선택해주세요.", HttpStatus.BAD_REQUEST),
     INVALID_GATHERING_TIME("시작 시간은 종료 시간보다 빨라야 합니다.", HttpStatus.BAD_REQUEST),
+    SESSION_NOT_FOUND("존재하지 않는 회차입니다.", HttpStatus.NOT_FOUND),
+    SINGLE_SESSION_REQUIRED("일반 모임은 회차를 하나만 선택해야 합니다.", HttpStatus.BAD_REQUEST),
+    APPLY_DEADLINE_PASSED("신청 마감 시간이 지난 회차입니다.", HttpStatus.BAD_REQUEST),
+    SESSION_HAS_APPLICATIONS("신청이 있는 회차는 삭제할 수 없습니다.", HttpStatus.CONFLICT),
+    INVALID_REPEAT_RANGE("반복 종료일은 회차 날짜부터 1년 이내로 선택해주세요.", HttpStatus.BAD_REQUEST),
 
     // Form
     FORM_NOT_FOUND("신청폼이 존재하지 않습니다.", HttpStatus.NOT_FOUND),

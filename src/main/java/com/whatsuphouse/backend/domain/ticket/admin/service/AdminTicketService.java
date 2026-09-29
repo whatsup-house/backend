@@ -99,7 +99,8 @@ public class AdminTicketService {
         TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNull(passId)
                 .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
         Application paymentPending = resolvePaymentPendingApplication(pass);
-        if (paymentPending != null) {
+        // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 정원을 세지 않는다. (KAN-338)
+        if (paymentPending != null && paymentPending.getSession() != null) {
             int occupied = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
                     paymentPending.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING);
             if (occupied >= paymentPending.getSession().getMaxAttendees()) {

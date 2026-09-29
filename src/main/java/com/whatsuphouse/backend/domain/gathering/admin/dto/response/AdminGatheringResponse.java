@@ -16,8 +16,11 @@ import java.util.UUID;
 @Builder
 public class AdminGatheringResponse {
 
-    @Schema(description = "게더링 ID", example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+    @Schema(description = "회차 ID", example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
     private UUID id;
+
+    @Schema(description = "모임 종류 ID (종류 수정·삭제·회차 추가에 쓴다)", example = "b2c3d4e5-f6a7-8901-bcde-f12345678901")
+    private UUID gatheringId;
 
     @Schema(description = "제목", example = "재즈 게더링")
     private String title;
@@ -67,6 +70,7 @@ public class AdminGatheringResponse {
 
         return AdminGatheringResponse.builder()
                 .id(session.getId())
+                .gatheringId(session.getGathering().getId())
                 .title(session.getGathering().getTitle())
                 .eventDate(session.getEventDate())
                 .startTime(session.getStartTime())

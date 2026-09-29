@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.client.controller;
 
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
+import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationCreateRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
@@ -27,7 +28,19 @@ public class ApplicationController {
 
     private final ApplicationService applicationService;
 
-    @Operation(summary = "게더링 신청 (회원)", description = "로그인된 회원이 게더링에 신청합니다.")
+    @Operation(summary = "모임 신청 (회원)", description = "모임 종류 ID와 희망 회차 ID 목록으로 신청합니다. "
+            + "일반 모임은 회차를 정확히 1개 골라야 하며 그 회차로 바로 배정됩니다. "
+            + "우연한 식탁은 1개 이상 고르며(앞일수록 우선) 매칭 대기(WAITING) 상태로 접수됩니다. "
+            + "마감이 지난 회차는 신청할 수 없습니다.")
+    @PostMapping("/api/applications")
+    public ResponseEntity<ApiResult<ApplicationResponse>> create(
+            @Valid @RequestBody ApplicationCreateRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResult.success(applicationService.apply(request, principal.getUserId())));
+    }
+
+    @Operation(summary = "게더링 신청 (회원, 기존 경로)", description = "경로의 gatheringId는 회차 ID입니다. POST /api/applications로 대체됩니다.")
     @PostMapping("/api/gatherings/{gatheringId}/applications")
     public ResponseEntity<ApiResult<ApplicationResponse>> apply(
             @PathVariable UUID gatheringId,
@@ -37,7 +50,7 @@ public class ApplicationController {
         return ResponseEntity.ok(ApiResult.success(applicationService.apply(gatheringId, request, principal.getUserId())));
     }
 
-    @Operation(summary = "게더링 신청 (비회원)", description = "비회원이 게더링에 신청합니다.")
+    @Operation(summary = "게더링 신청 (비회원)", description = "비회원이 일반 모임 회차에 신청합니다. 경로의 gatheringId는 회차 ID입니다.")
     @PostMapping("/api/gatherings/{gatheringId}/applications/guest")
     public ResponseEntity<ApiResult<ApplicationResponse>> applyAsGuest(
             @PathVariable UUID gatheringId,

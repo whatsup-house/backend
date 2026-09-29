@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.service;
 
 import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
+import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationCreateRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
@@ -10,6 +11,8 @@ import com.whatsuphouse.backend.domain.application.client.service.ApplicationSer
 import com.whatsuphouse.backend.domain.auth.event.GuestEmailVerificationConsumedEvent;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
+import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.form.entity.Form;
@@ -37,6 +40,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -44,6 +48,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +61,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
@@ -171,12 +177,11 @@ class ApplicationServiceTest {
         ReflectionTestUtils.setField(randomTable, "gatheringType", GatheringType.RANDOM_TABLE);
 
         given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
                 .willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         user.approveRandomTable();
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(true);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
@@ -196,11 +201,10 @@ class ApplicationServiceTest {
         user.approveRandomTable();
 
         given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -217,11 +221,10 @@ class ApplicationServiceTest {
         user.approveRandomTable();
 
         given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(sessionId, request, userId);
@@ -239,11 +242,10 @@ class ApplicationServiceTest {
         user.rejectRandomTable();
 
         given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
         given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
         given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
-        given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
 
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
                 .isInstanceOf(CustomException.class)
@@ -390,6 +392,104 @@ class ApplicationServiceTest {
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, null))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ALREADY_APPLIED);
+    }
+
+    // ── apply(ApplicationCreateRequest) — 종류 + 희망 회차 (KAN-338) ─────────
+
+    @Test
+    @DisplayName("일반 모임에 회차를 2개 고르면 SINGLE_SESSION_REQUIRED")
+    void applyWithCandidates_regularWithTwoSessions_throwsException() {
+        // given
+        GatheringSession other = otherSessionOf(gathering);
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(other.getId())).willReturn(Optional.of(other));
+
+        // when & then
+        assertThatThrownBy(() -> applicationService.apply(createRequest(sessionId, other.getId()), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SINGLE_SESSION_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁은 희망 회차를 요청 순서대로 저장하고, 배정 회차 없이 매칭 대기(WAITING)로 접수한다")
+    void applyWithCandidates_randomTable_savesCandidatesInOrderAndWaits() {
+        // given
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        GatheringSession first = sessionOf(randomTable, LocalDate.now().plusDays(7), 6);
+        GatheringSession second = otherSessionOf(randomTable);
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(first.getId())).willReturn(Optional.of(first));
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(second.getId())).willReturn(Optional.of(second));
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(
+                List.of(second.getId(), first.getId()), userId)).willReturn(false);
+        ArgumentCaptor<Application> savedApplication = ArgumentCaptor.forClass(Application.class);
+        given(applicationRepository.save(savedApplication.capture())).willAnswer(inv -> inv.getArgument(0));
+
+        // when: 두 번째로 만든 회차를 1순위로 고른다
+        ApplicationResponse response = applicationService.apply(createRequest(second.getId(), first.getId()), userId);
+
+        // then
+        Application application = savedApplication.getValue();
+        assertThat(application.getSession()).isNull();
+        assertThat(application.getGathering()).isSameAs(randomTable);
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
+        assertThat(response.getGatheringId()).isEqualTo(gatheringId);
+        ArgumentCaptor<ApplicationCandidateSession> candidates = ArgumentCaptor.forClass(ApplicationCandidateSession.class);
+        then(applicationCandidateSessionRepository).should(times(2)).save(candidates.capture());
+        assertThat(candidates.getAllValues()).extracting(ApplicationCandidateSession::getSession)
+                .containsExactly(second, first);
+        assertThat(candidates.getAllValues()).extracting(ApplicationCandidateSession::getPriority)
+                .containsExactly(1, 2);
+        then(applicationRepository).should(never()).countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any());
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 희망 회차 중 하나라도 이미 신청했으면 ALREADY_APPLIED")
+    void applyWithCandidates_randomTableAlreadyAppliedToCandidate_throwsException() {
+        // given
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 6);
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(
+                List.of(sessionId), userId)).willReturn(true);
+
+        // when & then
+        assertThatThrownBy(() -> applicationService.apply(createRequest(sessionId), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ALREADY_APPLIED);
+    }
+
+    @Test
+    @DisplayName("신청 마감이 지난 회차에 신청하면 APPLY_DEADLINE_PASSED")
+    void applyWithCandidates_deadlinePassed_throwsException() {
+        // given
+        ReflectionTestUtils.setField(session, "applyDeadlineAt", LocalDateTime.now().minusMinutes(1));
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+
+        // when & then
+        assertThatThrownBy(() -> applicationService.apply(createRequest(sessionId), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.APPLY_DEADLINE_PASSED);
+    }
+
+    @Test
+    @DisplayName("다른 종류의 회차를 고르면 SESSION_NOT_FOUND")
+    void applyWithCandidates_sessionOfOtherGathering_throwsException() {
+        // given
+        Gathering otherKind = Gathering.builder().title("다른 모임").build();
+        ReflectionTestUtils.setField(otherKind, "id", UUID.randomUUID());
+        GatheringSession foreign = otherSessionOf(otherKind);
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(foreign.getId())).willReturn(Optional.of(foreign));
+
+        // when & then
+        assertThatThrownBy(() -> applicationService.apply(createRequest(foreign.getId()), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_NOT_FOUND);
     }
 
     // ── cancel() ─────────────────────────────────────────────────────────────
@@ -545,6 +645,26 @@ class ApplicationServiceTest {
                 .maxAttendees(maxAttendees)
                 .build();
         ReflectionTestUtils.setField(created, "id", sessionId);
+        return created;
+    }
+
+    // 같은 종류의 다른 회차(다음 주). ID는 새로 만든다.
+    private GatheringSession otherSessionOf(Gathering kind) {
+        GatheringSession created = GatheringSession.builder()
+                .gathering(kind)
+                .eventDate(LocalDate.now().plusDays(14))
+                .maxAttendees(6)
+                .build();
+        ReflectionTestUtils.setField(created, "id", UUID.randomUUID());
+        return created;
+    }
+
+    // 요청 종류 ID는 setUp의 gatheringId.
+    private ApplicationCreateRequest createRequest(UUID... candidateSessionIds) {
+        ApplicationCreateRequest created = new ApplicationCreateRequest();
+        ReflectionTestUtils.setField(created, "gatheringId", gatheringId);
+        ReflectionTestUtils.setField(created, "candidateSessionIds", List.of(candidateSessionIds));
+        ReflectionTestUtils.setField(created, "answers", List.of());
         return created;
     }
 

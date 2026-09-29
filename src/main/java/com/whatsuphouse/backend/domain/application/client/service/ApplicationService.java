@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.client.service;
 
 import com.whatsuphouse.backend.domain.application.client.dto.request.AnswerItem;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
+import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationCreateRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.request.ApplicationRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationCheckResponse;
@@ -23,8 +24,6 @@ import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
-import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
-import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
@@ -45,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -78,40 +78,69 @@ public class ApplicationService {
     private static final java.util.regex.Pattern EMAIL_PATTERN =
             java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
-    // 기존 API 호환(KAN-338 전까지): 경로의 gatheringId는 회차 ID다. 마이그레이션된 회차는 옛 게더링 ID와 같다.
+    /**
+     * 모임 신청: 종류 + 희망 회차(요청 순서 = 우선순위). (KAN-338)
+     * 일반 모임은 회차 정확히 1개이고 그 회차로 바로 배정된다. 우연한 식탁은 1개 이상이고 매칭 전까지 배정 회차가 없다.
+     */
+    @Transactional
+    public ApplicationResponse apply(ApplicationCreateRequest request, UUID userId) {
+        List<UUID> candidateIds = request.getCandidateSessionIds().stream().distinct().toList();
+        // 정원 체크~신청 저장 구간의 동시 신청 race를 막기 위해 회차 행을 잠근다. 교착을 피하려 ID 순으로 잠근다.
+        Map<UUID, GatheringSession> locked = new HashMap<>();
+        candidateIds.stream().sorted().forEach(id -> locked.put(id, gatheringSessionRepository
+                .findByIdAndDeletedAtIsNullForUpdate(id)
+                .filter(s -> s.getGathering().getId().equals(request.getGatheringId())
+                        && s.getGathering().getDeletedAt() == null)
+                .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND))));
+        return applyInternal(candidateIds.stream().map(locked::get).toList(), request.getAnswers(), userId);
+    }
+
+    // 기존 신청 경로: 경로의 gatheringId는 회차 ID다(마이그레이션된 회차는 옛 게더링 ID와 같다). 그 회차 하나를 고른 신청으로 처리한다.
     @Transactional
     public ApplicationResponse apply(UUID sessionId, ApplicationRequest request, UUID userId) {
-        return applyInternal(sessionId, request, userId);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), userId);
     }
 
     @Transactional
     public ApplicationResponse applyAsGuest(UUID sessionId, ApplicationRequest request) {
-        return applyInternal(sessionId, request, null);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), null);
+    }
+
+    private GatheringSession lockSession(UUID sessionId) {
+        return gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)
+                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
     }
 
     // applyInternal은 @Transactional 퍼블릭 메서드에서만 호출되므로 self-invocation 트랜잭션 누락 위험 없음
+    // candidates: 같은 종류의 잠근 회차들, 희망 순위 순.
     @SuppressWarnings("java:S6809")
-    private ApplicationResponse applyInternal(UUID sessionId, ApplicationRequest request, UUID userId) {
-        // 정원 체크~신청 저장 구간의 동시 신청 race를 막기 위해 회차 행을 잠근다.
-        GatheringSession session = gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-        Gathering gathering = session.getGathering();
-
-        // eventDate가 지난 모집중 회차는 effective status가 COMPLETED로 계산되어 신청이 차단된다. (KAN-163)
-        if (session.getEffectiveStatus() != GatheringStatus.OPEN) {
-            throw new CustomException(ErrorCode.GATHERING_NOT_RECRUITING);
+    private ApplicationResponse applyInternal(List<GatheringSession> candidates, List<AnswerItem> answers, UUID userId) {
+        Gathering gathering = candidates.get(0).getGathering();
+        boolean randomTable = gathering.getGatheringType() == GatheringType.RANDOM_TABLE;
+        if (!randomTable && candidates.size() != 1) {
+            throw new CustomException(ErrorCode.SINGLE_SESSION_REQUIRED);
         }
 
+        // eventDate가 지난 모집중 회차는 모집중이 아니다(KAN-163). 신청 마감이 지난 회차도 막는다.
+        LocalDateTime now = LocalDateTime.now();
+        candidates.forEach(candidate -> candidate.validateApplicable(now));
+
         // 우연한 식탁은 회원 전용이다. 비회원은 신청 단계에서 차단한다.
-        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE && userId == null) {
+        if (randomTable && userId == null) {
             throw new CustomException(ErrorCode.RANDOM_TABLE_MEMBERS_ONLY);
         }
 
+        // 배정 회차: 일반 모임은 신청 회차, 우연한 식탁은 매칭 전이라 비워 둔다.
+        GatheringSession session = randomTable ? null : candidates.get(0);
+
         // 정원은 관리자가 승인(CONFIRMED)·출석(ATTENDED) 처리한 인원만 차지한다. PENDING 신청은 정원과 무관. (KAN-236)
-        int occupiedSeats = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
-                session.getId(), ApplicationStatus.SEAT_OCCUPYING);
-        if (occupiedSeats >= session.getMaxAttendees()) {
-            throw new CustomException(ErrorCode.GATHERING_FULL);
+        // 우연한 식탁은 매칭이 회차별 인원을 정하므로 신청 단계에서 세지 않는다.
+        if (session != null) {
+            int occupiedSeats = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                    session.getId(), ApplicationStatus.SEAT_OCCUPYING);
+            if (occupiedSeats >= session.getMaxAttendees()) {
+                throw new CustomException(ErrorCode.GATHERING_FULL);
+            }
         }
 
         // 폼은 종류 단위다. 폼이 없는 게더링(시드/레거시)도 신청 가능하도록 기본 폼을 프로비저닝한다. (KAN-206)
@@ -126,19 +155,26 @@ public class ApplicationService {
                 .collect(Collectors.toMap(FormQuestion::getId, q -> q));
 
         // 회원은 이름/연락처를 계정에서 가져오므로 시스템 예약 질문은 필수 검증에서 제외한다.
-        validateAnswers(request.getAnswers(), questions, questionMap, userId != null);
+        validateAnswers(answers, questions, questionMap, userId != null);
 
         // questionKey → value 맵
-        Map<String, Object> byKey = buildAnswersByKey(request.getAnswers(), questionMap);
+        Map<String, Object> byKey = buildAnswersByKey(answers, questionMap);
 
         User user = null;
         if (userId != null) {
             user = userRepository.findByIdAndDeletedAtIsNull(userId)
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-            if (applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(session.getId(), userId)) {
+            // 우연한 식탁은 고른 희망 회차 중 하나라도 이미 신청했으면 중복이다.
+            boolean alreadyApplied = session != null
+                    ? applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(session.getId(), userId)
+                    : applicationCandidateSessionRepository
+                            .existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(
+                                    candidates.stream().map(GatheringSession::getId).toList(), userId);
+            if (alreadyApplied) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         } else {
+            // 비회원은 일반 모임만 신청할 수 있으므로(위에서 검사) 배정 회차가 항상 있다.
             String guestPhone = extractString(byKey, SystemQuestionKey.PHONE.getKey());
             if (guestPhone == null || guestPhone.isBlank()) {
                 throw new CustomException(ErrorCode.GUEST_PHONE_REQUIRED);
@@ -170,6 +206,7 @@ public class ApplicationService {
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
+                .gathering(gathering)
                 .session(session)
                 .user(user)
                 .name(name)
@@ -179,8 +216,10 @@ public class ApplicationService {
                 .build();
 
         Application saved = applicationRepository.save(application);
-        // 희망 회차: 기존 신청 흐름은 회차 하나만 고르므로 1순위 1행.
-        applicationCandidateSessionRepository.save(new ApplicationCandidateSession(saved, session, 1));
+        // 희망 회차: 요청 순서대로 1순위부터. 일반 모임은 신청 회차 1행.
+        for (int i = 0; i < candidates.size(); i++) {
+            applicationCandidateSessionRepository.save(new ApplicationCandidateSession(saved, candidates.get(i), i + 1));
+        }
         if (user == null) {
             // 트랜잭션 커밋 후에만 인증을 소비한다. 롤백 시 인증이 남아 재신청 가능. (AFTER_COMMIT 리스너)
             eventPublisher.publishEvent(new GuestEmailVerificationConsumedEvent(email));
@@ -202,7 +241,7 @@ public class ApplicationService {
             }
         }
 
-        saveAnswers(saved, request.getAnswers(), questionMap);
+        saveAnswers(saved, answers, questionMap);
 
         if (autoConfirmed) {
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(saved));
@@ -361,11 +400,31 @@ public class ApplicationService {
         // 단, 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되었으므로 중복 환불하지 않는다.
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
-                && application.getSession().getStatus() != GatheringSessionStatus.CANCELLED) {
+                && !application.isSessionCancelled()) {
             ticketService.refundOneTicket(application);
         }
 
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
+    }
+
+    /** 회차별 정원을 차지한 인원(승인+출석). 신청이 없는 회차는 결과에 없다. (KAN-338) */
+    public Map<UUID, Long> countSeatsBySessionIds(List<UUID> sessionIds) {
+        if (sessionIds.isEmpty()) {
+            return Map.of();
+        }
+        return applicationRepository.countBySessionIdsGroupByStatus(sessionIds).stream()
+                .filter(row -> ApplicationStatus.SEAT_OCCUPYING.contains(row.getStatus()))
+                .collect(Collectors.groupingBy(ApplicationRepository.ApplicationSessionCountProjection::getSessionId,
+                        Collectors.summingLong(ApplicationRepository.ApplicationSessionCountProjection::getCount)));
+    }
+
+    /** 이 회차들에 배정됐거나 희망 회차로 고른 활성 신청이 있는지. 회차 삭제 가드용. (KAN-338) */
+    public boolean hasActiveApplications(List<UUID> sessionIds) {
+        if (sessionIds.isEmpty()) {
+            return false;
+        }
+        return applicationRepository.existsBySession_IdInAndDeletedAtIsNull(sessionIds)
+                || applicationCandidateSessionRepository.existsBySession_IdInAndApplication_DeletedAtIsNull(sessionIds);
     }
 
     private String generateBookingNumber() {

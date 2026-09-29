@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.BaseEntity;
@@ -81,12 +82,17 @@ public class Application extends BaseEntity {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
+    // session이 있으면 종류는 그 회차의 종류. 회차 배정 전 우연한 식탁 신청은 session 없이 gathering만 넘긴다. (KAN-338)
     @Builder
-    public Application(String bookingNumber, GatheringSession session, User user, String name, String phone,
-                       String email, Map<String, Object> formSnapshot) {
+    public Application(String bookingNumber, Gathering gathering, GatheringSession session, User user, String name,
+                       String phone, String email, Map<String, Object> formSnapshot) {
         this.bookingNumber = bookingNumber;
         this.session = session;
-        this.gathering = session.getGathering();
+        this.gathering = session != null ? session.getGathering() : gathering;
+        // 우연한 식탁 신청은 매칭 대기로 시작한다.
+        if (this.gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
+            this.matchStatus = MatchStatus.WAITING;
+        }
         this.user = user;
         this.name = name;
         this.phone = phone;
@@ -133,19 +139,37 @@ public class Application extends BaseEntity {
     }
 
     public boolean isFreeGathering() {
-        Integer price = session.getEffectivePrice();
+        Integer price = getEffectivePrice();
         return price != null && price == 0;
     }
 
     // 일반 유료 게더링 여부. 우연한 식탁은 이용권 결제 축으로 처리하므로 여기서 제외한다. (KAN-289)
     public boolean isPaidGathering() {
-        Integer price = session.getEffectivePrice();
+        Integer price = getEffectivePrice();
         return gathering.getGatheringType() != GatheringType.RANDOM_TABLE && price != null && price > 0;
     }
 
     public boolean requiresRandomTableTicket() {
-        Integer price = session.getEffectivePrice();
+        Integer price = getEffectivePrice();
         return gathering.getGatheringType() == GatheringType.RANDOM_TABLE && (price == null || price > 0);
+    }
+
+    // 배정 회차의 가격. 회차 배정 전(우연한 식탁 매칭 전)이면 종류 기본 가격. (KAN-338)
+    private Integer getEffectivePrice() {
+        return session != null ? session.getEffectivePrice() : gathering.getBasePrice();
+    }
+
+    // 배정 회차가 취소됐는지. 배정 전이면 false(회차 취소 일괄 환불 대상이 아니었다).
+    public boolean isSessionCancelled() {
+        return session != null && session.getStatus() == GatheringSessionStatus.CANCELLED;
+    }
+
+    /**
+     * 기존 응답의 gatheringId 자리 값. 배정 회차가 있으면 회차 ID(= 옛 게더링 ID), 배정 전이면 종류 ID.
+     * GET /api/gatherings/{id}는 둘 다 종류로 해석한다. (KAN-338)
+     */
+    public UUID getLegacyGatheringId() {
+        return session != null ? session.getId() : gathering.getId();
     }
 
     public boolean isPaymentConfirmed() {
