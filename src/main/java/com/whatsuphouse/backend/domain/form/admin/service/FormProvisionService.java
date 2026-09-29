@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.form.admin.service;
 
+import com.whatsuphouse.backend.domain.form.enums.SystemQuestionKey;
 import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
@@ -34,9 +35,9 @@ public class FormProvisionService {
                         .build());
 
         formQuestionRepository.saveAll(List.of(
-                reservedQuestion(form, "name", "이름", 0),
-                reservedQuestion(form, "phone", "연락처", 1),
-                reservedQuestion(form, "email", "이메일", 2)
+                reservedQuestion(form, SystemQuestionKey.NAME.getKey(), "이름", 0),
+                reservedQuestion(form, SystemQuestionKey.PHONE.getKey(), "연락처", 1),
+                reservedQuestion(form, SystemQuestionKey.EMAIL.getKey(), "이메일", 2)
         ));
 
         return form;

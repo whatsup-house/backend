@@ -1,6 +1,6 @@
-package com.whatsuphouse.backend.domain.form.entity;
+package com.whatsuphouse.backend.domain.application.entity;
 
-import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;

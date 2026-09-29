@@ -1,16 +1,12 @@
 {
   "mcpServers": {
-    "sonarqube": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-e", "SONARQUBE_TOKEN",
-        "-e", "SONARQUBE_URL",
-        "mcp/sonarqube"
-      ],
+    "sonarqube-mcp-server": {
+      "command": "npx",
+      "args": ["-y", "sonarqube-mcp-server"],
       "env": {
-        "SONARQUBE_URL": "http://host.docker.internal:9000",
-        "SONARQUBE_TOKEN": "${SONAR_TOKEN}"
+        "SONARQUBE_URL": "https://sonarcloud.io",
+        "SONARQUBE_ORGANIZATION": "whatsup-house",
+        "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}"
       }
     }
   }

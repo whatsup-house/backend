@@ -124,9 +124,12 @@ public class AdminTicketService {
         if (linked != null) {
             return linked.getStatus() == ApplicationStatus.PAYMENT_PENDING ? linked : null;
         }
+        if (pass.getUser() == null) {
+            return null;    // 레거시 비회원 이용권: 자동 확정 대상 신청 매칭 없음
+        }
         return applicationRepository
-                .findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                        pass.getParticipant().getId(), ApplicationStatus.PAYMENT_PENDING)
+                .findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                        pass.getUser().getId(), ApplicationStatus.PAYMENT_PENDING)
                 .orElse(null);
     }
 

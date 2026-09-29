@@ -1,6 +1,6 @@
 package com.whatsuphouse.backend.domain.application.client.dto.response;
 
-import com.whatsuphouse.backend.domain.form.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import lombok.Builder;
 import lombok.Getter;
 

@@ -13,7 +13,6 @@ import com.whatsuphouse.backend.domain.review.entity.ReviewImage;
 import com.whatsuphouse.backend.domain.review.enums.ReviewType;
 import com.whatsuphouse.backend.domain.review.repository.ReviewImageRepository;
 import com.whatsuphouse.backend.domain.review.repository.ReviewRepository;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -80,7 +79,7 @@ class AdminReviewServiceTest {
         application = Application.builder()
                 .bookingNumber("WH260514-ABC123")
                 .gathering(gathering)
-                .participant(Participant.member(user))
+                .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())
                 .build();

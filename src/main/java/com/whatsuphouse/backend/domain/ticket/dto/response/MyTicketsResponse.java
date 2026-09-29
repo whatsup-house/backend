@@ -3,8 +3,8 @@ package com.whatsuphouse.backend.domain.ticket.dto.response;
 import lombok.Builder;
 import lombok.Getter;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
-import com.whatsuphouse.backend.domain.participant.enums.ParticipantAccountStatus;
-import com.whatsuphouse.backend.domain.participant.enums.RandomTableEligibility;
+import com.whatsuphouse.backend.domain.user.enums.RandomTableEligibility;
+import com.whatsuphouse.backend.domain.user.enums.UserAccountStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -13,7 +13,7 @@ import java.util.UUID;
 @Builder
 public class MyTicketsResponse {
 
-    private ParticipantAccountStatus accountStatus;
+    private UserAccountStatus accountStatus;
     private RandomTableEligibility randomTableEligibility;
     private boolean purchasable;
     private int totalRemaining;

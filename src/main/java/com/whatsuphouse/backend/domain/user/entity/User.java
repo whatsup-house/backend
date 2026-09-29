@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.user.entity;
 
+import com.whatsuphouse.backend.domain.user.enums.RandomTableEligibility;
 import com.whatsuphouse.backend.domain.user.enums.UserAccountStatus;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -75,6 +76,11 @@ public class User extends BaseEntity {
     @Column(name = "account_status", length = 20)
     private UserAccountStatus accountStatus = UserAccountStatus.ACTIVE;
 
+    // 우연한 식탁 참여 자격. 회원 전용 전환으로 Participant에서 이관. 기존 데이터 호환을 위해 nullable, null=UNREVIEWED.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "random_table_eligibility", length = 20)
+    private RandomTableEligibility randomTableEligibility = RandomTableEligibility.UNREVIEWED;
+
     @Builder
     public User(String email, String password, String name, Gender gender, Integer age, LocalDate birthDate,
                 String nickname, String phone, String instagramId, Mbti mbti, String job, String intro) {
@@ -128,6 +134,40 @@ public class User extends BaseEntity {
     /** 기존 데이터(null)는 ACTIVE로 간주한다. */
     public UserAccountStatus getEffectiveAccountStatus() {
         return accountStatus != null ? accountStatus : UserAccountStatus.ACTIVE;
+    }
+
+    /** 기존 데이터(null)는 UNREVIEWED로 간주한다. */
+    public RandomTableEligibility getRandomTableEligibility() {
+        return randomTableEligibility != null ? randomTableEligibility : RandomTableEligibility.UNREVIEWED;
+    }
+
+    public boolean isApprovedForRandomTable() {
+        return getRandomTableEligibility() == RandomTableEligibility.APPROVED;
+    }
+
+    public boolean isRandomTableEligibilityRestricted() {
+        return getRandomTableEligibility() == RandomTableEligibility.REJECTED
+                || getRandomTableEligibility() == RandomTableEligibility.SUSPENDED;
+    }
+
+    public boolean isAccountSuspended() {
+        return getEffectiveAccountStatus() == UserAccountStatus.SUSPENDED;
+    }
+
+    public boolean isBlockedFromRandomTable() {
+        return isAccountSuspended() || isRandomTableEligibilityRestricted();
+    }
+
+    public void approveRandomTable() {
+        this.randomTableEligibility = RandomTableEligibility.APPROVED;
+    }
+
+    public void rejectRandomTable() {
+        this.randomTableEligibility = RandomTableEligibility.REJECTED;
+    }
+
+    public void suspendRandomTable() {
+        this.randomTableEligibility = RandomTableEligibility.SUSPENDED;
     }
 
     public Integer addMileage(int amount) {

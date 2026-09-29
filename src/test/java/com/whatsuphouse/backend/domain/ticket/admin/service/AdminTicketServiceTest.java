@@ -4,8 +4,8 @@ import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminPendingDep
 import com.whatsuphouse.backend.domain.ticket.admin.dto.response.AdminTicketPassResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.dto.request.TicketAdjustmentRequest;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
+import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
@@ -15,7 +15,6 @@ import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import org.springframework.context.ApplicationEventPublisher;
-import com.whatsuphouse.backend.domain.participant.entity.Participant;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -62,7 +61,7 @@ class AdminTicketServiceTest {
     }
 
     private TicketPass pendingPass() {
-        return TicketPass.builder().participant(Participant.member(user)).product(TicketProduct.RANDOM_TABLE_FOUR).build();
+        return new TicketPass(user, null, new TicketProductOption("우연한 식탁 4회권", 4, 18000));
     }
 
     @Test
@@ -84,21 +83,20 @@ class AdminTicketServiceTest {
     void confirm_paymentPendingApplication_autoConfirms() {
         UUID id = UUID.randomUUID();
         TicketPass pass = pendingPass();
-        Participant participant = pass.getParticipant();
-        ReflectionTestUtils.setField(participant, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
         Gathering gathering = Gathering.builder().title("우연한 식탁")
                 .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
                 .gatheringType(GatheringType.RANDOM_TABLE).build();
         ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
         Application application = Application.builder().bookingNumber("WH-PAY-001")
-                .gathering(gathering).participant(participant).name("홍길동")
+                .gathering(gathering).user(user).name("홍길동")
                 .phone("01012345678").build();
         ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
         application.awaitPayment();
 
         given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
-        given(applicationRepository.findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                participant.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
+        given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                user.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
         given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
                 gathering.getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
 
@@ -167,21 +165,20 @@ class AdminTicketServiceTest {
     @DisplayName("입금 대기 큐는 연결된 신청자·게더링 정보를 붙여 반환한다")
     void listPendingDeposits_includesApplicationContext() {
         TicketPass pass = pendingPass();
-        Participant participant = pass.getParticipant();
-        ReflectionTestUtils.setField(participant, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
         Gathering gathering = Gathering.builder().title("우연한 식탁")
                 .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
                 .gatheringType(GatheringType.RANDOM_TABLE).build();
         ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
         Application application = Application.builder().bookingNumber("WH-PAY-002")
-                .gathering(gathering).participant(participant).name("홍길동")
+                .gathering(gathering).user(user).name("홍길동")
                 .phone("01012345678").build();
         application.awaitPayment();
 
         given(ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING))
                 .willReturn(List.of(pass));
-        given(applicationRepository.findFirstByParticipant_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                participant.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
+        given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                user.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
 
         List<AdminPendingDepositResponse> result = adminTicketService.listPendingDeposits();
 
@@ -189,8 +186,8 @@ class AdminTicketServiceTest {
         AdminPendingDepositResponse row = result.get(0);
         assertThat(row.getApplicantName()).isEqualTo("홍길동");
         assertThat(row.isMember()).isTrue();
-        assertThat(row.getProductLabel()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getLabel());
-        assertThat(row.getAmount()).isEqualTo(TicketProduct.RANDOM_TABLE_FOUR.getPrice());
+        assertThat(row.getProductLabel()).isEqualTo("우연한 식탁 4회권");
+        assertThat(row.getAmount()).isEqualTo(18000);
         assertThat(row.getBookingNumber()).isEqualTo("WH-PAY-002");
         assertThat(row.getGatheringTitle()).isEqualTo("우연한 식탁");
     }

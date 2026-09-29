@@ -2,7 +2,6 @@ package com.whatsuphouse.backend.domain.ticket.dto.response;
 
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketProduct;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -16,7 +15,6 @@ public class TicketPassResponse {
     private UUID id;
     private UUID applicationId;
     private UUID productId;
-    private TicketProduct product;
     private String productLabel;
     private int totalCount;
     private int remainingCount;
@@ -32,7 +30,6 @@ public class TicketPassResponse {
                 .id(pass.getId())
                 .applicationId(pass.getApplication() != null ? pass.getApplication().getId() : null)
                 .productId(pass.getProductOption() != null ? pass.getProductOption().getId() : null)
-                .product(pass.getProduct())
                 .productLabel(pass.getProductLabel())
                 .totalCount(pass.getTotalCount())
                 .remainingCount(pass.getRemainingCount())
