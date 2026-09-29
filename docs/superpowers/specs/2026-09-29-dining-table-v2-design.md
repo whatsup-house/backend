@@ -341,7 +341,7 @@ GET/POST/PUT/DELETE /venues        PUT /sessions/{id}/venues [{venueId, capacity
 - 테이블 상세: 날짜·지역·식당(지도·가격대)·구성원 제한 소개(닉네임·MBTI·관심사 태그만)·대화 주제·채팅방 버튼·취소 정책·체크인 버튼.
 - 행사 후 피드백 폼. 알림함은 기존 `/api/notifications` UI 재사용. 참가 이력 페이지.
 
-## 8. 마이그레이션 (Flyway V6 이후, 채팅 V5 다음)
+## 8. 마이그레이션 (채팅 마이그레이션 다음 번호)
 
 1. `gathering_sessions` 생성. 기존 `gatherings` 각 행 → 같은 `id`로 세션 행 복사(날짜·시간·장소·정원·가격→`price_override`·상태).
 2. `gatherings`를 제목 기준으로 그룹화. 그룹마다 대표 행(가장 이른 `created_at`) 하나를 종류로 남기고 나머지 행은 삭제. 세션의 `gathering_id`는 대표 행 ID로. 폼·큐레이션·썸네일은 대표 행 값.

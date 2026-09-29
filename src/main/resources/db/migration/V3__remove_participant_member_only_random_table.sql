@@ -1,9 +1,9 @@
--- V4: 우연한 식탁 회원 전용 전환 및 Participant 계층 제거
+-- V3: 우연한 식탁 회원 전용 전환 및 Participant 계층 제거
 --
 -- 배경: 비회원 이용권 구매 폐기 결정에 따라 신청(applications)·이용권(ticket_passes)의
 -- 소유 주체를 participant 경유에서 user 직결로 전환한다.
 -- participants 테이블과 기존 participant_id 컬럼은 롤백 대비를 위해 이번 릴리스에서는
--- 유지하고, 다음 릴리스에서 제거한다. (V5 예정)
+-- 유지하고, 다음 릴리스에서 제거한다. (이후 릴리스 예정)
 --
 -- 사전 조건(운영 확인 필수): 비회원 소유 ACTIVE/PENDING 이용권이 없어야 한다.
 --   SELECT count(*) FROM ticket_passes tp
@@ -41,7 +41,7 @@ UPDATE applications a
 CREATE INDEX IF NOT EXISTS idx_applications_user_id ON applications(user_id);
 
 -- 3. ticket_passes: user 직결 컬럼 추가 및 백필
--- 레거시 비회원 이용권(있다면)은 user_id NULL로 남는다. 정리 완료 후 V5에서 NOT NULL 제약 예정.
+-- 레거시 비회원 이용권(있다면)은 user_id NULL로 남는다. 정리 완료 후 이후 릴리스에서 NOT NULL 제약 예정.
 ALTER TABLE ticket_passes ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 
 UPDATE ticket_passes tp
