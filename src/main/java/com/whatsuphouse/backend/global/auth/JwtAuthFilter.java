@@ -43,7 +43,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private String resolveToken(HttpServletRequest request) {
+    // RateLimitFilter(시큐리티 체인 이전)도 같은 규칙으로 토큰을 읽는다.
+    public static String resolveToken(HttpServletRequest request) {
         String bearer = request.getHeader("Authorization");
         if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
             return bearer.substring(7);

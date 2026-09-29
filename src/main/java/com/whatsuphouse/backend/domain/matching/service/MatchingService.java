@@ -19,6 +19,7 @@ import com.whatsuphouse.backend.domain.matching.entity.MatchingMember;
 import com.whatsuphouse.backend.domain.matching.enums.MatchingGroupStatus;
 import com.whatsuphouse.backend.domain.matching.repository.MatchingGroupRepository;
 import com.whatsuphouse.backend.domain.matching.repository.MatchingMemberRepository;
+import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -312,5 +314,18 @@ public class MatchingService {
         MatchingGroup group = matchingGroupRepository.findById(groupId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
         group.updateRestaurant(name, address);
+    }
+
+    /** 조원 중 회원의 userId (채팅 단체방 멤버 프리필용). 비회원 신청은 제외. */
+    @Transactional(readOnly = true)
+    public List<UUID> listGroupMemberUserIds(UUID groupId) {
+        matchingGroupRepository.findById(groupId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+        return matchingMemberRepository.findByGroupIdWithApplication(groupId).stream()
+                .map(member -> member.getApplication().getUser())
+                .filter(Objects::nonNull)
+                .map(User::getId)
+                .distinct()
+                .toList();
     }
 }

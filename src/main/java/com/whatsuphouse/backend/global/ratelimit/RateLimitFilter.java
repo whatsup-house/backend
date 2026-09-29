@@ -1,6 +1,8 @@
 package com.whatsuphouse.backend.global.ratelimit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.whatsuphouse.backend.global.auth.JwtAuthFilter;
+import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import jakarta.servlet.FilterChain;
@@ -36,7 +38,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    private record Rule(String method, String pathPattern, String keyPrefix, int limit, Duration window) {
+    // perUser: 유효한 로그인 토큰이 있으면 사용자 기준으로 센다(없거나 무효면 IP 기준).
+    private record Rule(String method, String pathPattern, String keyPrefix, int limit, Duration window, boolean perUser) {
+        Rule(String method, String pathPattern, String keyPrefix, int limit, Duration window) {
+            this(method, pathPattern, keyPrefix, limit, window, false);
+        }
     }
 
     private static final List<Rule> RULES = List.of(
@@ -44,7 +50,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
             new Rule("POST", "/api/auth/password-reset/request", "password-reset", 3, Duration.ofHours(1)),
             new Rule("POST", "/api/auth/guest-email-verification/request", "guest-email-verification", 100, Duration.ofMinutes(30)),
             new Rule("POST", "/api/auth/register-email-verification/request", "register-email-verification", 100, Duration.ofMinutes(30)),
-            new Rule("POST", "/api/gatherings/*/applications/guest", "guest-apply", 10, Duration.ofHours(1))
+            new Rule("POST", "/api/gatherings/*/applications/guest", "guest-apply", 10, Duration.ofHours(1)),
+            // 채팅 전송은 사용자 기준: IP 기준이면 모바일 CGNAT·게더링 현장 와이파이의 다른 사용자와 한도를 나눠 쓴다.
+            new Rule("POST", "/api/chat/rooms/*/messages", "chat-message", 2, Duration.ofSeconds(1), true)
     );
 
     private static final String KEY_PREFIX = "rate-limit:";
@@ -60,6 +68,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final JwtTokenProvider jwtTokenProvider;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     @Override
@@ -71,7 +80,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (isLimitExceeded(rule, resolveClientIp(request))) {
+        if (isLimitExceeded(rule, resolveSubject(rule, request))) {
             writeTooManyRequests(response);
             return;
         }
@@ -86,8 +95,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 .orElse(null);
     }
 
-    private boolean isLimitExceeded(Rule rule, String clientIp) {
-        String key = KEY_PREFIX + rule.keyPrefix() + ":" + clientIp;
+    private boolean isLimitExceeded(Rule rule, String subject) {
+        String key = KEY_PREFIX + rule.keyPrefix() + ":" + subject;
         try {
             Long count = redisTemplate.execute(
                     INCR_WITH_TTL, List.of(key), String.valueOf(rule.window().toSeconds()));
@@ -96,6 +105,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
             log.warn("[RateLimit] Redis 연산 실패 - 제한 없이 통과: {}", e.getMessage());
             return false;
         }
+    }
+
+    private String resolveSubject(Rule rule, HttpServletRequest request) {
+        String token = rule.perUser() ? JwtAuthFilter.resolveToken(request) : null;
+        if (token != null) {
+            try {
+                return "user:" + jwtTokenProvider.getUserIdFromToken(token);
+            } catch (Exception e) {
+                // 무효·만료 토큰은 IP 기준으로 센다(어차피 인증 단계에서 401)
+            }
+        }
+        return resolveClientIp(request);
     }
 
     /**

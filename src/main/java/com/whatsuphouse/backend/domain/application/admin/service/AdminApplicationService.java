@@ -32,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -238,5 +239,18 @@ public class AdminApplicationService {
                 history.getAmount(),
                 history.getBalanceAfter()
         );
+    }
+
+    /** 게더링 참가 확정자(승인·출석) 중 회원의 userId (채팅 단체방 멤버 프리필용). 비회원 신청은 제외. */
+    public List<UUID> listConfirmedMemberUserIds(UUID gatheringId) {
+        gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
+                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        return applicationRepository.findByGatheringIdAndStatusInWithUser(gatheringId, ApplicationStatus.SEAT_OCCUPYING)
+                .stream()
+                .map(Application::getUser)
+                .filter(Objects::nonNull)
+                .map(User::getId)
+                .distinct()
+                .toList();
     }
 }

@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.global.ratelimit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,9 +13,9 @@ public class RateLimitConfig {
 
     @Bean
     public FilterRegistrationBean<RateLimitFilter> rateLimitFilter(
-            StringRedisTemplate redisTemplate, ObjectMapper objectMapper) {
+            StringRedisTemplate redisTemplate, ObjectMapper objectMapper, JwtTokenProvider jwtTokenProvider) {
         FilterRegistrationBean<RateLimitFilter> registration =
-                new FilterRegistrationBean<>(new RateLimitFilter(redisTemplate, objectMapper));
+                new FilterRegistrationBean<>(new RateLimitFilter(redisTemplate, objectMapper, jwtTokenProvider));
         // 시큐리티 필터 체인보다 먼저 실행해 인증 비용 없이 차단한다
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;
