@@ -69,4 +69,25 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
             """)
     List<RoomCount> countUnread(@Param("userId") UUID userId, @Param("roomIds") Collection<UUID> roomIds,
                                 @Param("systemType") ChatMessageType systemType);
+
+    interface UserCount {
+        UUID getUserId();
+        Long getCount();
+    }
+
+    // countUnread와 같은 규칙을 한 방의 참여 중 멤버 전원에 대해 한 번에(소켓 방 목록 갱신용). 0건인 멤버는 결과에 없다.
+    @Query("""
+            select cm.userId as userId, count(m) as count
+            from ChatMember cm
+            join ChatMessage m on m.roomId = cm.roomId
+            left join ChatMessage lr on lr.id = cm.lastReadMessageId
+            where cm.roomId = :roomId
+              and cm.leftAt is null
+              and m.type <> :systemType
+              and m.deletedAt is null
+              and m.senderId <> cm.userId
+              and (lr.id is null or m.createdAt > lr.createdAt)
+            group by cm.userId
+            """)
+    List<UserCount> countUnreadByMember(@Param("roomId") UUID roomId, @Param("systemType") ChatMessageType systemType);
 }
