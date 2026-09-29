@@ -24,7 +24,7 @@ import com.whatsuphouse.backend.domain.review.repository.ReviewImageRepository;
 import com.whatsuphouse.backend.domain.review.repository.ReviewLikeRepository;
 import com.whatsuphouse.backend.domain.review.repository.ReviewRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -54,7 +54,7 @@ public class ReviewService {
 
 
     private final ApplicationRepository applicationRepository;
-    private final GatheringRepository gatheringRepository;
+    private final GatheringService gatheringService;
     private final UserRepository userRepository;
     private final ReviewRepository reviewRepository;
     private final ReviewImageRepository reviewImageRepository;
@@ -146,9 +146,9 @@ public class ReviewService {
         return ReviewDeleteResponse.of(review.getId());
     }
 
+    // gatheringId는 종류 ID·회차 ID 모두 받는다. 후기는 종류(제목+타입) 단위로 묶인다. (KAN-337)
     public ReviewPageResponse getGatheringReviews(UUID gatheringId, ReviewSort sort, int page, int size) {
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        Gathering gathering = gatheringService.findGathering(gatheringId);
 
         Pageable pageable = PageRequest.of(page, size, toSort(sort));
         Page<Review> reviewPage = reviewRepository.findByGatheringReviewGroupAndDeletedAtIsNull(
@@ -175,8 +175,7 @@ public class ReviewService {
                 .orElseThrow(() -> new CustomException(ErrorCode.REVIEW_NOT_FOUND));
 
         if (gatheringId != null) {
-            Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                    .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+            Gathering gathering = gatheringService.findGathering(gatheringId);
             if (!isSameReviewGroup(review.getGathering(), gathering)) {
                 throw new CustomException(ErrorCode.REVIEW_NOT_FOUND);
             }
@@ -298,15 +297,13 @@ public class ReviewService {
 
         if (gatheringId != null) {
             if (sort == ReviewSort.LIKES) {
-                Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                        .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+                Gathering gathering = gatheringService.findGathering(gatheringId);
                 return reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountGreaterThan(
                         gathering.getTitle(), gathering.getGatheringType(), likeCount)
                         + reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(
                         gathering.getTitle(), gathering.getGatheringType(), likeCount, createdAt);
             }
-            Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                    .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+            Gathering gathering = gatheringService.findGathering(gatheringId);
             return reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndCreatedAtAfter(
                     gathering.getTitle(), gathering.getGatheringType(), createdAt);
         }

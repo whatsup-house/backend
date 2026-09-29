@@ -13,57 +13,58 @@ import java.util.UUID;
 
 public interface ApplicationRepository extends JpaRepository<Application, UUID>, ApplicationRepositoryCustom {
 
-    interface ApplicationCountProjection {
-        UUID getGatheringId();
+    interface ApplicationSessionCountProjection {
+        UUID getSessionId();
         ApplicationStatus getStatus();
         Long getCount();
     }
 
     @Query("""
-            SELECT a.gathering.id AS gatheringId, a.status AS status, COUNT(a) AS count
+            SELECT a.session.id AS sessionId, a.status AS status, COUNT(a) AS count
             FROM Application a
-            WHERE a.gathering.id IN :gatheringIds AND a.deletedAt IS NULL
-            GROUP BY a.gathering.id, a.status
+            WHERE a.session.id IN :sessionIds AND a.deletedAt IS NULL
+            GROUP BY a.session.id, a.status
             """)
-    List<ApplicationCountProjection> countByGatheringIdsGroupByStatus(@Param("gatheringIds") List<UUID> gatheringIds);
+    List<ApplicationSessionCountProjection> countBySessionIdsGroupByStatus(@Param("sessionIds") List<UUID> sessionIds);
 
-    // 회원이 해당 게더링에 이미 신청했는지.
-    boolean existsByGatheringIdAndUser_IdAndDeletedAtIsNull(UUID gatheringId, UUID userId);
+    // 회원이 해당 회차에 이미 신청했는지.
+    boolean existsBySession_IdAndUser_IdAndDeletedAtIsNull(UUID sessionId, UUID userId);
 
-    boolean existsByGatheringIdAndPhoneAndDeletedAtIsNull(UUID gatheringId, String phone);
+    boolean existsBySession_IdAndPhoneAndDeletedAtIsNull(UUID sessionId, String phone);
 
-    // 정원을 차지하는 인원: 관리자 승인(CONFIRMED) + 출석(ATTENDED). PENDING/CANCELLED 제외. (KAN-236)
-    int countByGatheringIdAndStatusInAndDeletedAtIsNull(UUID gatheringId, List<ApplicationStatus> statuses);
+    // 회차 정원을 차지하는 인원: 관리자 승인(CONFIRMED) + 출석(ATTENDED). PENDING/CANCELLED 제외. (KAN-236)
+    int countBySession_IdAndStatusInAndDeletedAtIsNull(UUID sessionId, List<ApplicationStatus> statuses);
 
-    @EntityGraph(attributePaths = {"gathering", "user"})
+    // session은 @Async 메일 발송에서 날짜·시간을 읽으므로 함께 로드한다.
+    @EntityGraph(attributePaths = {"gathering", "session", "user"})
     Optional<Application> findByIdAndDeletedAtIsNull(UUID id);
 
     Optional<Application> findByPhoneAndBookingNumberAndDeletedAtIsNull(String phone, String bookingNumber);
 
-    @EntityGraph(attributePaths = {"user", "gathering"})
+    @EntityGraph(attributePaths = {"user", "gathering", "session"})
     Optional<Application> findByBookingNumberAndDeletedAtIsNull(String bookingNumber);
 
-    @EntityGraph(attributePaths = "gathering")
+    @EntityGraph(attributePaths = {"gathering", "session"})
     List<Application> findByUser_IdAndDeletedAtIsNull(UUID userId);
 
     /**
-     * 모임 취소 시 알림 대상 신청자 목록 조회 (FR-NTF-06).
+     * 회차 취소 시 알림 대상 신청자 목록 조회 (FR-NTF-06).
      * PENDING/CONFIRMED 상태의 신청만 대상이며, user를 fetch join해
      * 이메일 발송 시 N+1 없이 user.email에 접근할 수 있습니다.
      */
     @Query("""
             SELECT a FROM Application a
             LEFT JOIN FETCH a.user
-            WHERE a.gathering.id = :gatheringId
+            WHERE a.session.id = :sessionId
               AND a.status IN :statuses
               AND a.deletedAt IS NULL
             """)
-    List<Application> findByGatheringIdAndStatusInWithUser(
-            @Param("gatheringId") UUID gatheringId,
+    List<Application> findBySessionIdAndStatusInWithUser(
+            @Param("sessionId") UUID sessionId,
             @Param("statuses") List<ApplicationStatus> statuses);
 
-    // 자동매칭 대상: 특정 게더링의 특정 상태(CONFIRMED) 신청 (게스트 포함, user fetch 안 함)
-    List<Application> findByGatheringIdAndStatusAndDeletedAtIsNull(UUID gatheringId, ApplicationStatus status);
+    // 자동매칭 대상: 특정 회차의 특정 상태(CONFIRMED) 신청 (게스트 포함, user fetch 안 함)
+    List<Application> findBySession_IdAndStatusAndDeletedAtIsNull(UUID sessionId, ApplicationStatus status);
 
     Optional<Application> findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
             UUID userId, ApplicationStatus status);

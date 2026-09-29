@@ -53,12 +53,13 @@ public class ApplicationCheckResponse {
                 .ticketRemainingCount(ticketRemainingCount)
                 .reviewedAt(application.getReviewedAt())
                 .rejectionReason(application.getRejectionReason())
+                // 기존 API 호환: gathering.id는 회차 ID, 날짜·시간은 회차 값. (KAN-337)
                 .gathering(GatheringInfo.builder()
-                        .id(application.getGathering().getId())
+                        .id(application.getSession().getId())
                         .title(application.getGathering().getTitle())
-                        .eventDate(application.getGathering().getEventDate().toString())
-                        .startTime(application.getGathering().getStartTime() != null
-                                ? application.getGathering().getStartTime().toString() : null)
+                        .eventDate(application.getSession().getEventDate().toString())
+                        .startTime(application.getSession().getStartTime() != null
+                                ? application.getSession().getStartTime().toString() : null)
                         .build())
                 .createdAt(application.getCreatedAt())
                 .answers(answers)

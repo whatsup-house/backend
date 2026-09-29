@@ -18,14 +18,14 @@ public class ApplicationRepositoryCustomImpl implements ApplicationRepositoryCus
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public List<Application> findApplications(UUID gatheringId, ApplicationStatus status) {
+    public List<Application> findApplications(UUID sessionId, ApplicationStatus status) {
         QApplication application = QApplication.application;
 
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(application.deletedAt.isNull());
 
-        if (gatheringId != null) {
-            builder.and(application.gathering.id.eq(gatheringId));
+        if (sessionId != null) {
+            builder.and(application.session.id.eq(sessionId));
         }
         if (status != null) {
             builder.and(application.status.eq(status));
@@ -34,6 +34,7 @@ public class ApplicationRepositoryCustomImpl implements ApplicationRepositoryCus
         return queryFactory
                 .selectFrom(application)
                 .join(application.gathering).fetchJoin()
+                .leftJoin(application.session).fetchJoin()
                 .leftJoin(application.user).fetchJoin()
                 .where(builder)
                 // 정렬을 고정해 상태/입금 토글 후 재조회 시 행 순서가 흔들리지 않게 한다. 최신 신청 우선. (KAN-242)

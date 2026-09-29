@@ -9,9 +9,9 @@ import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
-import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
 import com.whatsuphouse.backend.domain.matching.entity.MatchingGroup;
@@ -43,7 +43,7 @@ public class MatchingService {
 
     private static final String ALGORITHM_VERSION = "rule-v1";
 
-    private final GatheringRepository gatheringRepository;
+    private final GatheringService gatheringService;
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final FormRepository formRepository;
@@ -52,32 +52,33 @@ public class MatchingService {
     private final MatchingMemberRepository matchingMemberRepository;
     private final MatchingEngine matchingEngine;
 
+    // 기존 API 호환(KAN-338 전까지): 경로의 gatheringId는 회차 ID다. 매칭은 회차 단위로 돈다.
     @Transactional
     public MatchingRunResponse runMatching(UUID gatheringId, int groupSize) {
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-        if (gathering.getGatheringType() != GatheringType.RANDOM_TABLE) {
+        GatheringSession session = gatheringService.findSession(gatheringId);
+        UUID sessionId = session.getId();
+        if (session.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE) {
             throw new CustomException(ErrorCode.MATCHING_NOT_ALLOWED);
         }
         // 그룹 인원 수는 2~8 범위로 보정, 벗어나면 기본값 사용. (KAN-224)
         int size = (groupSize >= 2 && groupSize <= 8) ? groupSize : MatchingEngine.DEFAULT_GROUP_SIZE;
 
         // 1. 기존 추천(PENDING) 결과 정리 — 확정(CONFIRMED) 그룹은 유지한다.
-        clearPendingGroups(gatheringId);
+        clearPendingGroups(sessionId);
 
         // 2. 이미 살아있는 그룹(=확정 그룹)에 배정된 신청은 재매칭 대상에서 제외한다.
         //    (확정 그룹 멤버를 다시 매칭하면 application_id 유니크 제약을 위반한다.)
-        Set<UUID> assignedAppIds = loadAssignedApplicationIds(gatheringId);
+        Set<UUID> assignedAppIds = loadAssignedApplicationIds(sessionId);
 
         // 3. CONFIRMED 신청 중 아직 배정되지 않은 신청만 매칭 대상으로 삼는다.
         List<Application> applications = applicationRepository
-                .findByGatheringIdAndStatusAndDeletedAtIsNull(gatheringId, ApplicationStatus.CONFIRMED).stream()
+                .findBySession_IdAndStatusAndDeletedAtIsNull(sessionId, ApplicationStatus.CONFIRMED).stream()
                 .filter(a -> !assignedAppIds.contains(a.getId()))
                 .toList();
         List<UUID> appIds = applications.stream().map(Application::getId).toList();
 
-        // 4. 매칭 설정 (form_questions where is_matching_field)
-        List<MatchingEngine.MatchingField> fields = loadMatchingFields(gatheringId);
+        // 4. 매칭 설정 (form_questions where is_matching_field). 폼은 종류 단위다.
+        List<MatchingEngine.MatchingField> fields = loadMatchingFields(session.getGathering().getId());
 
         // 5. 신청별 답변 맵 (question_key → 값)
         Map<UUID, Map<String, Object>> answersByApp = loadAnswers(appIds);
@@ -90,7 +91,7 @@ public class MatchingService {
 
         // 7. 엔진 실행
         List<MatchingEngine.GroupResult> groups =
-                matchingEngine.match(applicants, fields, gathering.getEventDate(), size);
+                matchingEngine.match(applicants, fields, session.getEventDate(), size);
 
         // 8. 저장
         Map<UUID, Application> appMap = new HashMap<>();
@@ -98,7 +99,7 @@ public class MatchingService {
         int matched = 0;
         for (MatchingEngine.GroupResult g : groups) {
             MatchingGroup group = matchingGroupRepository.save(MatchingGroup.builder()
-                    .gathering(gathering)
+                    .session(session)
                     .eventDate(g.eventDate())
                     .groupSize(g.applicationIds().size())
                     .algorithmVersion(ALGORITHM_VERSION)
@@ -153,10 +154,10 @@ public class MatchingService {
         return result;
     }
 
-    // 현재 게더링의 살아있는 그룹(PENDING 정리 후 남은 = 확정 그룹)에 배정된 신청 ID 집합
-    private Set<UUID> loadAssignedApplicationIds(UUID gatheringId) {
+    // 현재 회차의 살아있는 그룹(PENDING 정리 후 남은 = 확정 그룹)에 배정된 신청 ID 집합
+    private Set<UUID> loadAssignedApplicationIds(UUID sessionId) {
         List<MatchingGroup> groups = matchingGroupRepository
-                .findByGathering_IdAndDeletedAtIsNullOrderByEventDateAsc(gatheringId);
+                .findBySession_IdAndDeletedAtIsNullOrderByEventDateAsc(sessionId);
         if (groups.isEmpty()) return Set.of();
         List<UUID> groupIds = groups.stream().map(MatchingGroup::getId).toList();
         return matchingMemberRepository.findByGroupIdsWithApplication(groupIds).stream()
@@ -164,9 +165,9 @@ public class MatchingService {
                 .collect(Collectors.toSet());
     }
 
-    private void clearPendingGroups(UUID gatheringId) {
+    private void clearPendingGroups(UUID sessionId) {
         List<MatchingGroup> pending = matchingGroupRepository
-                .findByGathering_IdAndStatusAndDeletedAtIsNull(gatheringId, MatchingGroupStatus.PENDING);
+                .findBySession_IdAndStatusAndDeletedAtIsNull(sessionId, MatchingGroupStatus.PENDING);
         if (pending.isEmpty()) return;
         matchingMemberRepository.deleteByGroupIn(pending);
         matchingGroupRepository.deleteAll(pending);
@@ -180,11 +181,10 @@ public class MatchingService {
 
     @Transactional(readOnly = true)
     public MatchingResultResponse getMatchingResult(UUID gatheringId) {
-        gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        UUID sessionId = gatheringService.findSession(gatheringId).getId();
 
         List<MatchingGroup> groups = matchingGroupRepository
-                .findByGathering_IdAndDeletedAtIsNullOrderByEventDateAsc(gatheringId);
+                .findBySession_IdAndDeletedAtIsNullOrderByEventDateAsc(sessionId);
         List<UUID> groupIds = groups.stream().map(MatchingGroup::getId).toList();
         List<MatchingMember> members = groupIds.isEmpty()
                 ? List.of()
@@ -211,7 +211,7 @@ public class MatchingService {
                 .toList();
 
         List<MatchingResultResponse.MemberView> unmatched = applicationRepository
-                .findByGatheringIdAndStatusAndDeletedAtIsNull(gatheringId, ApplicationStatus.CONFIRMED).stream()
+                .findBySession_IdAndStatusAndDeletedAtIsNull(sessionId, ApplicationStatus.CONFIRMED).stream()
                 .filter(a -> !matchedAppIds.contains(a.getId()))
                 .map(a -> MatchingResultResponse.MemberView.builder()
                         .applicationId(a.getId()).name(a.getName()).phone(a.getPhone()).build())
@@ -299,7 +299,7 @@ public class MatchingService {
 
         group.updateGroupScore(matchingEngine.scoreGroup(
                 applicants,
-                loadMatchingFields(group.getGathering().getId())));
+                loadMatchingFields(group.getSession().getGathering().getId())));
     }
 
     @Transactional

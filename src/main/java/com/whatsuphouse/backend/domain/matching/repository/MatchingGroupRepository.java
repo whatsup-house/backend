@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface MatchingGroupRepository extends JpaRepository<MatchingGroup, UUID> {
 
-    List<MatchingGroup> findByGathering_IdAndDeletedAtIsNullOrderByEventDateAsc(UUID gatheringId);
+    List<MatchingGroup> findBySession_IdAndDeletedAtIsNullOrderByEventDateAsc(UUID sessionId);
 
-    List<MatchingGroup> findByGathering_IdAndStatusAndDeletedAtIsNull(UUID gatheringId, MatchingGroupStatus status);
+    List<MatchingGroup> findBySession_IdAndStatusAndDeletedAtIsNull(UUID sessionId, MatchingGroupStatus status);
 }

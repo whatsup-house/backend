@@ -9,7 +9,7 @@ import com.whatsuphouse.backend.domain.carousel.entity.CarouselSlide;
 import com.whatsuphouse.backend.domain.carousel.enums.SlideType;
 import com.whatsuphouse.backend.domain.carousel.repository.CarouselSlideRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
@@ -22,7 +22,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,7 +38,7 @@ class AdminCarouselServiceTest {
     private CarouselSlideRepository carouselSlideRepository;
 
     @Mock
-    private GatheringRepository gatheringRepository;
+    private GatheringService gatheringService;
 
     @Mock
     private StorageService storageService;
@@ -59,8 +58,6 @@ class AdminCarouselServiceTest {
 
         gathering = Gathering.builder()
                 .title("봄 소풍 모임")
-                .eventDate(LocalDate.now().plusDays(7))
-                .maxAttendees(10)
                 .build();
         ReflectionTestUtils.setField(gathering, "id", gatheringId);
 
@@ -103,7 +100,7 @@ class AdminCarouselServiceTest {
                 .tempPath("temp/carousel/550e8400-e29b-41d4-a716-446655440000.jpg")
                 .gatheringId(gatheringId).build();
 
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(gatheringService.findGathering(gatheringId)).willReturn(gathering);
         given(carouselSlideRepository.findMaxSortOrder()).willReturn(Optional.of(2));
         given(storageService.move(any(), any())).willReturn("https://cdn.example.com/slide.jpg");
         given(carouselSlideRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
@@ -194,7 +191,7 @@ class AdminCarouselServiceTest {
                 .tempPath("temp/carousel/550e8400-e29b-41d4-a716-446655440000.jpg")
                 .gatheringId(gatheringId).build();
 
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.empty());
+        given(gatheringService.findGathering(gatheringId)).willThrow(new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
         // when & then
         assertThatThrownBy(() -> adminCarouselService.createSlide(request))
@@ -249,7 +246,7 @@ class AdminCarouselServiceTest {
                 .tempPath("temp/carousel/550e8400-e29b-41d4-a716-446655440000.jpg")
                 .gatheringId(gatheringId).build();
 
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(gatheringService.findGathering(gatheringId)).willReturn(gathering);
         given(carouselSlideRepository.findMaxSortOrder()).willReturn(Optional.empty());
         given(storageService.move(any(), any())).willReturn("https://cdn.example.com/slide.jpg");
         given(carouselSlideRepository.save(any())).willAnswer(inv -> inv.getArgument(0));

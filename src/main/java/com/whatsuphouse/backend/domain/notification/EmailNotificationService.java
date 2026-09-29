@@ -284,7 +284,7 @@ public class EmailNotificationService implements NotificationService {
      * 모임 날짜를 "yyyy년 MM월 dd일" 형식으로 포맷합니다.
      */
     private String formatDate(Application application) {
-        return application.getGathering().getEventDate()
+        return application.getSession().getEventDate()
                 .format(DateTimeFormatter.ofPattern("yyyy년 MM월 dd일"));
     }
 
@@ -293,8 +293,8 @@ public class EmailNotificationService implements NotificationService {
      * startTime이 없는 모임(종일 이벤트 등)은 빈 문자열을 반환합니다.
      */
     private String formatTime(Application application) {
-        if (application.getGathering().getStartTime() == null) return "";
-        return application.getGathering().getStartTime()
+        if (application.getSession().getStartTime() == null) return "";
+        return application.getSession().getStartTime()
                 .format(DateTimeFormatter.ofPattern("HH:mm"));
     }
 

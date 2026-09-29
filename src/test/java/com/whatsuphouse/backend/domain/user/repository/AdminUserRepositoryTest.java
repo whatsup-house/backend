@@ -3,7 +3,9 @@ package com.whatsuphouse.backend.domain.user.repository;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.config.TestJpaConfig;
@@ -39,10 +41,13 @@ class AdminUserRepositoryTest {
     private GatheringRepository gatheringRepository;
 
     @Autowired
+    private GatheringSessionRepository gatheringSessionRepository;
+
+    @Autowired
     private TestEntityManager em;
 
     private User user;
-    private Gathering gathering;
+    private GatheringSession session;
 
     @BeforeEach
     void setUp() {
@@ -56,8 +61,11 @@ class AdminUserRepositoryTest {
                 .phone("01012345678")
                 .build());
 
-        gathering = gatheringRepository.save(Gathering.builder()
+        Gathering gathering = gatheringRepository.save(Gathering.builder()
                 .title("테스트 게더링")
+                .build());
+        session = gatheringSessionRepository.save(GatheringSession.builder()
+                .gathering(gathering)
                 .eventDate(LocalDate.now().plusDays(7))
                 .maxAttendees(10)
                 .build());
@@ -66,7 +74,7 @@ class AdminUserRepositoryTest {
         // PENDING 신청 1건
         applicationRepository.save(Application.builder()
                 .bookingNumber("WH001")
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())
@@ -75,7 +83,7 @@ class AdminUserRepositoryTest {
         // ATTENDED 신청 1건
         Application attended = applicationRepository.save(Application.builder()
                 .bookingNumber("WH002")
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())
@@ -85,7 +93,7 @@ class AdminUserRepositoryTest {
         // CANCELLED 신청 1건 (cancel()이 내부적으로 soft-delete까지 처리)
         Application cancelled = applicationRepository.save(Application.builder()
                 .bookingNumber("WH003")
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())

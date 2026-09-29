@@ -82,7 +82,8 @@ public class TicketService {
         String bookingNumber = null;
         if (applicationId != null) {
             Application application = getMemberPaymentPendingOrConfirmedApplication(applicationId, userId);
-            gatheringId = application.getGathering().getId();
+            // 기존 API 호환: 결제 후 이동할 모임 페이지는 회차 ID로 연다. (KAN-337)
+            gatheringId = application.getSession().getId();
             applicationStatus = application.getStatus();
             bookingNumber = application.getBookingNumber();
         }

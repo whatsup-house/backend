@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.review.admin.service;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.review.admin.dto.request.ReviewHomeFeaturedRequest;
 import com.whatsuphouse.backend.domain.review.admin.dto.request.ReviewHomeOrderItemRequest;
 import com.whatsuphouse.backend.domain.review.admin.dto.request.ReviewHomeOrderRequest;
@@ -71,14 +72,16 @@ class AdminReviewServiceTest {
 
         gathering = Gathering.builder()
                 .title("재즈 게더링")
-                .eventDate(LocalDate.now().minusDays(1))
-                .maxAttendees(10)
                 .build();
         ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
 
         application = Application.builder()
                 .bookingNumber("WH260514-ABC123")
-                .gathering(gathering)
+                .session(GatheringSession.builder()
+                        .gathering(gathering)
+                        .eventDate(LocalDate.now().minusDays(1))
+                        .maxAttendees(10)
+                        .build())
                 .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())

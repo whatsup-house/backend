@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.gathering.common.dto.response;
 
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.location.entity.Location;
@@ -31,14 +32,16 @@ public class GatheringDetailResponse {
     private String thumbnailUrl;
     private LocationDetail location;
 
-    public static GatheringDetailResponse from(Gathering gathering) {
-        return from(gathering, gathering.getTitle(), gathering.getDescription());
+    // 회차 상세. id는 회차 ID, 소개·썸네일 등은 종류 값. (KAN-337)
+    public static GatheringDetailResponse from(GatheringSession session) {
+        return from(session, session.getGathering().getTitle(), session.getGathering().getDescription());
     }
 
     // 로케일별 번역이 적용된 title/description을 받는 오버로드. (KAN-266)
-    public static GatheringDetailResponse from(Gathering gathering, String title, String description) {
+    public static GatheringDetailResponse from(GatheringSession session, String title, String description) {
+        Gathering gathering = session.getGathering();
         LocationDetail locationDetail = null;
-        Location location = gathering.getLocation();
+        Location location = session.getLocation();
         if (location != null) {
             locationDetail = LocationDetail.builder()
                     .id(location.getId())
@@ -50,17 +53,17 @@ public class GatheringDetailResponse {
         }
 
         return GatheringDetailResponse.builder()
-                .id(gathering.getId())
+                .id(session.getId())
                 .title(title)
                 .description(description)
                 .howToRun(gathering.getHowToRun())
                 .tags(gathering.getTags())
-                .eventDate(gathering.getEventDate())
-                .startTime(gathering.getStartTime())
-                .endTime(gathering.getEndTime())
-                .price(gathering.getPrice())
-                .maxAttendees(gathering.getMaxAttendees())
-                .status(gathering.getEffectiveStatus())
+                .eventDate(session.getEventDate())
+                .startTime(session.getStartTime())
+                .endTime(session.getEndTime())
+                .price(session.getEffectivePrice())
+                .maxAttendees(session.getMaxAttendees())
+                .status(session.getEffectiveStatus())
                 .gatheringType(gathering.getGatheringType())
                 .thumbnailUrl(gathering.getThumbnailUrl())
                 .location(locationDetail)
