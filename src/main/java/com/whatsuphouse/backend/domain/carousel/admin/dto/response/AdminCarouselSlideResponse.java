@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.carousel.admin.dto.response;
 
 import com.whatsuphouse.backend.domain.carousel.entity.CarouselSlide;
 import com.whatsuphouse.backend.domain.carousel.enums.SlideType;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
@@ -43,14 +44,14 @@ public class AdminCarouselSlideResponse {
     @Schema(description = "생성 일시", example = "2026-05-11T10:00:00")
     private LocalDateTime createdAt;
 
-    public static AdminCarouselSlideResponse from(CarouselSlide slide) {
-        String dateLabel = (slide.getType() == SlideType.GATHERING && slide.getGathering() != null)
-                ? slide.getGathering().getEventDate().toString()
+    // session: 연결된 모임 종류의 대표 회차(없으면 null). gatheringId는 대표 회차 ID다. (KAN-337)
+    public static AdminCarouselSlideResponse from(CarouselSlide slide, GatheringSession session) {
+        String dateLabel = (slide.getType() == SlideType.GATHERING && session != null)
+                ? session.getEventDate().toString()
                 : null;
 
-        UUID gatheringId = slide.getGathering() != null
-                ? slide.getGathering().getId()
-                : null;
+        UUID gatheringId = session != null ? session.getId()
+                : slide.getGathering() != null ? slide.getGathering().getId() : null;
 
         return AdminCarouselSlideResponse.builder()
                 .id(slide.getId())

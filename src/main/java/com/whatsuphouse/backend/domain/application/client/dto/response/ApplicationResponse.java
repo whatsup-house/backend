@@ -22,7 +22,8 @@ public class ApplicationResponse {
         return ApplicationResponse.builder()
                 .id(application.getId())
                 .bookingNumber(application.getBookingNumber())
-                .gatheringId(application.getGathering().getId())
+                // 기존 API 호환: gatheringId는 회차 ID. (KAN-337)
+                .gatheringId(application.getSession().getId())
                 .status(application.getStatus())
                 .createdAt(application.getCreatedAt())
                 .build();

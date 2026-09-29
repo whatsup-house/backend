@@ -3,7 +3,7 @@ package com.whatsuphouse.backend.domain.gathering.admin.service;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
-import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository.ApplicationCountProjection;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository.ApplicationSessionCountProjection;
 import com.whatsuphouse.backend.domain.notification.event.GatheringCancelledEvent;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCreateRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCurationOrderRequest;
@@ -11,11 +11,15 @@ import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCura
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringStatusRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringUpdateRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.response.AdminGatheringResponse;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringDetailResponse;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
@@ -37,7 +41,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -50,6 +53,8 @@ public class AdminGatheringService {
     private static final String TEMP_PATH_PREFIX = "temp/";
 
     private final GatheringRepository gatheringRepository;
+    private final GatheringSessionRepository gatheringSessionRepository;
+    private final GatheringService gatheringService;
     private final LocationRepository locationRepository;
     private final ApplicationRepository applicationRepository;
     private final StorageService storageService;
@@ -60,44 +65,46 @@ public class AdminGatheringService {
     public List<AdminGatheringResponse> listGatherings(
             GatheringStatus status, LocalDate eventDate, LocalDate from, LocalDate to) {
 
-        List<Gathering> gatherings = resolveGatherings(status, eventDate, from, to);
-        if (gatherings.isEmpty()) {
+        // 기존 API 호환(KAN-338 전까지): 목록 항목 하나 = 회차 하나.
+        List<GatheringSession> sessions = resolveSessions(
+                status != null ? GatheringSessionStatus.from(status) : null, eventDate, from, to);
+        if (sessions.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<UUID> gatheringIds = gatherings.stream().map(Gathering::getId).toList();
+        List<UUID> sessionIds = sessions.stream().map(GatheringSession::getId).toList();
 
         Map<UUID, Map<ApplicationStatus, Long>> countMap = applicationRepository
-                .countByGatheringIdsGroupByStatus(gatheringIds)
+                .countBySessionIdsGroupByStatus(sessionIds)
                 .stream()
                 .collect(Collectors.groupingBy(
-                        ApplicationCountProjection::getGatheringId,
+                        ApplicationSessionCountProjection::getSessionId,
                         Collectors.groupingBy(
-                                ApplicationCountProjection::getStatus,
-                                Collectors.summingLong(ApplicationCountProjection::getCount))));
+                                ApplicationSessionCountProjection::getStatus,
+                                Collectors.summingLong(ApplicationSessionCountProjection::getCount))));
 
-        return gatherings.stream()
-                .map(g -> AdminGatheringResponse.from(g, countMap.getOrDefault(g.getId(), Map.of())))
+        return sessions.stream()
+                .map(s -> AdminGatheringResponse.from(s, countMap.getOrDefault(s.getId(), Map.of())))
                 .toList();
     }
 
-    private List<Gathering> resolveGatherings(
-            GatheringStatus status, LocalDate eventDate, LocalDate from, LocalDate to) {
+    private List<GatheringSession> resolveSessions(
+            GatheringSessionStatus status, LocalDate eventDate, LocalDate from, LocalDate to) {
 
         if (eventDate != null) {
             return status != null
-                    ? gatheringRepository.findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
+                    ? gatheringSessionRepository.findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
                             eventDate, status)
-                    : gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(eventDate);
+                    : gatheringSessionRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(eventDate);
         }
         if (from != null && to != null) {
             return status != null
-                    ? gatheringRepository.findByEventDateBetweenAndStatusAndDeletedAtIsNull(from, to, status)
-                    : gatheringRepository.findByEventDateBetweenAndDeletedAtIsNull(from, to);
+                    ? gatheringSessionRepository.findByEventDateBetweenAndStatusAndDeletedAtIsNull(from, to, status)
+                    : gatheringSessionRepository.findByEventDateBetweenAndDeletedAtIsNull(from, to);
         }
         return status != null
-                ? gatheringRepository.findByStatusAndDeletedAtIsNull(status)
-                : gatheringRepository.findByDeletedAtIsNull();
+                ? gatheringSessionRepository.findByStatusAndDeletedAtIsNull(status)
+                : gatheringSessionRepository.findByDeletedAtIsNull();
     }
 
     // 게더링 날짜 유효성 검증. 과거 날짜를 차단한다. (KAN-293)
@@ -110,54 +117,61 @@ public class AdminGatheringService {
 
     // 관리자 수정 패널 prefill용 상세 조회. 목록 응답에 없는 소개/장소/시간/썸네일까지 포함한다. (KAN-220)
     public GatheringDetailResponse getGathering(UUID id) {
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-        return GatheringDetailResponse.from(gathering);
+        return GatheringDetailResponse.from(findSession(id));
     }
 
+    // 기존 API 호환(KAN-338 전까지): 게더링 1건 생성 = 새 종류 + 첫 회차. 응답 id는 회차 ID.
     @Transactional
     public GatheringDetailResponse createGathering(GatheringCreateRequest request) {
         validateSchedule(request.getEventDate(), request.getStartTime(), request.getEndTime());
         Location location = locationRepository.findByIdAndDeletedAtIsNull(request.getLocationId())
                 .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
         String thumbnailUrl = resolveThumbnailUrl(request.getThumbnailUrl(), null);
-        Gathering gathering = Gathering.builder()
+        Gathering gathering = gatheringRepository.save(Gathering.builder()
                 .title(request.getTitle())
                 .description(request.getDescription())
                 .howToRun(request.getHowToRun())
                 .tags(request.getTags())
+                .basePrice(request.getPrice())
+                .thumbnailUrl(thumbnailUrl)
+                .gatheringType(request.getGatheringType())
+                .build());
+        GatheringSession session = gatheringSessionRepository.save(GatheringSession.builder()
+                .gathering(gathering)
                 .location(location)
                 .eventDate(request.getEventDate())
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
-                .price(request.getPrice())
                 .maxAttendees(request.getMaxAttendees())
-                .thumbnailUrl(thumbnailUrl)
-                .gatheringType(request.getGatheringType())
-                .build();
-        Gathering saved = gatheringRepository.save(gathering);
+                .build());
         // 신청폼 + 시스템 예약 질문(이름/연락처) 자동 생성
-        formProvisionService.createDefaultForm(saved);
+        formProvisionService.createDefaultForm(gathering);
         // 커밋 후 ko 원문(title/description)을 en/ja로 자동 번역 (KAN-267)
-        publishTranslation(saved);
-        return GatheringDetailResponse.from(saved);
+        publishTranslation(gathering);
+        return GatheringDetailResponse.from(session);
     }
 
+    // 기존 API 호환: 소개·썸네일 등은 종류에(같은 종류의 다른 회차에도 반영), 날짜·장소·정원·가격은 이 회차에만 반영한다.
     @Transactional
     public GatheringDetailResponse updateGathering(UUID id, GatheringUpdateRequest request) {
         validateSchedule(request.getEventDate(), request.getStartTime(), request.getEndTime());
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        GatheringSession session = findSession(id);
+        Gathering gathering = session.getGathering();
         Location location = locationRepository.findByIdAndDeletedAtIsNull(request.getLocationId())
                 .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
         String thumbnailUrl = resolveThumbnailUrl(request.getThumbnailUrl(), gathering.getThumbnailUrl());
-        gathering.update(request.getTitle(), request.getDescription(), location,
-                request.getEventDate(), request.getStartTime(), request.getEndTime(),
-                request.getPrice(), request.getMaxAttendees(), thumbnailUrl, request.getHowToRun(),
-                request.getTags());
+        gathering.update(request.getTitle(), request.getDescription(), thumbnailUrl,
+                request.getHowToRun(), request.getTags());
+        session.update(location, request.getEventDate(), request.getStartTime(), request.getEndTime(),
+                request.getPrice(), request.getMaxAttendees());
         // 변경된 ko 원문 재번역 (원문 미변경 필드는 해시 비교로 자동 스킵) (KAN-267)
         publishTranslation(gathering);
-        return GatheringDetailResponse.from(gathering);
+        return GatheringDetailResponse.from(session);
+    }
+
+    private GatheringSession findSession(UUID sessionId) {
+        return gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)
+                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
     }
 
     /**
@@ -194,18 +208,18 @@ public class AdminGatheringService {
 
     @Transactional
     public void changeStatus(UUID id, GatheringStatusRequest request) {
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-        gathering.changeStatus(request.getStatus());
+        GatheringSession session = findSession(id);
+        Gathering gathering = session.getGathering();
+        session.changeStatus(GatheringSessionStatus.from(request.getStatus()));
 
-        // 모임이 취소 상태로 전환될 때 PENDING/CONFIRMED 신청자 전원에게 알림 발송 (FR-NTF-06)
+        // 회차가 취소 상태로 전환될 때 그 회차의 PENDING/CONFIRMED 신청자 전원에게 알림 발송 (FR-NTF-06)
         // 이미 CANCELLED/ATTENDED인 신청자는 알림 대상에서 제외합니다.
         if (request.getStatus() == GatheringStatus.CANCELLED) {
-            List<Application> targets = applicationRepository.findByGatheringIdAndStatusInWithUser(
+            List<Application> targets = applicationRepository.findBySessionIdAndStatusInWithUser(
                     id, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED));
 
-            // 우연한 식탁 게더링이 취소되면 신청한 회원들에게 차감했던 이용권을 환불한다. (KAN-261)
-            // 신청 상태는 그대로 두되, 이후 개별 취소 시 게더링이 CANCELLED면 중복 환불하지 않는다.
+            // 우연한 식탁 회차가 취소되면 신청한 회원들에게 차감했던 이용권을 환불한다. (KAN-261)
+            // 신청 상태는 그대로 두되, 이후 개별 취소 시 회차가 CANCELLED면 중복 환불하지 않는다.
             if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
                 targets.stream()
                         .forEach(ticketService::refundOneTicket);
@@ -217,25 +231,18 @@ public class AdminGatheringService {
         }
     }
 
+    // 큐레이션은 종류 단위. 관리자 목록의 회차 ID로 들어오면 그 회차의 종류에 반영한다.
     @Transactional
     public void toggleCuration(UUID id, GatheringCurationRequest request) {
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-        gathering.updateCuration(request.getIsCurated());
+        findSession(id).getGathering().updateCuration(request.getIsCurated());
     }
 
+    // 큐레이션 목록 id는 대표 회차 ID다(기존 API 호환). 종류 ID로 와도 같은 종류로 해석한다. (KAN-337)
     @Transactional
     public void reorderCurated(GatheringCurationOrderRequest request) {
         List<UUID> ids = request.getGatheringIds();
-        Map<UUID, Gathering> gatheringMap = gatheringRepository.findByIdInAndDeletedAtIsNull(ids)
-                .stream()
-                .collect(Collectors.toMap(Gathering::getId, g -> g));
-
         for (int i = 0; i < ids.size(); i++) {
-            UUID id = ids.get(i);
-            Gathering gathering = Optional.ofNullable(gatheringMap.get(id))
-                    .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-            gathering.updateCuratedRank(i);
+            gatheringService.findGathering(ids.get(i)).updateCuratedRank(i);
         }
     }
 }

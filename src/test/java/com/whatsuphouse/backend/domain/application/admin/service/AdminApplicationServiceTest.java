@@ -10,6 +10,8 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
@@ -54,7 +56,7 @@ class AdminApplicationServiceTest {
     private ApplicationRepository applicationRepository;
 
     @Mock
-    private com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository gatheringRepository;
+    private com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository gatheringSessionRepository;
 
     @Mock
     private com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository applicationAnswerRepository;
@@ -72,25 +74,32 @@ class AdminApplicationServiceTest {
     private AdminApplicationService adminApplicationService;
 
     private UUID gatheringId;
+    private UUID sessionId;
     private UUID applicationId;
     private Gathering gathering;
+    private GatheringSession session;
     private Application application;
 
     @BeforeEach
     void setUp() {
         gatheringId = UUID.randomUUID();
+        sessionId = UUID.randomUUID();
         applicationId = UUID.randomUUID();
 
         gathering = Gathering.builder()
                 .title("재즈 게더링")
+                .build();
+        ReflectionTestUtils.setField(gathering, "id", gatheringId);
+        session = GatheringSession.builder()
+                .gathering(gathering)
                 .eventDate(LocalDate.now().plusDays(7))
                 .maxAttendees(10)
                 .build();
-        ReflectionTestUtils.setField(gathering, "id", gatheringId);
+        ReflectionTestUtils.setField(session, "id", sessionId);
 
         application = Application.builder()
                 .bookingNumber("WH260428-ABC123")
-                .gathering(gathering)
+                .session(session)
                 .name("홍길동")
                 .phone("01012345678")
                 .build();
@@ -135,24 +144,24 @@ class AdminApplicationServiceTest {
     @DisplayName("게더링별 신청 목록 반환")
     void getApplicationsByGathering_returnsList() {
         // GIVEN
-        given(applicationRepository.findApplications(gatheringId, null)).willReturn(List.of(application));
+        given(applicationRepository.findApplications(sessionId, null)).willReturn(List.of(application));
 
         // WHEN
-        List<AdminApplicationResponse> result = adminApplicationService.getAllApplications(gatheringId, null);
+        List<AdminApplicationResponse> result = adminApplicationService.getAllApplications(sessionId, null);
 
         // THEN
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getGatheringId()).isEqualTo(gatheringId);
+        assertThat(result.get(0).getGatheringId()).isEqualTo(sessionId);
     }
 
     @Test
     @DisplayName("해당 게더링에 신청이 없으면 빈 리스트 반환")
     void getApplicationsByGathering_empty_returnsEmptyList() {
         // GIVEN
-        given(applicationRepository.findApplications(gatheringId, null)).willReturn(List.of());
+        given(applicationRepository.findApplications(sessionId, null)).willReturn(List.of());
 
         // WHEN
-        List<AdminApplicationResponse> result = adminApplicationService.getAllApplications(gatheringId, null);
+        List<AdminApplicationResponse> result = adminApplicationService.getAllApplications(sessionId, null);
 
         // THEN
         assertThat(result).isEmpty();
@@ -269,7 +278,7 @@ class AdminApplicationServiceTest {
     @DisplayName("무료 우연한 식탁 승인 시 이용권 차감 없이 즉시 확정한다")
     void changeStatus_freeRandomTableApproval_confirmsWithoutTicket() {
         Application randomTableApp = buildRandomTableApplication(buildMember(), GatheringStatus.OPEN);
-        ReflectionTestUtils.setField(randomTableApp.getGathering(), "price", 0);
+        ReflectionTestUtils.setField(randomTableApp.getSession(), "priceOverride", 0);
         User participantUser = randomTableApp.getUser();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(randomTableApp));
 
@@ -315,8 +324,8 @@ class AdminApplicationServiceTest {
     void changeStatus_toConfirmed_capacityFull_throwsException() {
         // GIVEN: 확정/출석 인원이 이미 정원(10)에 도달
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
-        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
-                gatheringId, ApplicationStatus.SEAT_OCCUPYING)).willReturn(10);
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                sessionId, ApplicationStatus.SEAT_OCCUPYING)).willReturn(10);
         ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.CONFIRMED);
 
         // WHEN & THEN
@@ -330,8 +339,8 @@ class AdminApplicationServiceTest {
     void changeStatus_pendingToAttended_capacityFull_throwsException() {
         // GIVEN: PENDING 신청을 바로 출석 처리하려 하지만 좌석이 이미 가득 참
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
-        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
-                gatheringId, ApplicationStatus.SEAT_OCCUPYING)).willReturn(10);
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                sessionId, ApplicationStatus.SEAT_OCCUPYING)).willReturn(10);
         ApplicationStatusRequest request = buildStatusRequest(ApplicationStatus.ATTENDED);
 
         // WHEN & THEN
@@ -380,7 +389,7 @@ class AdminApplicationServiceTest {
 
         Application memberApplication = Application.builder()
                 .bookingNumber("WH260428-XYZ999")
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name("홍길동")
                 .phone("01012345678")
@@ -532,16 +541,20 @@ class AdminApplicationServiceTest {
     private Application buildRandomTableApplication(User member, GatheringStatus status) {
         Gathering randomTable = Gathering.builder()
                 .title("우연한 식탁")
-                .eventDate(LocalDate.now().plusDays(7))
-                .maxAttendees(8)
                 .gatheringType(GatheringType.RANDOM_TABLE)
                 .build();
         ReflectionTestUtils.setField(randomTable, "id", UUID.randomUUID());
-        ReflectionTestUtils.setField(randomTable, "status", status);
+        GatheringSession randomTableSession = GatheringSession.builder()
+                .gathering(randomTable)
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(8)
+                .build();
+        ReflectionTestUtils.setField(randomTableSession, "id", UUID.randomUUID());
+        randomTableSession.changeStatus(GatheringSessionStatus.from(status));
 
         Application app = Application.builder()
                 .bookingNumber("WH260618-RT0001")
-                .gathering(randomTable)
+                .session(randomTableSession)
                 .user(member)
                 .name(member.getName())
                 .phone(member.getPhone())
@@ -556,7 +569,7 @@ class AdminApplicationServiceTest {
     @DisplayName("입금 확인 처리 시 입금 완료 상태가 된다 (KAN-242)")
     void changePayment_confirm_success() {
         // GIVEN — 유료 게더링
-        ReflectionTestUtils.setField(gathering, "price", 10000);
+        ReflectionTestUtils.setField(gathering, "basePrice", 10000);
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
         ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(true).build();
 
@@ -575,7 +588,7 @@ class AdminApplicationServiceTest {
     @DisplayName("이미 입금 확인된 신청을 재확인하면 이벤트를 발행하지 않는다 (중복 방지)")
     void changePayment_reconfirm_doesNotPublishEvent() {
         // GIVEN — 이미 입금 확인된 신청
-        ReflectionTestUtils.setField(gathering, "price", 10000);
+        ReflectionTestUtils.setField(gathering, "basePrice", 10000);
         application.confirmPayment();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
         ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(true).build();
@@ -591,7 +604,7 @@ class AdminApplicationServiceTest {
     @DisplayName("입금 확인 해제 시 입금 확인 중 상태로 돌아간다 (KAN-242)")
     void changePayment_cancel_success() {
         // GIVEN — 이미 입금 확인된 신청
-        ReflectionTestUtils.setField(gathering, "price", 10000);
+        ReflectionTestUtils.setField(gathering, "basePrice", 10000);
         application.confirmPayment();
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
         ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(false).build();
@@ -608,7 +621,7 @@ class AdminApplicationServiceTest {
     @DisplayName("입금 확인은 신청 상태를 변경하지 않는다 (독립 토글)")
     void changePayment_doesNotChangeApplicationStatus() {
         // GIVEN
-        ReflectionTestUtils.setField(gathering, "price", 10000);
+        ReflectionTestUtils.setField(gathering, "basePrice", 10000);
         given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
         ApplicationPaymentRequest request = ApplicationPaymentRequest.builder().confirmed(true).build();
 

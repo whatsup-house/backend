@@ -1,7 +1,7 @@
 package com.whatsuphouse.backend.domain.gathering.admin.dto.response;
 
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
-import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -55,25 +55,26 @@ public class AdminGatheringResponse {
     @Schema(description = "출석 신청자 수", example = "2")
     private long attendedCount;
 
-    public static AdminGatheringResponse from(Gathering gathering, Map<ApplicationStatus, Long> countMap) {
+    // 관리자 목록 항목 하나 = 회차 하나. id는 회차 ID. (KAN-337)
+    public static AdminGatheringResponse from(GatheringSession session, Map<ApplicationStatus, Long> countMap) {
         long pendingCount = countMap.getOrDefault(ApplicationStatus.PENDING, 0L);
         long confirmedCount = countMap.getOrDefault(ApplicationStatus.CONFIRMED, 0L);
         long attendedCount = countMap.getOrDefault(ApplicationStatus.ATTENDED, 0L);
 
-        String locationName = gathering.getLocation() != null
-                ? gathering.getLocation().getName()
+        String locationName = session.getLocation() != null
+                ? session.getLocation().getName()
                 : null;
 
         return AdminGatheringResponse.builder()
-                .id(gathering.getId())
-                .title(gathering.getTitle())
-                .eventDate(gathering.getEventDate())
-                .startTime(gathering.getStartTime())
-                .endTime(gathering.getEndTime())
+                .id(session.getId())
+                .title(session.getGathering().getTitle())
+                .eventDate(session.getEventDate())
+                .startTime(session.getStartTime())
+                .endTime(session.getEndTime())
                 .locationName(locationName)
-                .price(gathering.getPrice())
-                .maxAttendees(gathering.getMaxAttendees())
-                .status(gathering.getStatus())
+                .price(session.getEffectivePrice())
+                .maxAttendees(session.getMaxAttendees())
+                .status(session.getStatus().toGatheringStatus())
                 .applicantCount(pendingCount + confirmedCount + attendedCount)
                 .pendingCount(pendingCount)
                 .confirmedCount(confirmedCount)

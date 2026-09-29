@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.notification;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import org.junit.jupiter.api.BeforeEach;
@@ -387,18 +388,21 @@ class EmailNotificationServiceTest {
     private Gathering buildGathering() {
         Gathering gathering = Gathering.builder()
                 .title("테스트 게더링")
-                .eventDate(LocalDate.now().plusDays(7))
-                .startTime(LocalTime.of(14, 0))
-                .maxAttendees(10)
                 .build();
         ReflectionTestUtils.setField(gathering, "id", UUID.fromString("00000000-0000-0000-0000-000000000201"));
         return gathering;
     }
 
     private Application buildApplication(User user, Gathering gathering) {
+        GatheringSession session = GatheringSession.builder()
+                .gathering(gathering)
+                .eventDate(LocalDate.now().plusDays(7))
+                .startTime(LocalTime.of(14, 0))
+                .maxAttendees(10)
+                .build();
         Application application = Application.builder()
                 .bookingNumber("WH260428-TEST01")
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name(user != null ? user.getName() : "비회원")
                 .phone(user != null ? user.getPhone() : "01099999999")

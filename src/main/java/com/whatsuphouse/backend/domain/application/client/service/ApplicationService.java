@@ -8,7 +8,9 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.Applicati
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.auth.event.GuestEmailVerificationConsumedEvent;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
@@ -20,9 +22,11 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerR
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
@@ -56,7 +60,8 @@ import java.util.stream.Collectors;
 public class ApplicationService {
 
     private final ApplicationRepository applicationRepository;
-    private final GatheringRepository gatheringRepository;
+    private final ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
+    private final GatheringSessionRepository gatheringSessionRepository;
     private final UserRepository userRepository;
     private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
@@ -73,25 +78,27 @@ public class ApplicationService {
     private static final java.util.regex.Pattern EMAIL_PATTERN =
             java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
+    // 기존 API 호환(KAN-338 전까지): 경로의 gatheringId는 회차 ID다. 마이그레이션된 회차는 옛 게더링 ID와 같다.
     @Transactional
-    public ApplicationResponse apply(UUID gatheringId, ApplicationRequest request, UUID userId) {
-        return applyInternal(gatheringId, request, userId);
+    public ApplicationResponse apply(UUID sessionId, ApplicationRequest request, UUID userId) {
+        return applyInternal(sessionId, request, userId);
     }
 
     @Transactional
-    public ApplicationResponse applyAsGuest(UUID gatheringId, ApplicationRequest request) {
-        return applyInternal(gatheringId, request, null);
+    public ApplicationResponse applyAsGuest(UUID sessionId, ApplicationRequest request) {
+        return applyInternal(sessionId, request, null);
     }
 
     // applyInternal은 @Transactional 퍼블릭 메서드에서만 호출되므로 self-invocation 트랜잭션 누락 위험 없음
     @SuppressWarnings("java:S6809")
-    private ApplicationResponse applyInternal(UUID gatheringId, ApplicationRequest request, UUID userId) {
-        // 정원 체크~신청 저장 구간의 동시 신청 race를 막기 위해 게더링 행을 잠근다.
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNullForUpdate(gatheringId)
+    private ApplicationResponse applyInternal(UUID sessionId, ApplicationRequest request, UUID userId) {
+        // 정원 체크~신청 저장 구간의 동시 신청 race를 막기 위해 회차 행을 잠근다.
+        GatheringSession session = gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        Gathering gathering = session.getGathering();
 
-        // eventDate가 지난 모집중 게더링은 effective status가 COMPLETED로 계산되어 신청이 차단된다. (KAN-163)
-        if (gathering.getEffectiveStatus() != GatheringStatus.OPEN) {
+        // eventDate가 지난 모집중 회차는 effective status가 COMPLETED로 계산되어 신청이 차단된다. (KAN-163)
+        if (session.getEffectiveStatus() != GatheringStatus.OPEN) {
             throw new CustomException(ErrorCode.GATHERING_NOT_RECRUITING);
         }
 
@@ -101,15 +108,15 @@ public class ApplicationService {
         }
 
         // 정원은 관리자가 승인(CONFIRMED)·출석(ATTENDED) 처리한 인원만 차지한다. PENDING 신청은 정원과 무관. (KAN-236)
-        int occupiedSeats = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
-                gathering.getId(), ApplicationStatus.SEAT_OCCUPYING);
-        if (occupiedSeats >= gathering.getMaxAttendees()) {
+        int occupiedSeats = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                session.getId(), ApplicationStatus.SEAT_OCCUPYING);
+        if (occupiedSeats >= session.getMaxAttendees()) {
             throw new CustomException(ErrorCode.GATHERING_FULL);
         }
 
-        // 폼이 없는 게더링(시드/레거시)도 신청 가능하도록 기본 폼을 프로비저닝한다. (KAN-206)
+        // 폼은 종류 단위다. 폼이 없는 게더링(시드/레거시)도 신청 가능하도록 기본 폼을 프로비저닝한다. (KAN-206)
         Form form = formRepository
-                .findByGathering_IdAndDeletedAtIsNull(gatheringId)
+                .findByGathering_IdAndDeletedAtIsNull(gathering.getId())
                 .orElseGet(() -> formProvisionService.createDefaultForm(gathering));
 
         List<FormQuestion> questions = formQuestionRepository
@@ -128,7 +135,7 @@ public class ApplicationService {
         if (userId != null) {
             user = userRepository.findByIdAndDeletedAtIsNull(userId)
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-            if (applicationRepository.existsByGatheringIdAndUser_IdAndDeletedAtIsNull(gathering.getId(), userId)) {
+            if (applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(session.getId(), userId)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
         } else {
@@ -136,7 +143,7 @@ public class ApplicationService {
             if (guestPhone == null || guestPhone.isBlank()) {
                 throw new CustomException(ErrorCode.GUEST_PHONE_REQUIRED);
             }
-            if (applicationRepository.existsByGatheringIdAndPhoneAndDeletedAtIsNull(gathering.getId(), guestPhone)) {
+            if (applicationRepository.existsBySession_IdAndPhoneAndDeletedAtIsNull(session.getId(), guestPhone)) {
                 throw new CustomException(ErrorCode.ALREADY_APPLIED);
             }
             // 이메일 누락은 시스템 예약 질문(required)에서 REQUIRED_ANSWER_MISSING으로 처리된다.
@@ -163,7 +170,7 @@ public class ApplicationService {
 
         Application application = Application.builder()
                 .bookingNumber(generateBookingNumber())
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name(name)
                 .phone(phone)
@@ -172,6 +179,8 @@ public class ApplicationService {
                 .build();
 
         Application saved = applicationRepository.save(application);
+        // 희망 회차: 기존 신청 흐름은 회차 하나만 고르므로 1순위 1행.
+        applicationCandidateSessionRepository.save(new ApplicationCandidateSession(saved, session, 1));
         if (user == null) {
             // 트랜잭션 커밋 후에만 인증을 소비한다. 롤백 시 인증이 남아 재신청 가능. (AFTER_COMMIT 리스너)
             eventPublisher.publishEvent(new GuestEmailVerificationConsumedEvent(email));
@@ -349,10 +358,10 @@ public class ApplicationService {
         application.cancel();
 
         // 우연한 식탁 회원 신청 취소 시 차감했던 이용권을 환불한다. (KAN-261)
-        // 단, 게더링이 이미 취소된 경우엔 게더링 취소 시점에 일괄 환불되었으므로 중복 환불하지 않는다.
+        // 단, 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되었으므로 중복 환불하지 않는다.
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
-                && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
+                && application.getSession().getStatus() != GatheringSessionStatus.CANCELLED) {
             ticketService.refundOneTicket(application);
         }
 

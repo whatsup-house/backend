@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
+import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
@@ -98,7 +99,15 @@ class ChatWebSocketIntegrationTest {
     // 서비스 트랜잭션이 실제로 커밋되므로(AFTER_COMMIT 검증) 직접 지운다.
     @AfterEach
     void tearDown() {
-        sessions.stream().filter(StompSession::isConnected).forEach(StompSession::disconnect);
+        // ERROR 프레임 뒤 서버가 먼저 닫은 세션은 isConnected가 잠깐 true로 남아 disconnect가 실패한다.
+        // 그 예외로 아래 정리가 건너뛰어지면 공유 H2에 사용자가 남아 다른 테스트(AdminUserRepositoryTest)가 깨진다.
+        sessions.stream().filter(StompSession::isConnected).forEach(session -> {
+            try {
+                session.disconnect();
+            } catch (MessageDeliveryException alreadyClosed) {
+                // 이미 닫힌 연결 — 정리만 계속한다.
+            }
+        });
         chatMessageRepository.deleteAll();
         chatMemberRepository.deleteAll();
         chatRoomRepository.deleteAll();

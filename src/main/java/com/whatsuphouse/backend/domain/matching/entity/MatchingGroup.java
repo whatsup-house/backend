@@ -1,6 +1,6 @@
 package com.whatsuphouse.backend.domain.matching.entity;
 
-import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.matching.enums.MatchingGroupStatus;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import jakarta.persistence.*;
@@ -24,9 +24,10 @@ public class MatchingGroup extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // 매칭은 회차 단위다. V5에서 옛 gathering_id 컬럼을 session_id로 바꿨다(값은 그대로 = 회차 ID). (KAN-337)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "gathering_id", nullable = false)
-    private Gathering gathering;
+    @JoinColumn(name = "session_id", nullable = false)
+    private GatheringSession session;
 
     @Column(name = "event_date", nullable = false)
     private LocalDate eventDate;
@@ -57,10 +58,10 @@ public class MatchingGroup extends BaseEntity {
     private BigDecimal groupScore;
 
     @Builder
-    public MatchingGroup(Gathering gathering, LocalDate eventDate, String region, int groupSize,
+    public MatchingGroup(GatheringSession session, LocalDate eventDate, String region, int groupSize,
                          String restaurantName, String restaurantAddress,
                          String algorithmVersion, BigDecimal groupScore) {
-        this.gathering = gathering;
+        this.session = session;
         this.eventDate = eventDate;
         this.region = region;
         this.groupSize = groupSize;

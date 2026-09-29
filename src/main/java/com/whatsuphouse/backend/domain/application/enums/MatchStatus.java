@@ -1,0 +1,11 @@
+package com.whatsuphouse.backend.domain.application.enums;
+
+/**
+ * 우연한 식탁(RANDOM_TABLE) 신청의 매칭 진행 상태. 그 외 타입은 NULL. (우연한 식탁 v2 설계 3장)
+ * WAITING → MATCHING → CONFIRM_PENDING → CONFIRMED, 분기 REALLOCATING,
+ * ALTERNATIVE_OFFERED → TRANSFERRED(→WAITING) | NO_MATCH, EXCEPTION.
+ */
+public enum MatchStatus {
+    WAITING, MATCHING, CONFIRM_PENDING, CONFIRMED, REALLOCATING,
+    ALTERNATIVE_OFFERED, TRANSFERRED, NO_MATCH, EXCEPTION
+}

@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.gathering.client.dto.response;
 
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -37,19 +38,21 @@ public class CuratedGatheringResponse {
     @Schema(description = "큐레이션 순위 (0부터 시작)", example = "0")
     private int curatedRank;
 
-    public static CuratedGatheringResponse from(Gathering gathering) {
-        String locationName = gathering.getLocation() != null
-                ? gathering.getLocation().getName()
+    // 큐레이션은 종류 단위지만 기존 API 호환상 id는 상세로 열 대표 회차 ID다.
+    // (마이그레이션된 종류 ID는 가장 오래된 회차 ID와 같아 종류 ID로 내리면 지난 회차가 열린다.) (KAN-337)
+    public static CuratedGatheringResponse from(Gathering gathering, GatheringSession session) {
+        String locationName = session.getLocation() != null
+                ? session.getLocation().getName()
                 : null;
 
         return CuratedGatheringResponse.builder()
-                .id(gathering.getId())
+                .id(session.getId())
                 .title(gathering.getTitle())
                 .thumbnailUrl(gathering.getThumbnailUrl())
-                .eventDate(gathering.getEventDate())
+                .eventDate(session.getEventDate())
                 .locationName(locationName)
-                .price(gathering.getPrice())
-                .status(gathering.getEffectiveStatus())
+                .price(session.getEffectivePrice())
+                .status(session.getEffectiveStatus())
                 .curatedRank(gathering.getCuratedRank())
                 .build();
     }

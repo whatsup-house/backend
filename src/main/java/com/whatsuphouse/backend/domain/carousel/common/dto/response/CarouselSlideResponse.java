@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.carousel.common.dto.response;
 
 import com.whatsuphouse.backend.domain.carousel.entity.CarouselSlide;
 import com.whatsuphouse.backend.domain.carousel.enums.SlideType;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -40,18 +41,18 @@ public class CarouselSlideResponse {
     @Schema(description = "정렬 순서", example = "1")
     private int sortOrder;
 
-    public static CarouselSlideResponse from(CarouselSlide slide) {
-        String dateLabel = (slide.getType() == SlideType.GATHERING && slide.getGathering() != null)
-                ? slide.getGathering().getEventDate().toString()
+    // session: 연결된 모임 종류의 대표 회차(없으면 null). 날짜·상태·gatheringId(상세로 열 회차)는 회차 값이다. (KAN-337)
+    public static CarouselSlideResponse from(CarouselSlide slide, GatheringSession session) {
+        String dateLabel = (slide.getType() == SlideType.GATHERING && session != null)
+                ? session.getEventDate().toString()
                 : null;
 
-        UUID gatheringId = slide.getGathering() != null
-                ? slide.getGathering().getId()
-                : null;
+        UUID gatheringId = session != null ? session.getId()
+                : slide.getGathering() != null ? slide.getGathering().getId() : null;
 
         // 완료/취소된 모임 슬라이드에 모집중 뱃지가 붙지 않도록 유효 상태를 내려준다. (KAN-211)
-        GatheringStatus gatheringStatus = slide.getGathering() != null
-                ? slide.getGathering().getEffectiveStatus()
+        GatheringStatus gatheringStatus = session != null
+                ? session.getEffectiveStatus()
                 : null;
 
         return CarouselSlideResponse.builder()

@@ -4,7 +4,8 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationLink;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
@@ -65,7 +66,7 @@ class ReviewServiceTest {
     private ApplicationRepository applicationRepository;
 
     @Mock
-    private GatheringRepository gatheringRepository;
+    private GatheringService gatheringService;
 
     @Mock
     private UserRepository userRepository;
@@ -95,6 +96,7 @@ class ReviewServiceTest {
     private UUID applicationId;
     private User user;
     private Gathering gathering;
+    private GatheringSession session;
     private Application application;
     private ReviewCreateRequest request;
 
@@ -116,14 +118,17 @@ class ReviewServiceTest {
 
         gathering = Gathering.builder()
                 .title("재즈 게더링")
+                .build();
+        ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
+        session = GatheringSession.builder()
+                .gathering(gathering)
                 .eventDate(LocalDate.now().minusDays(1))
                 .maxAttendees(10)
                 .build();
-        ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
 
         application = Application.builder()
                 .bookingNumber("WH260514-ABC123")
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())
@@ -202,7 +207,7 @@ class ReviewServiceTest {
     void createReview_notAttended_throwsException() {
         Application pendingApplication = Application.builder()
                 .bookingNumber("WH260514-PENDING")
-                .gathering(gathering)
+                .session(session)
                 .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())
@@ -325,7 +330,7 @@ class ReviewServiceTest {
                 .build();
         ReflectionTestUtils.setField(image, "id", UUID.randomUUID());
 
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(gatheringService.findGathering(gatheringId)).willReturn(gathering);
         given(reviewRepository.findByGatheringReviewGroupAndDeletedAtIsNull(
                 eq(gathering.getTitle()), eq(gathering.getGatheringType()), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(review)));
@@ -346,7 +351,7 @@ class ReviewServiceTest {
         UUID gatheringId = gathering.getId();
         Review review = buildReview(UUID.randomUUID(), "추천순 리뷰입니다.");
 
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(gatheringService.findGathering(gatheringId)).willReturn(gathering);
         given(reviewRepository.findByGatheringReviewGroupAndDeletedAtIsNull(
                 eq(gathering.getTitle()), eq(gathering.getGatheringType()), any(Pageable.class)))
                 .willReturn(new PageImpl<>(List.of(review)));
@@ -363,7 +368,7 @@ class ReviewServiceTest {
     @DisplayName("존재하지 않는 게더링의 리뷰 목록 조회 시 예외 발생")
     void getGatheringReviews_gatheringNotFound_throwsException() {
         UUID gatheringId = UUID.randomUUID();
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.empty());
+        given(gatheringService.findGathering(gatheringId)).willThrow(new CustomException(ErrorCode.GATHERING_NOT_FOUND));
 
         assertThatThrownBy(() -> reviewService.getGatheringReviews(gatheringId, ReviewSort.LATEST, 0, 10))
                 .isInstanceOf(CustomException.class)
@@ -639,7 +644,7 @@ class ReviewServiceTest {
         ReflectionTestUtils.setField(review, "createdAt", createdAt);
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(gatheringService.findGathering(gatheringId)).willReturn(gathering);
         given(reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountGreaterThan(
                 gathering.getTitle(), gathering.getGatheringType(), 2)).willReturn(4L);
         given(reviewRepository.countByGatheringReviewGroupAndDeletedAtIsNullAndLikeCountAndCreatedAtAfter(
@@ -674,13 +679,11 @@ class ReviewServiceTest {
         UUID otherGatheringId = UUID.randomUUID();
         Gathering otherGathering = Gathering.builder()
                 .title("다른 게더링")
-                .eventDate(LocalDate.now().minusDays(1))
-                .maxAttendees(10)
                 .build();
         ReflectionTestUtils.setField(otherGathering, "id", otherGatheringId);
 
         given(reviewRepository.findByIdAndDeletedAtIsNull(reviewId)).willReturn(Optional.of(review));
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(otherGatheringId)).willReturn(Optional.of(otherGathering));
+        given(gatheringService.findGathering(otherGatheringId)).willReturn(otherGathering);
 
         // when & then
         assertThatThrownBy(() -> reviewService.locateReview(reviewId, ReviewSort.LIKES, otherGatheringId, 10))

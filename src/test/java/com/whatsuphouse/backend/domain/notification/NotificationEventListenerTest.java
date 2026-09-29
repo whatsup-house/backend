@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.notification.event.*;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -46,14 +47,16 @@ class NotificationEventListenerTest {
 
         gathering = Gathering.builder()
                 .title("테스트 게더링")
-                .eventDate(LocalDate.now().plusDays(7))
-                .startTime(LocalTime.of(14, 0))
-                .maxAttendees(10)
                 .build();
 
         application = Application.builder()
                 .bookingNumber("WH260428-TEST01")
-                .gathering(gathering)
+                .session(GatheringSession.builder()
+                        .gathering(gathering)
+                        .eventDate(LocalDate.now().plusDays(7))
+                        .startTime(LocalTime.of(14, 0))
+                        .maxAttendees(10)
+                        .build())
                 .user(user)
                 .name(user.getName())
                 .phone(user.getPhone())

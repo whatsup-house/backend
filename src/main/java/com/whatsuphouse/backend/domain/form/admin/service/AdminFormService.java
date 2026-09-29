@@ -8,8 +8,8 @@ import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -25,14 +25,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminFormService {
 
-    private final GatheringRepository gatheringRepository;
+    private final GatheringService gatheringService;
     private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
     private final FormProvisionService formProvisionService;
 
     // 관리자용 질문 목록 (매칭 설정 포함). 폼이 아직 없으면 빈 목록.
+    // 폼은 종류 단위다. 경로 ID가 회차 ID면 그 회차의 종류 폼을 준다. (KAN-337)
     public List<FormQuestionResponse> getQuestions(UUID gatheringId) {
-        return formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)
+        return formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringService.findGathering(gatheringId).getId())
                 .map(form -> formQuestionRepository
                         .findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form).stream()
                         .map(FormQuestionResponse::from)
@@ -44,12 +45,11 @@ public class AdminFormService {
     public FormQuestionResponse addQuestion(UUID gatheringId, FormQuestionCreateRequest request) {
         validate(request.getType(), request.getOptions(), request.isMatchingField(), request.getMatchingStrategy());
 
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        Gathering gathering = gatheringService.findGathering(gatheringId);
 
         // 폼 lazy 생성 시에도 예약질문(이름/연락처/이메일)을 함께 시드한다. (KAN-206)
         Form form = formRepository
-                .findByGathering_IdAndDeletedAtIsNull(gatheringId)
+                .findByGathering_IdAndDeletedAtIsNull(gathering.getId())
                 .orElseGet(() -> formProvisionService.createDefaultForm(gathering));
 
         BigDecimal weight = request.getMatchingWeight() != null
