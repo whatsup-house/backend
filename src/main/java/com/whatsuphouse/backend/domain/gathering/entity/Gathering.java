@@ -79,11 +79,12 @@ public class Gathering extends BaseEntity {
     }
 
     public void update(String title, String description, String thumbnailUrl,
-                       List<String> howToRun, List<String> tags) {
+                       List<String> howToRun, List<String> tags, Integer basePrice) {
         this.title = title;
         this.description = description;
         this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
         this.tags = tags != null ? List.copyOf(tags) : List.of();
         this.thumbnailUrl = thumbnailUrl;
+        this.basePrice = basePrice;
     }
 }

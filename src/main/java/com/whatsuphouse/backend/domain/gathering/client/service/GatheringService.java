@@ -1,12 +1,13 @@
 package com.whatsuphouse.backend.domain.gathering.client.service;
 
+import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
 import com.whatsuphouse.backend.domain.gathering.client.dto.response.CuratedGatheringResponse;
 import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringDetailResponse;
 import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringResponse;
+import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringSessionResponse;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
-import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.translation.enums.TranslatableType;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,38 +34,42 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class GatheringService {
 
+    private static final Comparator<GatheringSession> SESSION_ORDER = Comparator
+            .comparing(GatheringSession::getEventDate)
+            .thenComparing(GatheringSession::getStartTime, Comparator.nullsFirst(Comparator.naturalOrder()));
+
     private final GatheringRepository gatheringRepository;
     private final GatheringSessionRepository gatheringSessionRepository;
     private final ContentTranslationService contentTranslationService;
+    private final ApplicationService applicationService;
 
-    // 기존 API 호환(KAN-338 전까지): 목록 항목 하나 = 회차 하나. id는 회차 ID(마이그레이션된 회차는 옛 게더링 ID).
-    public List<GatheringResponse> listGatherings(LocalDate date, GatheringStatus status) {
-        return findSessions(date, status != null ? GatheringSessionStatus.from(status) : null).stream()
-                .filter(session -> isVisibleInList(session, status))
-                .map(GatheringResponse::from)
+    /**
+     * 종류 단위 목록. 각 종류에는 조건(date, 유효 status)에 맞는 회차만 붙고, 조건이 없으면 오늘 이후 회차(다가오는 회차)만 본다.
+     * 맞는 회차가 없는 종류는 빠진다. 순서는 각 종류의 가장 이른 회차 순. (KAN-338)
+     * status는 유효 상태로 거른다: 날짜가 지난 OPEN 회차는 DONE이라 OPEN 목록에서 빠진다. (KAN-163)
+     */
+    public List<GatheringResponse> listGatherings(LocalDate date, GatheringSessionStatus status) {
+        List<GatheringSession> sessions = findSessions(date, status).stream()
+                .filter(session -> status == null || session.getEffectiveSessionStatus() == status)
+                .sorted(SESSION_ORDER)
+                .toList();
+        Map<UUID, Long> seats = countSeats(sessions);
+        return sessions.stream()
+                .collect(Collectors.groupingBy(s -> s.getGathering().getId(), LinkedHashMap::new, Collectors.toList()))
+                .values().stream()
+                .map(group -> GatheringResponse.of(group.get(0).getGathering(), toSessionResponses(group, seats)))
                 .toList();
     }
 
     private List<GatheringSession> findSessions(LocalDate date, GatheringSessionStatus status) {
-        if (date != null && status != null) {
-            return gatheringSessionRepository.findByEventDateAndStatusAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(
-                    date, status);
-        }
         if (date != null) {
             return gatheringSessionRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(date);
         }
+        // 유효 상태(지난 OPEN → DONE)는 저장된 상태와 다를 수 있어 전체에서 거른다.
         if (status != null) {
-            return gatheringSessionRepository.findByStatusAndDeletedAtIsNull(status);
+            return gatheringSessionRepository.findByDeletedAtIsNull();
         }
-        return gatheringSessionRepository.findByDeletedAtIsNull();
-    }
-
-    // status=OPEN(모집중) 조회 시 eventDate가 지난 회차는 모집 목록에서 제외한다. (KAN-163)
-    private boolean isVisibleInList(GatheringSession session, GatheringStatus status) {
-        if (status == GatheringStatus.OPEN) {
-            return !session.getEventDate().isBefore(LocalDate.now());
-        }
-        return true;
+        return gatheringSessionRepository.findByEventDateGreaterThanEqualAndDeletedAtIsNull(LocalDate.now());
     }
 
     // 큐레이션은 종류 단위. 날짜·장소·가격·상태는 대표 회차 값으로 채운다. 회차가 없는 종류는 노출하지 않는다.
@@ -81,27 +87,55 @@ public class GatheringService {
         return getGathering(id, AppLocale.KO);
     }
 
-    // 요청 로케일로 title/description을 번역 적용해 반환한다. ko이거나 번역 없으면 원문. (KAN-266)
+    /**
+     * 종류 상세 + 전체 회차. 옛 회차 ID(= 옛 게더링 ID)로 들어오면 그 회차가 속한 종류로 응답한다. (KAN-338)
+     * 요청 로케일로 title/description을 번역 적용한다. ko이거나 번역 없으면 원문. (KAN-266)
+     */
     public GatheringDetailResponse getGathering(UUID id, AppLocale locale) {
-        GatheringSession session = findSession(id);
-        Gathering gathering = session.getGathering();
+        Gathering gathering = findGathering(id);
+        return toDetail(gathering,
+                gatheringSessionRepository.findByGathering_IdInAndDeletedAtIsNull(List.of(gathering.getId())), locale);
+    }
 
+    /** 회차 상세: 종류 정보 + 그 회차 1건(sessions). */
+    public GatheringDetailResponse getSession(UUID sessionId, AppLocale locale) {
+        GatheringSession session = gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)
+                .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND));
+        return toDetail(session.getGathering(), List.of(session), locale);
+    }
+
+    private GatheringDetailResponse toDetail(Gathering gathering, List<GatheringSession> sessions, AppLocale locale) {
+        List<GatheringSessionResponse> sessionResponses = toSessionResponses(sessions);
         if (locale == AppLocale.KO) {
-            return GatheringDetailResponse.from(session);
+            return GatheringDetailResponse.of(gathering, gathering.getTitle(), gathering.getDescription(), sessionResponses);
         }
-
         // 번역은 종류(title/description) 단위로 저장된다.
         ContentTranslationService.Localizer localizer =
                 contentTranslationService.localizer(TranslatableType.GATHERING, gathering.getId(), locale);
-        return GatheringDetailResponse.from(
-                session,
+        return GatheringDetailResponse.of(gathering,
                 localizer.get("title", gathering.getTitle()),
-                localizer.get("description", gathering.getDescription())
-        );
+                localizer.get("description", gathering.getDescription()),
+                sessionResponses);
+    }
+
+    /** 회차 응답(정원 차지 인원 포함), 날짜·시작 시간 순. */
+    public List<GatheringSessionResponse> toSessionResponses(List<GatheringSession> sessions) {
+        return toSessionResponses(sessions, countSeats(sessions));
+    }
+
+    private static List<GatheringSessionResponse> toSessionResponses(List<GatheringSession> sessions, Map<UUID, Long> seats) {
+        return sessions.stream()
+                .sorted(SESSION_ORDER)
+                .map(session -> GatheringSessionResponse.from(session, seats.getOrDefault(session.getId(), 0L)))
+                .toList();
+    }
+
+    private Map<UUID, Long> countSeats(List<GatheringSession> sessions) {
+        return applicationService.countSeatsBySessionIds(sessions.stream().map(GatheringSession::getId).toList());
     }
 
     /**
-     * 기존 API의 "게더링 ID" 자리로 들어온 값을 회차로 해석한다. (KAN-338 전까지의 호환 규칙)
+     * "게더링 ID" 자리로 들어온 값을 회차로 해석한다. 아직 회차 ID를 받는 기존 경로(매칭 등)용 호환 규칙.
      * 회차 ID(마이그레이션된 회차는 옛 게더링 ID와 같다)를 먼저 찾고, 없으면 종류 ID로 보고 대표 회차를 쓴다.
      */
     public GatheringSession findSession(UUID id) {

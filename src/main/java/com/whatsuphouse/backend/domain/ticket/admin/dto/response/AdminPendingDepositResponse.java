@@ -49,7 +49,7 @@ public class AdminPendingDepositResponse {
         if (application != null) {
             builder.applicationId(application.getId())
                     .bookingNumber(application.getBookingNumber())
-                    .gatheringId(application.getSession().getId())
+                    .gatheringId(application.getLegacyGatheringId())
                     .gatheringTitle(application.getGathering().getTitle());
         }
         return builder.build();

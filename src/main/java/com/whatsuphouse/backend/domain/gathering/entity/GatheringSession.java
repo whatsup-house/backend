@@ -5,6 +5,8 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.global.common.BaseEntity;
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -109,17 +111,33 @@ public class GatheringSession extends BaseEntity {
     }
 
     public void update(Location location, LocalDate eventDate, LocalTime startTime, LocalTime endTime,
-                       Integer priceOverride, int maxAttendees) {
+                       Integer priceOverride, int maxAttendees, LocalDateTime applyDeadlineAt) {
         this.location = location;
         this.eventDate = eventDate;
         this.startTime = startTime;
         this.endTime = endTime;
         this.priceOverride = priceOverride;
         this.maxAttendees = maxAttendees;
+        this.applyDeadlineAt = applyDeadlineAt;
     }
 
     public Integer getEffectivePrice() {
         return priceOverride != null ? priceOverride : gathering.getBasePrice();
+    }
+
+    /** 신청 가능한 회차인지 검사한다. 모집중(날짜 미경과 OPEN)이 아니거나 신청 마감이 지났으면 예외. (KAN-338) */
+    public void validateApplicable(LocalDateTime now) {
+        if (getEffectiveStatus() != GatheringStatus.OPEN) {
+            throw new CustomException(ErrorCode.GATHERING_NOT_RECRUITING);
+        }
+        if (applyDeadlineAt != null && now.isAfter(applyDeadlineAt)) {
+            throw new CustomException(ErrorCode.APPLY_DEADLINE_PASSED);
+        }
+    }
+
+    /** 종류·회차 API(KAN-338)용 유효 상태. eventDate가 지난 OPEN 회차는 DONE. */
+    public GatheringSessionStatus getEffectiveSessionStatus() {
+        return GatheringSessionStatus.from(getEffectiveStatus());
     }
 
     /**

@@ -24,6 +24,9 @@ public interface GatheringSessionRepository extends JpaRepository<GatheringSessi
     List<GatheringSession> findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(LocalDate eventDate);
 
     @EntityGraph(attributePaths = {"gathering", "location"})
+    List<GatheringSession> findByEventDateGreaterThanEqualAndDeletedAtIsNull(LocalDate from);
+
+    @EntityGraph(attributePaths = {"gathering", "location"})
     List<GatheringSession> findByStatusAndDeletedAtIsNull(GatheringSessionStatus status);
 
     @EntityGraph(attributePaths = {"gathering", "location"})

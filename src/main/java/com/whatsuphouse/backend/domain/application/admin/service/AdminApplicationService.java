@@ -11,7 +11,6 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
-import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
@@ -100,7 +99,7 @@ public class AdminApplicationService {
         // 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되므로 중복 환불하지 않는다.
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
-                && application.getSession().getStatus() != GatheringSessionStatus.CANCELLED) {
+                && !application.isSessionCancelled()) {
             ticketService.refundOneTicket(application);
         }
 
@@ -138,7 +137,7 @@ public class AdminApplicationService {
                     // 반려 시 승인 단계에서 차감했던 이용권을 1회 복구한다. (KAN-261 연장)
                     // refundOneTicket은 USE 거래가 있을 때만 복구하고 중복 복구를 막으므로 멱등하다.
                     // 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되므로 중복 복구하지 않는다.
-                    if (application.getSession().getStatus() != GatheringSessionStatus.CANCELLED) {
+                    if (!application.isSessionCancelled()) {
                         ticketService.refundOneTicket(application);
                     }
                 }
@@ -211,7 +210,8 @@ public class AdminApplicationService {
      * 정원은 CONFIRMED+ATTENDED만 차지하므로, 이미 좌석을 가진 신청의 재확정/출석 처리는 통과시킨다. (KAN-236)
      */
     private void enforceCapacityForNewSeat(Application application) {
-        if (ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus())) {
+        // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 여기서 세지 않는다. (KAN-338)
+        if (ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus()) || application.getSession() == null) {
             return;
         }
         // 동시 승인에 의한 정원 초과를 막기 위해 회차 행을 잠근 뒤 좌석을 센다.

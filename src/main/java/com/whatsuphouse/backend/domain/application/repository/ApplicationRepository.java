@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,6 +30,8 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
 
     // 회원이 해당 회차에 이미 신청했는지.
     boolean existsBySession_IdAndUser_IdAndDeletedAtIsNull(UUID sessionId, UUID userId);
+
+    boolean existsBySession_IdInAndDeletedAtIsNull(Collection<UUID> sessionIds);
 
     boolean existsBySession_IdAndPhoneAndDeletedAtIsNull(UUID sessionId, String phone);
 
