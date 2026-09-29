@@ -64,7 +64,7 @@ public class AdminChatController {
     @Operation(summary = "출처 멤버 불러오기", description = "게더링 참가 확정자 또는 매칭 조원 중 회원 목록(단체방 멤버 프리필)")
     @GetMapping("/rooms/source-members")
     public ResponseEntity<ApiResult<List<ChatSourceMemberResponse>>> listSourceMembers(
-            @Parameter(description = "GATHERING | MATCHING_GROUP", example = "GATHERING") @RequestParam ChatSourceType type,
+            @Parameter(description = "GATHERING | DINING_TABLE", example = "GATHERING") @RequestParam ChatSourceType type,
             @Parameter(description = "게더링 ID 또는 매칭 그룹 ID") @RequestParam UUID id,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
