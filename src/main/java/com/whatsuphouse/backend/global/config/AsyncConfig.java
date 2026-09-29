@@ -6,6 +6,8 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.concurrent.ThreadPoolExecutor;
+
 /**
  * @Async 비동기 실행을 활성화하는 설정 클래스.
  *
@@ -44,6 +46,23 @@ public class AsyncConfig {
         executor.setMaxPoolSize(3);
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("translation-");
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * 채팅 링크 미리보기(OG 조회) 전용 스레드풀. (KAN-330)
+     * 외부 사이트 응답을 hop당 최대 6초 기다리므로 다른 비동기 작업과 분리한다.
+     * 포화 시 작업을 버린다(미리보기는 best-effort, 메시지 전송 흐름에 예외를 올리지 않는다).
+     */
+    @Bean(name = "linkPreviewExecutor")
+    public TaskExecutor linkPreviewExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("link-preview-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
         executor.initialize();
         return executor;
     }

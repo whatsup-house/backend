@@ -100,6 +100,11 @@ public class ChatMessage {
         this.editedAt = LocalDateTime.now();
     }
 
+    /** {url,title,description,image}. 링크 미리보기 비동기 처리가 채운다. */
+    public void attachLinkPreview(Map<String, Object> linkPreview) {
+        this.linkPreview = linkPreview;
+    }
+
     public void delete() {
         this.deletedAt = LocalDateTime.now();
     }

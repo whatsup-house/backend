@@ -42,6 +42,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -249,6 +251,22 @@ public class ChatService {
         }
         me.markRead(messageId);
         eventPublisher.publishEvent(new ChatMessageReadEvent(roomId, userId, messageId));
+    }
+
+    /** 링크 미리보기용 TEXT 본문 평문. 삭제됐거나 TEXT가 아니면 empty. */
+    @Transactional(readOnly = true)
+    public Optional<String> getMessageText(UUID messageId) {
+        return chatMessageRepository.findByIdAndDeletedAtIsNull(messageId)
+                .filter(m -> m.getType() == ChatMessageType.TEXT)
+                .map(assembler::decrypt);
+    }
+
+    /** 링크 미리보기 저장 후 MESSAGE_UPDATED 전파. 조회 중 삭제된 메시지는 건너뛴다. */
+    public void attachLinkPreview(UUID messageId, Map<String, Object> linkPreview) {
+        chatMessageRepository.findByIdAndDeletedAtIsNull(messageId).ifPresent(message -> {
+            message.attachLinkPreview(linkPreview);
+            eventPublisher.publishEvent(new ChatMessageUpdatedEvent(message.getRoomId(), messageId));
+        });
     }
 
     /** STOMP CONNECT: 정지·탈퇴 계정은 소켓 연결을 거부한다(설계 8절). */

@@ -8,11 +8,13 @@ import com.whatsuphouse.backend.domain.chat.repository.ChatMemberRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMessageRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatRoomRepository;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
+import com.whatsuphouse.backend.domain.chat.service.LinkPreviewFetcher.LinkPreview;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.enums.Gender;
+import com.whatsuphouse.backend.global.config.CacheConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
@@ -76,6 +79,9 @@ class ChatWebSocketIntegrationTest {
 
     @Autowired
     private ChatMessageRepository chatMessageRepository;
+
+    @Autowired
+    private CacheManager cacheManager;
 
     private final List<StompSession> sessions = new ArrayList<>();
     private WebSocketStompClient stompClient;
@@ -166,6 +172,31 @@ class ChatWebSocketIntegrationTest {
 
         Map<String, Object> preview = queue.await(p -> p.containsKey("unreadCount"));
         assertThat(preview).containsEntry("roomId", roomId.toString()).containsEntry("unreadCount", 1);
+    }
+
+    @Test
+    @DisplayName("링크가 든 메시지는 커밋 후 비동기로 미리보기가 저장되고 MESSAGE_UPDATED(linkPreview)로 전파된다")
+    @SuppressWarnings("unchecked")
+    void linkPreview_attachedAsync_broadcastsMessageUpdated() throws Exception {
+        // given: 캐시 적중으로 외부 요청 없이 배선(AFTER_COMMIT → @Async → 저장 → 브로드캐스트)만 검증한다
+        String url = "https://example.com/menu-" + UUID.randomUUID();
+        cacheManager.getCache(CacheConfig.LINK_PREVIEW_CACHE)
+                .put(url, new LinkPreview(url, "오늘의 메뉴", "설명", "https://example.com/a.png"));
+        StompSession session = connect(memberId, new ErrorCollector());
+        PayloadCollector topic = new PayloadCollector();
+        session.subscribe(roomTopic(), topic);
+        awaitSubscribed(topic, () -> messagingTemplate.convertAndSend(roomTopic(), Map.of("probe", true)));
+
+        // when
+        UUID messageId = chatService.sendMessage(roomId, senderId, false, text("여기 어때요 " + url + " !")).getId();
+
+        // then
+        Map<String, Object> event = topic.await(p -> "MESSAGE_UPDATED".equals(p.get("kind")));
+        Map<String, Object> payload = (Map<String, Object>) event.get("payload");
+        assertThat(payload).containsEntry("id", messageId.toString());
+        assertThat((Map<String, Object>) payload.get("linkPreview"))
+                .containsEntry("url", url).containsEntry("title", "오늘의 메뉴");
+        assertThat(chatMessageRepository.findById(messageId).orElseThrow().getLinkPreview()).containsEntry("title", "오늘의 메뉴");
     }
 
     private StompSession connect(UUID userId, StompSessionHandlerAdapter handler) throws Exception {

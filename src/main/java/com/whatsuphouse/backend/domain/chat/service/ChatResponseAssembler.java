@@ -288,7 +288,8 @@ public class ChatResponseAssembler {
                 ChatMessageRepository.RoomCount::getCount));
     }
 
-    private String decrypt(ChatMessage m) {
+    // 응답 조립 외에 링크 미리보기(ChatService.getMessageText)도 이 경로로만 복호화한다.
+    public String decrypt(ChatMessage m) {
         return chatCipher.decrypt(m.getRoomId(), m.getContentEnc(), m.getNonce());
     }
 }
