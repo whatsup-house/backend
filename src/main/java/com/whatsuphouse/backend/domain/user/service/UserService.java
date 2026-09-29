@@ -16,7 +16,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -87,6 +92,21 @@ public class UserService {
         return UserWithdrawResponse.builder()
                 .withdrawn(true)
                 .build();
+    }
+
+    /** 표시용 일괄 조회(채팅 등). 탈퇴 회원도 포함하므로 표시명 처리는 호출 측이 한다. */
+    @Transactional(readOnly = true)
+    public Map<UUID, User> findUsersByIds(Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<UUID> listActiveAdminIds() {
+        return userRepository.findActiveAdminIds();
     }
 
     private User findActiveUser(UUID userId) {

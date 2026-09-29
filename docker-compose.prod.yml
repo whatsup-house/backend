@@ -15,6 +15,7 @@ services:
       SUPABASE_BUCKET: ${SUPABASE_BUCKET}
       MAIL_FROM: ${MAIL_FROM}
       RESEND_API_KEY: ${RESEND_API_KEY}
+      CHAT_ENCRYPTION_KEY: ${CHAT_ENCRYPTION_KEY}
     depends_on:
       - redis
     restart: unless-stopped

@@ -110,7 +110,20 @@ public enum ErrorCode {
     MAIL_TEMPLATE_NOT_FOUND("존재하지 않는 메일 템플릿입니다.", HttpStatus.NOT_FOUND),
 
     // Notification
-    NOTIFICATION_NOT_FOUND("존재하지 않는 알림입니다.", HttpStatus.NOT_FOUND);
+    NOTIFICATION_NOT_FOUND("존재하지 않는 알림입니다.", HttpStatus.NOT_FOUND),
+
+    // Chat
+    CHAT_NOT_MEMBER("채팅방 멤버가 아닙니다.", HttpStatus.FORBIDDEN),
+    CHAT_MUTED("채팅이 금지된 상태입니다.", HttpStatus.FORBIDDEN),
+    CHAT_ROOM_TYPE_MISMATCH("이 채팅방 유형에서는 할 수 없는 작업입니다.", HttpStatus.BAD_REQUEST),
+    CHAT_ROOM_NOT_FOUND("존재하지 않는 채팅방입니다.", HttpStatus.NOT_FOUND),
+    CHAT_MESSAGE_NOT_FOUND("존재하지 않는 메시지입니다.", HttpStatus.NOT_FOUND),
+    CHAT_MESSAGE_FORBIDDEN("메시지를 수정하거나 삭제할 권한이 없습니다.", HttpStatus.FORBIDDEN),
+    CHAT_INVALID_MESSAGE("올바르지 않은 메시지입니다.", HttpStatus.BAD_REQUEST),
+    CHAT_INVALID_EMOJI("사용할 수 없는 이모지입니다.", HttpStatus.BAD_REQUEST),
+    CHAT_IMAGE_TOO_LARGE("이미지는 5MB 이하만 업로드할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    CHAT_REPORT_NOT_FOUND("존재하지 않는 신고입니다.", HttpStatus.NOT_FOUND),
+    CHAT_CRYPTO_FAILED("메시지를 처리하지 못했습니다.", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final String message;
     private final HttpStatus status;

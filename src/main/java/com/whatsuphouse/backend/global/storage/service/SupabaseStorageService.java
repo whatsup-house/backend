@@ -5,12 +5,16 @@ import com.whatsuphouse.backend.global.exception.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -44,7 +48,15 @@ public class SupabaseStorageService implements StorageService {
         if (!ALLOWED_FOLDERS.contains(folder)) {
             throw new CustomException(ErrorCode.INVALID_UPLOAD_FOLDER);
         }
+        return putImage(file, bucket, String.join(PATH_SEPARATOR, "temp", folder));
+    }
 
+    @Override
+    public String uploadPrivate(MultipartFile file, String privateBucket, String prefix) {
+        return putImage(file, privateBucket, prefix);
+    }
+
+    private String putImage(MultipartFile file, String targetBucket, String prefix) {
         String extension = getExtension(file.getOriginalFilename());
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new CustomException(ErrorCode.INVALID_IMAGE_FORMAT);
@@ -55,11 +67,11 @@ public class SupabaseStorageService implements StorageService {
         MediaType detectedType = detectImageContentType(bytes);
 
         String fileName = UUID.randomUUID() + "." + extension;
-        String tempPath = String.join(PATH_SEPARATOR, "temp", folder, fileName);
+        String path = String.join(PATH_SEPARATOR, prefix, fileName);
 
         try {
             restClient.put()
-                    .uri(supabaseUrl + "/storage/v1/object/" + bucket + "/" + tempPath)
+                    .uri(supabaseUrl + "/storage/v1/object/" + targetBucket + "/" + path)
                     .header(AUTHORIZATION, BEARER_PREFIX + supabaseKey)
                     .contentType(detectedType)
                     .body(bytes)
@@ -70,7 +82,38 @@ public class SupabaseStorageService implements StorageService {
             throw new CustomException(ErrorCode.IMAGE_UPLOAD_FAILED);
         }
 
-        return tempPath;
+        return path;
+    }
+
+    @Override
+    public Map<String, String> createSignedUrls(String targetBucket, Collection<String> paths, int expiresInSeconds) {
+        if (paths.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            List<Map<String, Object>> results = restClient.post()
+                    .uri(supabaseUrl + "/storage/v1/object/sign/" + targetBucket)
+                    .header(AUTHORIZATION, BEARER_PREFIX + supabaseKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("expiresIn", expiresInSeconds, "paths", paths))
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {});
+            Map<String, String> urls = new HashMap<>();
+            if (results != null) {
+                for (Map<String, Object> result : results) {
+                    Object path = result.get("path");
+                    Object signedUrl = result.get("signedURL");
+                    if (path != null && signedUrl != null) {
+                        urls.put(path.toString(), supabaseUrl + "/storage/v1" + signedUrl);
+                    }
+                }
+            }
+            return urls;
+        } catch (Exception e) {
+            // 서명 실패는 URL만 비우고(이미지 미표시) 메시지 조회 자체는 살린다.
+            log.warn("[Storage] signed url Exception: {}", e.getMessage());
+            return Map.of();
+        }
     }
 
     private byte[] readBytes(MultipartFile file) {
