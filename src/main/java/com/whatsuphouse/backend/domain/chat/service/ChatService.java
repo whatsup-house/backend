@@ -15,6 +15,7 @@ import com.whatsuphouse.backend.domain.chat.entity.ChatReaction;
 import com.whatsuphouse.backend.domain.chat.entity.ChatReport;
 import com.whatsuphouse.backend.domain.chat.entity.ChatRoom;
 import com.whatsuphouse.backend.domain.chat.enums.ChatMessageType;
+import com.whatsuphouse.backend.domain.chat.enums.ChatSystemKind;
 import com.whatsuphouse.backend.domain.chat.event.ChatMemberChangedEvent;
 import com.whatsuphouse.backend.domain.chat.event.ChatMessageCreatedEvent;
 import com.whatsuphouse.backend.domain.chat.event.ChatMessageDeletedEvent;
@@ -166,6 +167,14 @@ public class ChatService {
         }
         eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, message.getId()));
         return assembler.toMessages(room, List.of(message), userId, isAdmin).get(0);
+    }
+
+    /** 서버가 남기는 안내문(발신자 없음, SYSTEM_NOTICE). 본문은 system_params.text 평문. (KAN-346 확정 안내) */
+    public void postSystemNotice(UUID roomId, String text) {
+        findRoom(roomId);
+        ChatMessage message = chatMessageRepository.save(
+                ChatMessage.system(roomId, ChatSystemKind.SYSTEM_NOTICE, Map.of("text", text)));
+        eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, message.getId()));
     }
 
     public ChatMessageResponse updateMessage(UUID messageId, UUID userId, boolean isAdmin, ChatMessageUpdateRequest request) {

@@ -15,7 +15,7 @@ import java.util.UUID;
 public interface SessionVenueRepository extends JpaRepository<SessionVenue, SessionVenue.Key> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select sv from SessionVenue sv where sv.sessionId = :sessionId")
+    @Query("select sv from SessionVenue sv where sv.sessionId = :sessionId order by sv.venueId")
     List<SessionVenue> findBySessionIdForUpdate(@Param("sessionId") UUID sessionId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

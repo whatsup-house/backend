@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -163,6 +164,16 @@ public class GatheringService {
             throw new CustomException(ErrorCode.NOT_RANDOM_TABLE_SESSION);
         }
         return session;
+    }
+
+    /** 매칭 시각이 된 모집 중 우연한 식탁 회차를 잠가 마감(CLOSED)하고 ID를 돌려준다. (KAN-346 매칭 스케줄러) */
+    @Transactional
+    public List<UUID> closeDueRandomTableSessions(LocalDateTime now) {
+        List<UUID> sessionIds = gatheringSessionRepository.findDueRandomTableSessionIdsForUpdate(now, now.toLocalDate())
+                .stream().map(UUID::fromString).toList();
+        gatheringSessionRepository.findAllById(sessionIds)
+                .forEach(session -> session.changeStatus(GatheringSessionStatus.CLOSED));
+        return sessionIds;
     }
 
     /** 오늘 이후(오늘 포함) 취소되지 않은 해당 타입 회차, 날짜·시작 시간 순. (KAN-348 운영 대시보드) */

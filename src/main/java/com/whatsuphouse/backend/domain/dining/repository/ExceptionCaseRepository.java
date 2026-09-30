@@ -30,6 +30,8 @@ public interface ExceptionCaseRepository extends JpaRepository<ExceptionCase, UU
 
     long countByStatus(ExceptionCaseStatus status);
 
+    List<ExceptionCase> findAllByTypeAndTableIdAndStatus(ExceptionCaseType type, UUID tableId, ExceptionCaseStatus status);
+
     @Query("""
             select e.sessionId as sessionId, count(e) as count
             from ExceptionCase e
