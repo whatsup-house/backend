@@ -27,4 +27,15 @@ public interface ApplicationAnswerRepository extends JpaRepository<ApplicationAn
               and aa.deletedAt is null
             """)
     List<ApplicationAnswer> findByApplicationIds(@Param("applicationIds") List<UUID> applicationIds);
+
+    // 프리필(ACC-06): 회원의 표준 질문(reserved_key) 답변, 최신 신청 순. 취소한 신청의 답변도 프로필로 쓴다. (KAN-342)
+    @Query("""
+            select aa from ApplicationAnswer aa
+            join fetch aa.question q
+            where aa.application.user.id = :userId
+              and q.reservedKey is not null
+              and aa.deletedAt is null
+            order by aa.createdAt desc
+            """)
+    List<ApplicationAnswer> findReservedAnswersByUserId(@Param("userId") UUID userId);
 }

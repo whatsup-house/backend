@@ -17,9 +17,11 @@ public interface ApplicationCandidateSessionRepository extends JpaRepository<App
 
     boolean existsBySession_IdInAndApplication_DeletedAtIsNull(Collection<UUID> sessionIds);
 
+    // 신청들의 희망 회차(장소 포함), 우선순위 순. (KAN-342)
     @Query("""
             select c from ApplicationCandidateSession c
-            join fetch c.session
+            join fetch c.session s
+            left join fetch s.location
             where c.application.id in :applicationIds
             order by c.priority asc
             """)

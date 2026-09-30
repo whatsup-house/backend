@@ -30,7 +30,8 @@ public class ApplicationController {
 
     @Operation(summary = "모임 신청 (회원)", description = "모임 종류 ID와 희망 회차 ID 목록으로 신청합니다. "
             + "일반 모임은 회차를 정확히 1개 골라야 하며 그 회차로 바로 배정됩니다. "
-            + "우연한 식탁은 1개 이상 고르며(앞일수록 우선) 매칭 대기(WAITING) 상태로 접수됩니다. "
+            + "우연한 식탁은 1개 이상 고르며(앞일수록 우선) 매칭 대기(WAITING) 상태로 접수되고, "
+            + "이용권이 차감되면 확정(CONFIRMED), 이용권이 없으면 결제 대기(PAYMENT_PENDING)입니다. 다른 종류의 회차가 섞이면 400입니다. "
             + "마감이 지난 회차는 신청할 수 없습니다.")
     @PostMapping("/api/applications")
     public ResponseEntity<ApiResult<ApplicationResponse>> create(
