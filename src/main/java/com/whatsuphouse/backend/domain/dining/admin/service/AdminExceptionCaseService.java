@@ -8,6 +8,7 @@ import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.enums.SafetyAction;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
+import com.whatsuphouse.backend.domain.dining.repository.SafetyReportRepository;
 import com.whatsuphouse.backend.domain.user.service.UserService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -25,6 +26,7 @@ import java.util.UUID;
 public class AdminExceptionCaseService {
 
     private final ExceptionCaseRepository exceptionCaseRepository;
+    private final SafetyReportRepository safetyReportRepository;
     private final AdminApplicationService adminApplicationService;
     private final UserService userService;
 
@@ -49,15 +51,25 @@ public class AdminExceptionCaseService {
                 throw new CustomException(ErrorCode.EXCEPTION_ACTION_NOT_ALLOWED);
             }
             exceptionCase.reopen();
+            syncSafetyReport(exceptionCase);
             return ExceptionCaseResponse.from(exceptionCase);
         }
 
         SafetyAction action = request.getAction();
         exceptionCase.resolve(adminId, request.getNote(), action);
+        syncSafetyReport(exceptionCase);
         if (action != null && action.restrictsRandomTable()) {
             userService.restrictRandomTable(findTargetUserId(exceptionCase));
         }
         return ExceptionCaseResponse.from(exceptionCase);
+    }
+
+    // 신고로 생긴 SAFETY 건이면 연결된 신고에도 상태·조치·메모를 옮긴다. (KAN-350)
+    private void syncSafetyReport(ExceptionCase exceptionCase) {
+        if (exceptionCase.getType() == ExceptionCaseType.SAFETY) {
+            safetyReportRepository.findByExceptionCaseId(exceptionCase.getId())
+                    .ifPresent(report -> report.syncWith(exceptionCase));
+        }
     }
 
     private UUID findTargetUserId(ExceptionCase exceptionCase) {

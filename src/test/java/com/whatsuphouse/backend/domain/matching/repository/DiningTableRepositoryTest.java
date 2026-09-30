@@ -117,6 +117,33 @@ class DiningTableRepositoryTest {
     }
 
     @Test
+    @DisplayName("취소로 제거된 멤버(removed_at)는 행이 남아도 멤버 조회·인원·착석·이전 만남에서 빠진다")
+    void removedMembersAreExcluded() {
+        Application stays = application(1);
+        Application cancelled = application(2);
+        DiningTable table = table(DiningTableStatus.CONFIRMED, stays, cancelled);
+        DiningTableMember removed = diningTableMemberRepository.findByTableIdWithApplication(table.getId()).stream()
+                .filter(m -> m.getApplication().getId().equals(cancelled.getId()))
+                .findFirst().orElseThrow();
+        removed.remove();
+        em.flush();
+        em.clear();
+        EnumSet<DiningTableStatus> active = EnumSet.of(DiningTableStatus.PROPOSED, DiningTableStatus.CONFIRMED);
+
+        assertThat(diningTableMemberRepository.findById(removed.getId())).isPresent();
+        assertThat(diningTableMemberRepository.findByIdAndRemovedAtIsNull(removed.getId())).isEmpty();
+        assertThat(diningTableMemberRepository.findByTableIdWithApplication(table.getId()))
+                .extracting(m -> m.getApplication().getId()).containsExactly(stays.getId());
+        assertThat(diningTableMemberRepository.countByTable_IdAndRemovedAtIsNull(table.getId())).isEqualTo(1);
+        assertThat(diningTableMemberRepository.findApplicationIdsByTableStatusIn(
+                List.of(stays.getId(), cancelled.getId()), active)).containsExactly(stays.getId());
+        assertThat(diningTableMemberRepository.existsByApplication_IdAndRemovedAtIsNullAndTable_StatusIn(
+                cancelled.getId(), active)).isFalse();
+        assertThat(diningTableMemberRepository.findUserPairsByTableStatusIn(
+                List.of(stays.getUser().getId(), cancelled.getUser().getId()), MET, null)).isEmpty();
+    }
+
+    @Test
     @DisplayName("매칭 실행의 미배정 사유 목록은 JSON으로 저장했다가 그대로 읽힌다")
     void matchRun_unassignedReasonsRoundTrip() {
         UUID applicationId = UUID.randomUUID();

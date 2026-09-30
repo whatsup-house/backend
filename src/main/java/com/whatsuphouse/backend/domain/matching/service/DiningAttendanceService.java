@@ -29,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -112,7 +113,8 @@ public class DiningAttendanceService {
         if (tableIds.isEmpty()) {
             return List.of();
         }
-        List<DiningTableMember> members = diningTableMemberRepository.findByTableIdsWithApplication(tableIds);
+        // 취소한 멤버 행은 재조정에서 removed_at으로 빠지므로 포함해 읽어야 CANCELED_EARLY가 보인다.
+        List<DiningTableMember> members = diningTableMemberRepository.findByTableIdsWithApplicationIncludingRemoved(tableIds);
         Map<UUID, Attendance> byMember = findAttendancesByMember(members);
         return members.stream()
                 .filter(member -> byMember.containsKey(member.getId()))
@@ -148,7 +150,7 @@ public class DiningAttendanceService {
     /**
      * 좌석 변경 훅(수동 배정·이동·충원 뒤 호출). 확정 테이블에 앉았으면 확정 파이프라인의 개인 규칙
      * (배정 회차 = 테이블 회차, 매칭 CONFIRMED, 참석 SCHEDULED는 없을 때만)을 적용하고, 확정 전 테이블로 옮겨졌으면 그 좌석의 참석 행을 지운다.
-     * TODO(KAN-347 머지 후): DiningTableService의 seatedStatus 사용처(rebalance 충원·assignMember·move/merge)에서 새로 앉힌 멤버 행마다 부른다.
+     * DiningTableService의 좌석 변경(rebalance 충원·재배치, assignMember, move, merge)에서 앉힌 멤버 행마다 부른다.
      */
     @Transactional
     public void seat(DiningTableMember member) {
@@ -166,11 +168,22 @@ public class DiningAttendanceService {
     /**
      * 운영 조정(이동·제외)으로 좌석을 떠날 때 그 멤버 행의 참석 행을 지운다. 참가자가 취소한 게 아니므로 CANCELED_EARLY를 남기지 않고,
      * 옮겨 간 확정 테이블에서는 seat가 새 SCHEDULED를 만든다.
-     * TODO(KAN-347 머지 후): 이동·병합으로 removed_at을 표시한 옛 멤버 행마다 부른다. 신청 취소로 빠지는 행은 부르지 않는다(CANCELED_EARLY 기록 유지).
+     * DiningTableService의 분리·해체, MatchingService.excludeMember에서 부른다. 신청 취소로 빠지는 행은 부르지 않는다(CANCELED_EARLY 기록 유지).
      */
     @Transactional
     public void releaseSeat(UUID tableMemberId) {
         attendanceRepository.findByTableMemberId(tableMemberId).ifPresent(attendanceRepository::delete);
+    }
+
+    /** 테이블 멤버 ID → 참석 상태. 참석 행이 없는 멤버는 결과에 없다. 참가 이력 응답용. (KAN-350) */
+    @Transactional(readOnly = true)
+    public Map<UUID, AttendanceStatus> findAttendanceStatuses(Collection<UUID> tableMemberIds) {
+        if (tableMemberIds.isEmpty()) {
+            return Map.of();
+        }
+        return attendanceRepository.findStatusesByTableMemberIdIn(tableMemberIds).stream()
+                .collect(Collectors.toMap(AttendanceRepository.MemberStatusProjection::getTableMemberId,
+                        AttendanceRepository.MemberStatusProjection::getStatus));
     }
 
     // ── 회차 종료 처리 ───────────────────────────────────────────────────────

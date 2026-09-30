@@ -140,11 +140,13 @@ public class DiningConfirmService {
     // ── 1~2. 검증·확정 ────────────────────────────────────────────────────────
 
     // 회차 행을 먼저 잠가 같은 회차의 매칭 재실행(제안 테이블 해체)·다른 확정과 직렬화한 뒤 테이블을 새로 읽는다.
+    // 테이블 행도 잠가 수동 조정·취소 재조정(KAN-347, 테이블 행 잠금)이 끝난 뒤의 멤버 구성으로 검증한다.
     private boolean confirm(UUID tableId) {
         UUID sessionId = diningTableRepository.findSessionIdById(tableId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
         GatheringSession session = gatheringService.lockRandomTableSession(sessionId);
-        DiningTable table = findTable(tableId);
+        DiningTable table = diningTableRepository.findByIdForUpdate(tableId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
         if (table.getStatus() != DiningTableStatus.PROPOSED || session.getStatus() == GatheringSessionStatus.CANCELLED) {
             return false;
         }

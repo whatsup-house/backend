@@ -9,12 +9,14 @@ import com.whatsuphouse.backend.domain.dining.admin.dto.request.VenueRequest;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningApplicantResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningDashboardResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.ExceptionCaseResponse;
+import com.whatsuphouse.backend.domain.dining.admin.dto.response.FeedbackSummaryResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.MatchingRuleResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.SessionVenueResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.TableVenueResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.VenueResponse;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminDiningService;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminExceptionCaseService;
+import com.whatsuphouse.backend.domain.dining.admin.service.AdminFeedbackService;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleService;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminVenueService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
@@ -65,6 +67,7 @@ public class AdminDiningController {
 
     private final AdminDiningService adminDiningService;
     private final AdminExceptionCaseService adminExceptionCaseService;
+    private final AdminFeedbackService adminFeedbackService;
     private final AdminMatchingRuleService adminMatchingRuleService;
     private final AdminVenueService adminVenueService;
     private final DiningMatchService diningMatchService;
@@ -116,6 +119,16 @@ public class AdminDiningController {
     public ResponseEntity<ApiResult<DiningTableListResponse>> getTables(
             @Parameter(description = "회차 ID") @PathVariable UUID id) {
         return ResponseEntity.ok(ApiResult.success(diningMatchService.getTables(id)));
+    }
+
+    // ── 피드백 ────────────────────────────────────────────────────────────────
+
+    @Operation(summary = "회차 피드백 요약", description = "확정·종료 테이블 기준 응답 수·대상 멤버 수·응답률, 항목별 평균, 재참여 의향 분포, "
+            + "신고 수와 테이블별 요약. 사람별 선호·신고 내용은 담지 않는다(신고는 예외함 SAFETY에서 처리).")
+    @GetMapping("/sessions/{id}/feedback-summary")
+    public ResponseEntity<ApiResult<FeedbackSummaryResponse>> getFeedbackSummary(
+            @Parameter(description = "회차 ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(adminFeedbackService.getFeedbackSummary(id)));
     }
 
     @Operation(summary = "즉시 확정", description = "확정 예정 시각을 지금으로 당기고 자동 확정 파이프라인(하드 조건 검증 → 확정·참석 → 식당 → 채팅방 → 알림)을 "

@@ -1,6 +1,5 @@
 package com.whatsuphouse.backend.domain.matching.service;
 
-import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
@@ -11,7 +10,6 @@ import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultRespo
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
-import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
@@ -33,7 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** 관리자 v1 매칭 API(/api/admin/gatherings/{id}/matching, /api/admin/matching). 수동 조정 재설계는 KAN-347. */
+/** 관리자 v1 매칭 API(/api/admin/gatherings/{id}/matching, /api/admin/matching). 멤버 이동·강제 배정은 DiningTableService가 맡는다(KAN-347). */
 @Service
 @RequiredArgsConstructor
 public class MatchingService {
@@ -134,56 +132,15 @@ public class MatchingService {
     }
 
     @Transactional
-    public void moveMember(UUID memberId, UUID targetGroupId) {
-        DiningTableMember member = diningTableMemberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
-        DiningTable oldTable = member.getTable();
-        DiningTable target = findTable(targetGroupId);
-
-        member.moveTo(target, diningTableMemberRepository.countByTable_Id(targetGroupId) + 1);
-        // 같은 멤버 행이 옮겨 가므로 참석 행도 따라간다. 확정 테이블이면 확정 규칙 적용, 확정 전 테이블이면 참석 행 정리. (KAN-349)
-        diningAttendanceService.seat(member);
-        diningTableMemberRepository.flush();
-        oldTable.updateGroupSize(diningTableMemberRepository.countByTable_Id(oldTable.getId()));
-        target.updateGroupSize(diningTableMemberRepository.countByTable_Id(targetGroupId));
-        diningMatchService.rescoreTable(oldTable);
-        diningMatchService.rescoreTable(target);
-    }
-
-    @Transactional
     public void excludeMember(UUID memberId) {
-        DiningTableMember member = diningTableMemberRepository.findById(memberId)
+        DiningTableMember member = diningTableMemberRepository.findByIdAndRemovedAtIsNull(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
         DiningTable table = member.getTable();
-        // TODO(KAN-347 머지 후): 행 삭제 대신 removed_at 표시로 바꿔 멤버·참석 이력을 남긴다(DiningTableService 방식으로 통일).
+        // 행을 지우지 않고 removed_at만 채운다(DiningTableService와 같은 방식). 운영 조정이라 참석 행은 CANCELED_EARLY 없이 지운다. (KAN-349)
         diningAttendanceService.releaseSeat(memberId);
-        diningTableMemberRepository.delete(member);
+        member.remove();
         diningTableMemberRepository.flush();
-        table.updateGroupSize(diningTableMemberRepository.countByTable_Id(table.getId()));
-        diningMatchService.rescoreTable(table);
-    }
-
-    @Transactional
-    public void assignMember(UUID groupId, UUID applicationId) {
-        DiningTable table = findTable(groupId);
-        // 해체된 테이블의 멤버 행은 이력이므로 활성 테이블 배정만 막는다.
-        if (diningTableMemberRepository.existsByApplication_IdAndTable_StatusIn(applicationId, ACTIVE_TABLE_STATUSES)) {
-            throw new CustomException(ErrorCode.MATCHING_ALREADY_ASSIGNED);
-        }
-        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
-                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-
-        DiningTableMember member = diningTableMemberRepository.save(DiningTableMember.builder()
-                .application(application)
-                .table(table)
-                .seatOrder(diningTableMemberRepository.countByTable_Id(groupId) + 1)
-                .assignReason(AssignReason.MANUAL)
-                .isManual(true)
-                .build());
-        // 확정 테이블에 새로 앉으면 확정 파이프라인의 개인 규칙(배정 회차·매칭 CONFIRMED·참석 SCHEDULED)을 적용한다. (KAN-349)
-        diningAttendanceService.seat(member);
-        diningTableMemberRepository.flush();
-        table.updateGroupSize(diningTableMemberRepository.countByTable_Id(groupId));
+        table.updateGroupSize(diningTableMemberRepository.countByTable_IdAndRemovedAtIsNull(table.getId()));
         diningMatchService.rescoreTable(table);
     }
 
@@ -230,6 +187,26 @@ public class MatchingService {
                 .map(User::getId)
                 .distinct()
                 .toList();
+    }
+
+    /** 테이블 멤버(취소한 신청 제외). 신청·회원을 함께 읽는다. 피드백·신고의 멤버 확인용. (KAN-350) */
+    @Transactional(readOnly = true)
+    public List<DiningTableMember> listActiveTableMembers(UUID tableId) {
+        return diningTableMemberRepository.findByTableIdWithApplication(tableId).stream()
+                .filter(member -> member.getApplication().getDeletedAt() == null)
+                .toList();
+    }
+
+    /** 회원의 테이블 멤버십(취소한 신청 제외, 테이블·회차 포함) 중 테이블 상태가 statuses인 것, 최신 회차 순. (KAN-350 참가 이력) */
+    @Transactional(readOnly = true)
+    public List<DiningTableMember> listUserTableMembers(UUID userId, Collection<DiningTableStatus> statuses) {
+        return diningTableMemberRepository.findByUserIdWithTable(userId, statuses);
+    }
+
+    /** 회차에서 상태가 statuses인 테이블의 멤버(취소한 신청 제외, 테이블 포함). (KAN-350 피드백 요약) */
+    @Transactional(readOnly = true)
+    public List<DiningTableMember> listSessionTableMembers(UUID sessionId, Collection<DiningTableStatus> statuses) {
+        return diningTableMemberRepository.findBySessionIdAndTableStatusIn(sessionId, statuses);
     }
 
     /**

@@ -17,6 +17,9 @@ public interface ApplicationCandidateSessionRepository extends JpaRepository<App
 
     boolean existsBySession_IdInAndApplication_DeletedAtIsNull(Collection<UUID> sessionIds);
 
+    // 대체 회차 이동(KAN-347) 시 희망 회차를 통째로 교체한다.
+    void deleteByApplication_Id(UUID applicationId);
+
     // 신청들의 희망 회차(장소 포함), 우선순위 순. (KAN-342)
     @Query("""
             select c from ApplicationCandidateSession c

@@ -83,6 +83,8 @@ class DiningMatchServiceTest {
     private MatchRunRepository matchRunRepository;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private MatchResolutionService matchResolutionService;
 
     @InjectMocks
     private DiningMatchService diningMatchService;
@@ -147,7 +149,7 @@ class DiningMatchServiceTest {
     }
 
     @Test
-    @DisplayName("마지막 희망 회차에서 못 앉으면 ALTERNATIVE_OFFERED, 앉은 사람은 CONFIRM_PENDING + PROPOSED 테이블")
+    @DisplayName("마지막 희망 회차에서 못 앉으면 ALTERNATIVE_OFFERED + 해결 선택 제안, 앉은 사람은 CONFIRM_PENDING + PROPOSED 테이블")
     void runMatch_lastWish_alternativeOffered() {
         givenRun(false);
         LocalDateTime before = LocalDateTime.now();
@@ -170,6 +172,7 @@ class DiningMatchServiceTest {
         then(matchRunRepository).should().save(run.capture());
         assertThat(run.getValue().getUnassignedReasons())
                 .containsExactly(new MatchRun.Unassigned(new UUID(0, 4), UnassignedReason.NOT_ENOUGH_PEOPLE));
+        then(matchResolutionService).should().offerResolution(applications.get(4), List.of(session.getId()));
     }
 
     @Test

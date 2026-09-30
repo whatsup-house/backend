@@ -29,7 +29,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     }
 
     // 테이블 멤버 ID → 참석 상태. 참석 행이 없는 멤버는 결과에 없다.
-    // TODO(KAN-350 머지 후): 참가 이력 응답(DiningHistoryResponse.attendanceStatus)을 이 메서드로 채운다.
+    // 참가 이력 응답(DiningHistoryResponse.attendanceStatus)용. (KAN-350)
     @Query("select a.tableMemberId as tableMemberId, a.status as status from Attendance a where a.tableMemberId in :tableMemberIds")
     List<MemberStatusProjection> findStatusesByTableMemberIdIn(@Param("tableMemberIds") Collection<UUID> tableMemberIds);
 
