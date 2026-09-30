@@ -32,6 +32,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -167,7 +168,10 @@ public class TicketService {
         return true;
     }
 
-    /** 신청에 기록된 USE 거래를 기준으로 1회 복구한다. 동일 신청 중복 복구는 무시한다. */
+    /**
+     * 신청에 기록된 USE 거래를 기준으로 1회 복구한다. 동일 신청 중복 복구는 무시한다.
+     * 이미 환불(REFUND_*) 절차에 들어간 차감은 돈으로 돌려주므로 이용권까지 복구하지 않는다. (KAN-347)
+     */
     public void refundOneTicket(Application application) {
         if (ticketTransactionRepository.existsByApplication_IdAndTransactionType(
                 application.getId(), TicketTransactionType.REFUND)) {
@@ -176,6 +180,7 @@ public class TicketService {
         ticketTransactionRepository
                 .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(
                         application.getId(), TicketTransactionType.USE)
+                .filter(TicketTransaction::isDeducted)
                 .ifPresent(use -> {
                     use.restore();
                     TicketPass pass = use.getTicketPass();
@@ -183,6 +188,30 @@ public class TicketService {
                     ticketTransactionRepository.save(TicketTransaction.of(
                             pass, application, TicketTransactionType.REFUND, 1, "신청 취소 복구"));
                 });
+    }
+
+    /**
+     * 이용권 구매 건 환불(모의, 즉시): 신청의 차감(USE) 기록을 REFUND_REQUESTED → REFUND_PROCESSING → REFUNDED로 넘긴다.
+     * 차감한 1회분을 돈으로 돌려주는 것이라 잔여 수는 바꾸지 않는다. 전환에 실패하면 REFUND_FAILED로 남긴다.
+     * 차감 기록이 없거나 이미 복원·환불 처리돼 구매 건을 특정할 수 없으면 빈 값. (설계 4.8, KAN-347)
+     */
+    public Optional<TicketDeductionStatus> refundPurchase(Application application) {
+        Optional<TicketTransaction> deduction = ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(application.getId(), TicketTransactionType.USE)
+                .filter(TicketTransaction::isDeducted);
+        if (deduction.isEmpty()) {
+            return Optional.empty();
+        }
+        TicketTransaction use = deduction.get();
+        // ponytail: 모의 PG라 세 단계를 한 번에 넘긴다. 실결제 연동 시 PROCESSING에서 PG 결과(웹훅)를 기다린다.
+        try {
+            use.advanceRefund(TicketDeductionStatus.REFUND_REQUESTED);
+            use.advanceRefund(TicketDeductionStatus.REFUND_PROCESSING);
+            use.advanceRefund(TicketDeductionStatus.REFUNDED);
+        } catch (CustomException e) {
+            use.failRefund();
+        }
+        return Optional.of(use.getStatus());
     }
 
     /**

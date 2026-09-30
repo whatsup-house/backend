@@ -41,6 +41,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,27 @@ public class DiningMatchService {
     private final DiningTableRepository diningTableRepository;
     private final DiningTableMemberRepository diningTableMemberRepository;
     private final MatchRunRepository matchRunRepository;
+    private final MatchResolutionService matchResolutionService;
+
+    /**
+     * 한 회차 규칙과 신청들의 매칭 프로필·관계를 한 번에 읽어 둔 평가기. 수동 조정·재조정이 여러 멤버 구성을
+     * 비교·재검증할 때 쓴다(구성마다 DB를 다시 읽지 않는다). (KAN-347)
+     */
+    public record TableEvaluator(MatchingEngine engine, Map<UUID, MatchingEngine.Applicant> profiles,
+                                 MatchingEngine.Rules rules, MatchingEngine.Relations relations) {
+
+        public List<MatchingEngine.HardRule> violations(Collection<UUID> applicationIds) {
+            return engine.violations(members(applicationIds), rules, relations);
+        }
+
+        public MatchingEngine.Score score(Collection<UUID> applicationIds) {
+            return engine.score(members(applicationIds), rules, relations);
+        }
+
+        private List<MatchingEngine.Applicant> members(Collection<UUID> applicationIds) {
+            return applicationIds.stream().map(profiles::get).toList();
+        }
+    }
 
     /**
      * 회차 매칭을 실행하고 MatchRun에 기록한다. 회차 행을 잠가 같은 회차의 실행을 직렬화한다.
@@ -218,6 +240,45 @@ public class DiningMatchService {
         table.updateScore(score.value(), score.detail());
     }
 
+    /**
+     * 이 회차에서 applications로 만들 수 있는 멤버 구성을 평가하는 평가기. tableId는 평가할 테이블로,
+     * 그 테이블에 함께 앉은 이력은 "이전 만남" 페널티에서 뺀다(없으면 null). (KAN-347)
+     */
+    public TableEvaluator evaluator(GatheringSession session, Collection<Application> applications, UUID tableId) {
+        Map<UUID, Application> distinct = new LinkedHashMap<>();
+        applications.forEach(application -> distinct.putIfAbsent(application.getId(), application));
+        List<ApplicationAnswer> answers = adminApplicationService.findAnswers(distinct.keySet());
+        List<MatchingEngine.Applicant> applicants = toApplicants(List.copyOf(distinct.values()), answers);
+        return new TableEvaluator(matchingEngine,
+                applicants.stream().collect(Collectors.toMap(MatchingEngine.Applicant::applicationId, Function.identity())),
+                rules(session, adminMatchingRuleService.findMatchingRuleSetting(), answers, null),
+                relations(applicants, tableId));
+    }
+
+    /** 테이블 멤버 구성이 하드 조건(인원·나이 차·제외 관계)을 지키는지. 자동 확정 직전 최종 검증. (KAN-346) */
+    public boolean satisfiesHardConditions(DiningTable table, List<Application> applications) {
+        if (applications.isEmpty()) {
+            return false;
+        }
+        List<ApplicationAnswer> answers = adminApplicationService.findAnswers(
+                applications.stream().map(Application::getId).toList());
+        List<MatchingEngine.Applicant> applicants = toApplicants(applications, answers);
+        return matchingEngine.satisfiesHardConditions(applicants,
+                rules(table.getSession(), adminMatchingRuleService.findMatchingRuleSetting(), answers, null),
+                relations(applicants, table.getId()));
+    }
+
+    /** 신청 ID → 매칭 프로필(표준 질문 답). 참가자 테이블 상세의 멤버 소개용. (KAN-346) */
+    public Map<UUID, MatchingEngine.Applicant> findProfiles(List<Application> applications) {
+        if (applications.isEmpty()) {
+            return Map.of();
+        }
+        return toApplicants(applications,
+                adminApplicationService.findAnswers(applications.stream().map(Application::getId).toList()))
+                .stream()
+                .collect(Collectors.toMap(MatchingEngine.Applicant::applicationId, Function.identity(), (a, b) -> a));
+    }
+
     // ── 실행 단계 ────────────────────────────────────────────────────────────
 
     private void dissolveProposedTables(UUID sessionId) {
@@ -268,8 +329,11 @@ public class DiningMatchService {
             application.changeMatchStatus(MatchStatus.REALLOCATING);
             return new MatchRun.Unassigned(application.getId(), UnassignedReason.NEXT_SESSION_WAITING);
         }
-        // TODO(KAN-347): MatchResolution 생성(대체 회차 제안, 없으면 NO_MATCH + KEEP_TICKET/REFUND).
+        // 대체 회차를 제안한다. 제안할 회차가 없으면 해결 선택 서비스가 NO_MATCH로 바꾼다(KEEP_TICKET/REFUND만).
         application.changeMatchStatus(MatchStatus.ALTERNATIVE_OFFERED);
+        matchResolutionService.offerResolution(application, wishes.getOrDefault(application.getId(), List.of()).stream()
+                .map(wish -> wish.getSession().getId())
+                .toList());
         return unassigned;
     }
 

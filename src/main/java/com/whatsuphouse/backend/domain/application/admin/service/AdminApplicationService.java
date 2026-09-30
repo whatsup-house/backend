@@ -14,6 +14,7 @@ import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
@@ -282,6 +283,19 @@ public class AdminApplicationService {
         }
         return applicationCandidateSessionRepository.findByApplicationIdsWithSession(applicationIds).stream()
                 .collect(Collectors.groupingBy(candidate -> candidate.getApplication().getId()));
+    }
+
+    /**
+     * 매칭 실패 신청을 대체 회차로 옮긴다(MatchResolution TRANSFER): 희망 회차를 그 회차 1개로 바꾸고,
+     * 배정 회차를 비운 채 매칭 대기(WAITING)로 돌린다. 결제(이용권 차감)는 그대로 유지한다. (설계 4.8, KAN-347)
+     */
+    @Transactional
+    public void transferApplication(Application application, GatheringSession session) {
+        applicationCandidateSessionRepository.deleteByApplication_Id(application.getId());
+        // UNIQUE(application_id, session_id): 새 행 INSERT보다 기존 행 DELETE가 먼저 나가게 한다.
+        applicationCandidateSessionRepository.flush();
+        applicationCandidateSessionRepository.save(new ApplicationCandidateSession(application, session, 1));
+        application.transfer();
     }
 
     /** 회원별 우연한 식탁 참가(출석 처리된 신청) 횟수. 참가가 없으면 결과에 없다. */

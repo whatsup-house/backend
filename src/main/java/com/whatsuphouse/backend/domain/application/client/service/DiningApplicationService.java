@@ -14,6 +14,8 @@ import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
+import com.whatsuphouse.backend.domain.matching.service.DiningTableService;
+import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
@@ -54,6 +56,8 @@ public class DiningApplicationService {
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final TicketService ticketService;
     private final MatchingService matchingService;
+    private final DiningTableService diningTableService;
+    private final MatchResolutionService matchResolutionService;
     private final FormService formService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -69,12 +73,14 @@ public class DiningApplicationService {
         Map<UUID, List<GatheringSession>> candidates = findCandidateSessions(ids);
         Map<UUID, TicketDeductionStatus> ticketStatuses = ticketService.findDeductionStatuses(ids);
         Map<UUID, DiningTable> tables = matchingService.findTablesByApplicationIds(ids);
+        Map<UUID, UUID> resolutionIds = matchResolutionService.findOfferedResolutionIds(ids);
         return DiningApplicationListResponse.builder()
                 .applications(applications.stream()
                         .map(a -> DiningApplicationListResponse.Item.of(a,
                                 candidates.getOrDefault(a.getId(), List.of()),
                                 ticketStatuses.get(a.getId()),
-                                tables.get(a.getId())))
+                                tables.get(a.getId()),
+                                resolutionIds.get(a.getId())))
                         .toList())
                 .build();
     }
@@ -131,7 +137,12 @@ public class DiningApplicationService {
         // 차감 기록(USE)이 있으면 RESTORED로 바꾸고 잔여를 1회 복구한다. 결제 대기(차감 없음)나
         // 회차 취소로 이미 복구된 신청은 refundOneTicket이 무시한다(멱등).
         ticketService.refundOneTicket(application);
-        // TODO(KAN-347): 확정 테이블 멤버였다면 DiningTableService.rebalance(table)로 충원·재배치한다. (설계 4.7)
+        // 테이블(제안·확정)에 앉아 있었다면 빼고, 인원이 모자라면 충원·재배치한다. (설계 4.7)
+        // TODO(KAN-349): 확정 테이블 멤버의 Attendance를 CANCELED_EARLY로 전환한다.
+        DiningTable table = matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId);
+        if (table != null) {
+            diningTableService.rebalance(table.getId());
+        }
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }
 

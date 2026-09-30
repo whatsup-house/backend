@@ -3,6 +3,8 @@ package com.whatsuphouse.backend.domain.ticket.entity;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -66,5 +68,29 @@ public class TicketTransaction {
     /** 취소로 차감을 되돌렸다. 잔여 복구는 같은 흐름의 REFUND 거래가 기록한다. */
     public void restore() {
         this.status = TicketDeductionStatus.RESTORED;
+    }
+
+    /** 아직 복원·환불되지 않은 차감. V8 백필 전 USE 행은 status가 비어 있어 차감으로 본다. */
+    public boolean isDeducted() {
+        return transactionType == TicketTransactionType.USE
+                && (status == null || status == TicketDeductionStatus.DEDUCTED);
+    }
+
+    /** 환불 단계를 한 칸 진행한다. DEDUCTED → REFUND_REQUESTED → REFUND_PROCESSING → REFUNDED 순서만 허용. (KAN-347) */
+    public void advanceRefund(TicketDeductionStatus next) {
+        boolean allowed = switch (next) {
+            case REFUND_REQUESTED -> isDeducted();
+            case REFUND_PROCESSING -> status == TicketDeductionStatus.REFUND_REQUESTED;
+            case REFUNDED -> status == TicketDeductionStatus.REFUND_PROCESSING;
+            default -> false;
+        };
+        if (!allowed) {
+            throw new CustomException(ErrorCode.INVALID_REFUND_TRANSITION);
+        }
+        this.status = next;
+    }
+
+    public void failRefund() {
+        this.status = TicketDeductionStatus.REFUND_FAILED;
     }
 }

@@ -41,6 +41,10 @@ public class Notification extends BaseEntity {
     @Column(length = 40)
     private NotificationLink link;
 
+    // link가 가리키는 대상 ID(DINING_TABLE이면 테이블 ID). 대상이 필요 없는 링크는 NULL. (KAN-346)
+    @Column(name = "link_id")
+    private UUID linkId;
+
     @Column(name = "is_read", nullable = false)
     private boolean read = false;
 
@@ -48,12 +52,14 @@ public class Notification extends BaseEntity {
     private LocalDateTime readAt;
 
     @Builder
-    public Notification(User user, NotificationType type, String title, String content, NotificationLink link) {
+    public Notification(User user, NotificationType type, String title, String content, NotificationLink link,
+                        UUID linkId) {
         this.user = user;
         this.type = type;
         this.title = title;
         this.content = content;
         this.link = link;
+        this.linkId = linkId;
         this.read = false;
     }
 

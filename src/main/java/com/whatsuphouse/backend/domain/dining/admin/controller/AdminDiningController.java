@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.dining.admin.controller;
 
+import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.ExceptionCaseStatusRequest;
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.MatchingRuleRequest;
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.SessionVenueRequest;
@@ -20,9 +21,11 @@ import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleSer
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminVenueService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableConfirmResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableListResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchRunResponse;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.service.DiningConfirmService;
 import com.whatsuphouse.backend.domain.matching.service.DiningMatchService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -51,7 +54,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "우연한 식탁 운영 (관리자)", description = "운영 대시보드, 회차 신청자·CSV, 매칭 실행·테이블, 예외함, 매칭 규칙, 식당 풀 API")
+@Tag(name = "우연한 식탁 운영 (관리자)", description = "운영 대시보드, 회차 신청자·CSV, 매칭 실행·테이블·즉시 확정·재시도, 예외함, 매칭 규칙, 식당 풀 API")
 @RestController
 @RequestMapping("/api/admin/dining")
 @RequiredArgsConstructor
@@ -65,6 +68,7 @@ public class AdminDiningController {
     private final AdminMatchingRuleService adminMatchingRuleService;
     private final AdminVenueService adminVenueService;
     private final DiningMatchService diningMatchService;
+    private final DiningConfirmService diningConfirmService;
 
     // ── 대시보드·신청자 ────────────────────────────────────────────────────────
 
@@ -121,6 +125,33 @@ public class AdminDiningController {
     public ResponseEntity<ApiResult<FeedbackSummaryResponse>> getFeedbackSummary(
             @Parameter(description = "회차 ID") @PathVariable UUID id) {
         return ResponseEntity.ok(ApiResult.success(adminFeedbackService.getFeedbackSummary(id)));
+    }
+
+    @Operation(summary = "즉시 확정", description = "확정 예정 시각을 지금으로 당기고 자동 확정 파이프라인(하드 조건 검증 → 확정·참석 → 식당 → 채팅방 → 알림)을 "
+            + "바로 한 번 실행한다. 하드 조건 위반이면 PROPOSED로 보류되고 예외함에 CONFLICT가 남는다. 제안 상태가 아니면 409, 없으면 404.")
+    @PostMapping("/tables/{id}/confirm-now")
+    public ResponseEntity<ApiResult<DiningTableConfirmResponse>> confirmNow(
+            @Parameter(description = "테이블 ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(diningConfirmService.confirmNow(id)));
+    }
+
+    @Operation(summary = "테이블 채팅방 재시도", description = "확정 테이블에 채팅방이 없으면 만들고 확정 안내를 남긴다(요청한 관리자가 개설자). "
+            + "성공하면 이 테이블의 열린 채팅방 실패 예외(NOTIFICATION)를 처리 완료로 닫는다. 확정 테이블이 아니면 409.")
+    @PostMapping("/tables/{id}/chat-room/retry")
+    public ResponseEntity<ApiResult<ChatRoomIdResponse>> retryChatRoom(
+            @Parameter(description = "테이블 ID") @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(ApiResult.success(diningConfirmService.retryChatRoom(id, principal.getUserId())));
+    }
+
+    @Operation(summary = "확정 알림 재발송", description = "멤버 전원에게 DINING_CONFIRMED 알림을 다시 보낸다. "
+            + "성공하면 이 테이블의 열린 알림 실패 예외(NOTIFICATION)를 처리 완료로 닫는다. 확정 테이블이 아니면 409.")
+    @PostMapping("/tables/{id}/notifications/retry")
+    public ResponseEntity<ApiResult<Void>> retryNotifications(
+            @Parameter(description = "테이블 ID") @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        diningConfirmService.retryNotifications(id, principal.getUserId());
+        return ResponseEntity.ok(ApiResult.success(null));
     }
 
     // ── 예외함 ────────────────────────────────────────────────────────────────
