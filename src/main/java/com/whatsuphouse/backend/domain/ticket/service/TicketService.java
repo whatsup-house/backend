@@ -10,6 +10,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
@@ -26,8 +27,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -82,7 +88,8 @@ public class TicketService {
         String bookingNumber = null;
         if (applicationId != null) {
             Application application = getMemberPaymentPendingOrConfirmedApplication(applicationId, userId);
-            gatheringId = application.getGathering().getId();
+            // 기존 API 호환: 결제 후 이동할 모임 페이지는 회차 ID로 연다. 회차 배정 전이면 종류 ID. (KAN-337, KAN-338)
+            gatheringId = application.getLegacyGatheringId();
             applicationStatus = application.getStatus();
             bookingNumber = application.getBookingNumber();
         }
@@ -170,10 +177,28 @@ public class TicketService {
                 .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(
                         application.getId(), TicketTransactionType.USE)
                 .ifPresent(use -> {
+                    use.restore();
                     TicketPass pass = use.getTicketPass();
                     pass.refundOne();
                     ticketTransactionRepository.save(TicketTransaction.of(
                             pass, application, TicketTransactionType.REFUND, 1, "신청 취소 복구"));
                 });
+    }
+
+    /**
+     * 신청별 이용권 차감 상태(가장 최근 USE 거래 기준). 차감 기록이 없는 신청은 결과에 없다.
+     * V8 백필 전 USE 행은 status가 비어 있을 수 있어 DEDUCTED로 본다. (KAN-342)
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, TicketDeductionStatus> findDeductionStatuses(Collection<UUID> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        return ticketTransactionRepository
+                .findByApplication_IdInAndTransactionType(applicationIds, TicketTransactionType.USE).stream()
+                .sorted(Comparator.comparing(TicketTransaction::getCreatedAt))
+                .collect(Collectors.toMap(use -> use.getApplication().getId(),
+                        use -> Objects.requireNonNullElse(use.getStatus(), TicketDeductionStatus.DEDUCTED),
+                        (older, newer) -> newer));
     }
 }

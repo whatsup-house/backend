@@ -8,11 +8,13 @@ import com.whatsuphouse.backend.domain.application.admin.dto.response.Applicatio
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
-import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
+import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
 import com.whatsuphouse.backend.domain.mileage.service.MileageService;
@@ -30,8 +32,12 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -42,11 +48,13 @@ public class AdminApplicationService {
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
-    private final GatheringRepository gatheringRepository;
+    private final ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
+    private final GatheringSessionRepository gatheringSessionRepository;
     private final MileageService mileageService;
     private final TicketService ticketService;
     private final ApplicationEventPublisher eventPublisher;
 
+    // 기존 API 호환(KAN-338 전까지): gatheringId 필터는 회차 ID다.
     public List<AdminApplicationResponse> getAllApplications(UUID gatheringId, ApplicationStatus status) {
         List<Application> applications = applicationRepository.findApplications(gatheringId, status);
         Map<UUID, List<AnswerView>> answersByApplicationId = loadAnswersByApplicationId(applications);
@@ -95,10 +103,10 @@ public class AdminApplicationService {
         application.cancel();
 
         // 우연한 식탁 회원 신청을 관리자가 취소하면 차감했던 이용권을 환불한다. (KAN-261)
-        // 게더링이 이미 취소된 경우엔 게더링 취소 시점에 일괄 환불되므로 중복 환불하지 않는다.
+        // 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되므로 중복 환불하지 않는다.
         if (application.getUser() != null
                 && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
-                && application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
+                && !application.isSessionCancelled()) {
             ticketService.refundOneTicket(application);
         }
 
@@ -135,8 +143,8 @@ public class AdminApplicationService {
                     }
                     // 반려 시 승인 단계에서 차감했던 이용권을 1회 복구한다. (KAN-261 연장)
                     // refundOneTicket은 USE 거래가 있을 때만 복구하고 중복 복구를 막으므로 멱등하다.
-                    // 게더링이 이미 취소된 경우엔 게더링 취소 시점에 일괄 환불되므로 중복 복구하지 않는다.
-                    if (application.getGathering().getStatus() != GatheringStatus.CANCELLED) {
+                    // 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되므로 중복 복구하지 않는다.
+                    if (!application.isSessionCancelled()) {
                         ticketService.refundOneTicket(application);
                     }
                 }
@@ -209,14 +217,15 @@ public class AdminApplicationService {
      * 정원은 CONFIRMED+ATTENDED만 차지하므로, 이미 좌석을 가진 신청의 재확정/출석 처리는 통과시킨다. (KAN-236)
      */
     private void enforceCapacityForNewSeat(Application application) {
-        if (ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus())) {
+        // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 여기서 세지 않는다. (KAN-338)
+        if (ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus()) || application.getSession() == null) {
             return;
         }
-        // 동시 승인에 의한 정원 초과를 막기 위해 게더링 행을 잠근 뒤 좌석을 센다.
-        gatheringRepository.findByIdAndDeletedAtIsNullForUpdate(application.getGathering().getId());
-        int occupiedSeats = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
-                application.getGathering().getId(), ApplicationStatus.SEAT_OCCUPYING);
-        if (occupiedSeats >= application.getGathering().getMaxAttendees()) {
+        // 동시 승인에 의한 정원 초과를 막기 위해 회차 행을 잠근 뒤 좌석을 센다.
+        gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(application.getSession().getId());
+        int occupiedSeats = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                application.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING);
+        if (occupiedSeats >= application.getSession().getMaxAttendees()) {
             throw new CustomException(ErrorCode.GATHERING_FULL);
         }
     }
@@ -238,5 +247,75 @@ public class AdminApplicationService {
                 history.getAmount(),
                 history.getBalanceAfter()
         );
+    }
+
+    // ── 우연한 식탁 운영자 어드민용 조회 (KAN-348) ────────────────────────────────
+
+    /** 회차 신청자: 이 회차에 배정됐거나, 배정 전이고 이 회차를 희망 회차로 고른 활성 신청. 최신 신청 우선. */
+    public List<Application> listSessionApplications(UUID sessionId) {
+        return applicationRepository.findApplications(sessionId, null);
+    }
+
+    /** 신청별 답변 값(question_key → value). questionKeys에 든 질문만 담는다. */
+    public Map<UUID, Map<String, Object>> findAnswerValues(Collection<UUID> applicationIds, Collection<String> questionKeys) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Map<String, Object>> result = new HashMap<>();
+        applicationAnswerRepository.findByApplicationIds(List.copyOf(applicationIds)).stream()
+                .filter(answer -> questionKeys.contains(answer.getQuestion().getQuestionKey()))
+                .forEach(answer -> result.computeIfAbsent(answer.getApplication().getId(), id -> new HashMap<>())
+                        .put(answer.getQuestion().getQuestionKey(),
+                                answer.getValue() != null ? answer.getValue().get("value") : null));
+        return result;
+    }
+
+    /** 신청별 답변(질문 fetch). 매칭 엔진이 reserved_key·매칭 설정으로 분류해 쓴다. */
+    public List<ApplicationAnswer> findAnswers(Collection<UUID> applicationIds) {
+        return applicationIds.isEmpty() ? List.of() : applicationAnswerRepository.findByApplicationIds(List.copyOf(applicationIds));
+    }
+
+    /** 신청별 희망 회차, 1순위부터. */
+    public Map<UUID, List<ApplicationCandidateSession>> findCandidateSessions(Collection<UUID> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        return applicationCandidateSessionRepository.findByApplicationIdsWithSession(applicationIds).stream()
+                .collect(Collectors.groupingBy(candidate -> candidate.getApplication().getId()));
+    }
+
+    /** 회원별 우연한 식탁 참가(출석 처리된 신청) 횟수. 참가가 없으면 결과에 없다. */
+    public Map<UUID, Long> countRandomTableAttendance(Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        // TODO(KAN-345 이후): 참석 기록이 attendances(ATTENDED)로 옮겨가면 그 기준으로 센다.
+        return applicationRepository.countByUserIdsAndStatusAndType(
+                        userIds, ApplicationStatus.ATTENDED, GatheringType.RANDOM_TABLE).stream()
+                .collect(Collectors.toMap(ApplicationRepository.UserCountProjection::getUserId,
+                        ApplicationRepository.UserCountProjection::getCount));
+    }
+
+    /** 신청한 회원 ID. 취소된 신청도 찾는다(신고 조치 대상은 취소 여부와 무관). 비회원 신청이면 비어 있다. */
+    public Optional<UUID> findApplicantUserId(UUID applicationId) {
+        Application application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        return Optional.ofNullable(application.getUser()).map(User::getId);
+    }
+
+    /**
+     * 회차 참가 확정자(승인·출석) 중 회원의 userId (채팅 단체방 멤버 프리필용). 비회원 신청은 제외.
+     * 채팅 GATHERING 출처 ID는 옛 게더링 ID = 회차 ID다.
+     */
+    public List<UUID> listConfirmedMemberUserIds(UUID sessionId) {
+        gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)
+                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        return applicationRepository.findBySessionIdAndStatusInWithUser(sessionId, ApplicationStatus.SEAT_OCCUPYING)
+                .stream()
+                .map(Application::getUser)
+                .filter(Objects::nonNull)
+                .map(User::getId)
+                .distinct()
+                .toList();
     }
 }

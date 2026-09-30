@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.application.client.dto.response;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -43,6 +44,7 @@ public class ApplicationCheckResponse {
     }
 
     public static ApplicationCheckResponse from(Application application, List<AnswerView> answers, Integer ticketRemainingCount) {
+        GatheringSession session = application.getSession();
         return ApplicationCheckResponse.builder()
                 .id(application.getId())
                 .bookingNumber(application.getBookingNumber())
@@ -53,12 +55,14 @@ public class ApplicationCheckResponse {
                 .ticketRemainingCount(ticketRemainingCount)
                 .reviewedAt(application.getReviewedAt())
                 .rejectionReason(application.getRejectionReason())
+                // 기존 API 호환: gathering.id는 회차 ID, 날짜·시간은 회차 값. (KAN-337)
+                // 회차 배정 전(우연한 식탁 매칭 전)이면 id는 종류 ID, 날짜·시간은 null. (KAN-338)
                 .gathering(GatheringInfo.builder()
-                        .id(application.getGathering().getId())
+                        .id(application.getLegacyGatheringId())
                         .title(application.getGathering().getTitle())
-                        .eventDate(application.getGathering().getEventDate().toString())
-                        .startTime(application.getGathering().getStartTime() != null
-                                ? application.getGathering().getStartTime().toString() : null)
+                        .eventDate(session != null ? session.getEventDate().toString() : null)
+                        .startTime(session != null && session.getStartTime() != null
+                                ? session.getStartTime().toString() : null)
                         .build())
                 .createdAt(application.getCreatedAt())
                 .answers(answers)

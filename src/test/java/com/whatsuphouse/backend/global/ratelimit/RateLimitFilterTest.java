@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.global.ratelimit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,11 +29,14 @@ class RateLimitFilterTest {
     @Mock
     private StringRedisTemplate redisTemplate;
 
+    @Mock
+    private JwtTokenProvider jwtTokenProvider;
+
     private RateLimitFilter filter;
 
     @BeforeEach
     void setUp() {
-        filter = new RateLimitFilter(redisTemplate, new ObjectMapper());
+        filter = new RateLimitFilter(redisTemplate, new ObjectMapper(), jwtTokenProvider);
     }
 
     @SuppressWarnings("unchecked")
@@ -131,5 +136,30 @@ class RateLimitFilterTest {
 
         assertThat(chain.getRequest()).isNotNull();
         assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("채팅 전송(2건/초)은 유효 토큰이면 사용자 기준, 토큰이 없으면 IP 기준으로 센다")
+    @SuppressWarnings("unchecked")
+    void chatMessage_keyedByUserWhenAuthenticated() throws Exception {
+        // given
+        stubCount(1L);
+        UUID userId = UUID.randomUUID();
+        given(jwtTokenProvider.getUserIdFromToken("valid-token")).willReturn(userId);
+        MockHttpServletRequest authed = new MockHttpServletRequest("POST", "/api/chat/rooms/r1/messages");
+        authed.setRequestURI("/api/chat/rooms/r1/messages");
+        authed.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletRequest anonymous = new MockHttpServletRequest("POST", "/api/chat/rooms/r1/messages");
+        anonymous.setRequestURI("/api/chat/rooms/r1/messages");
+
+        // when
+        filter.doFilter(authed, new MockHttpServletResponse(), new MockFilterChain());
+        filter.doFilter(anonymous, new MockHttpServletResponse(), new MockFilterChain());
+
+        // then
+        verify(redisTemplate).execute(
+                any(RedisScript.class), eq(List.of("rate-limit:chat-message:user:" + userId)), eq("1"));
+        verify(redisTemplate).execute(
+                any(RedisScript.class), eq(List.of("rate-limit:chat-message:127.0.0.1")), eq("1"));
     }
 }

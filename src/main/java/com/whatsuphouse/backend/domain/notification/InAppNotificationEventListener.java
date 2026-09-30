@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.notification;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationLink;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationAttendedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.service.UserNotificationService;
@@ -33,6 +34,22 @@ public class InAppNotificationEventListener {
                 "참가가 확정되었어요",
                 application.getGathering().getTitle() + " 참가가 확정되었습니다.",
                 NotificationLink.APPLICATIONS);
+    }
+
+    /**
+     * 우연한 식탁 결제 대기 → 이용권 구매로 이동하는 알림. (KAN-342)
+     * ApplicationApprovedEvent는 우연한 식탁 신청이 이용권 부족으로 PAYMENT_PENDING이 될 때만 발행된다
+     * (신청 즉시, 관리자 승인 후 모두).
+     */
+    @EventListener
+    public void onApplicationApproved(ApplicationApprovedEvent event) {
+        Application application = event.getApplication();
+        userNotificationService.create(
+                application.getUser(),
+                NotificationType.DINING_PAYMENT_PENDING,
+                "이용권 결제가 필요해요",
+                application.getGathering().getTitle() + " 신청을 마치려면 이용권을 구매해 주세요.",
+                NotificationLink.TICKET_PURCHASE);
     }
 
     /** 참석 처리 시 마일리지 적립 → 마일리지 현황으로 이동하는 알림. */

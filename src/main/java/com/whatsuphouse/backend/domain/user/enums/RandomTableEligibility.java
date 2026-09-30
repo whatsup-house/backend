@@ -7,5 +7,7 @@ public enum RandomTableEligibility {
     UNREVIEWED,
     APPROVED,
     REJECTED,
-    SUSPENDED
+    SUSPENDED,
+    // 운영자 안전 조치(RESTRICT/BAN)로 제한. 예외함 SAFETY 처리에서만 설정된다. (KAN-348)
+    RESTRICTED
 }

@@ -50,4 +50,17 @@ class UserTest {
 
         assertThat(user.getCurrentAge()).isEqualTo(25);
     }
+
+    @Test
+    @DisplayName("운영자 안전 조치로 RESTRICTED가 되면 우연한 식탁 참여가 막힌다")
+    void restrictRandomTable_blocksRandomTable() {
+        User user = buildUser(25, null);
+        user.approveRandomTable();
+
+        user.restrictRandomTable();
+
+        assertThat(user.isRandomTableEligibilityRestricted()).isTrue();
+        assertThat(user.isBlockedFromRandomTable()).isTrue();
+        assertThat(user.isApprovedForRandomTable()).isFalse();
+    }
 }

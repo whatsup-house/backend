@@ -1,20 +1,30 @@
 package com.whatsuphouse.backend.domain.gathering.admin.service;
 
+import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCreateRequest;
+import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCurationOrderRequest;
+import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringSessionCreateRequest;
+import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringSessionRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringStatusRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringUpdateRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.response.AdminGatheringResponse;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringDetailResponse;
+import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringSessionResponse;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.enums.LocationStatus;
-import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -27,9 +37,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +50,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -50,10 +63,19 @@ class AdminGatheringServiceTest {
     private GatheringRepository gatheringRepository;
 
     @Mock
+    private GatheringSessionRepository gatheringSessionRepository;
+
+    @Mock
+    private GatheringService gatheringService;
+
+    @Mock
     private LocationRepository locationRepository;
 
     @Mock
     private ApplicationRepository applicationRepository;
+
+    @Mock
+    private ApplicationService applicationService;
 
     @Mock
     private StorageService storageService;
@@ -62,22 +84,25 @@ class AdminGatheringServiceTest {
     private FormProvisionService formProvisionService;
 
     @Mock
-    private com.whatsuphouse.backend.domain.ticket.service.TicketService ticketService;
+    private TicketService ticketService;
 
     @Mock
-    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private AdminGatheringService adminGatheringService;
 
     private UUID gatheringId;
+    private UUID sessionId;
     private UUID locationId;
     private Location location;
     private Gathering gathering;
+    private GatheringSession session;
 
     @BeforeEach
     void setUp() {
         gatheringId = UUID.randomUUID();
+        sessionId = UUID.randomUUID();
         locationId = UUID.randomUUID();
 
         location = Location.builder()
@@ -92,25 +117,30 @@ class AdminGatheringServiceTest {
         gathering = Gathering.builder()
                 .title("재즈 게더링")
                 .description("소규모 재즈 모임")
+                .basePrice(15000)
+                .thumbnailUrl("https://example.com/thumb.jpg")
+                .build();
+        ReflectionTestUtils.setField(gathering, "id", gatheringId);
+
+        session = GatheringSession.builder()
+                .gathering(gathering)
                 .location(location)
                 .eventDate(LocalDate.now().plusDays(7))
                 .startTime(LocalTime.of(19, 0))
                 .endTime(LocalTime.of(21, 0))
-                .price(15000)
                 .maxAttendees(10)
-                .thumbnailUrl("https://example.com/thumb.jpg")
                 .build();
-        ReflectionTestUtils.setField(gathering, "id", gatheringId);
+        ReflectionTestUtils.setField(session, "id", sessionId);
     }
 
     // ── listGatherings() ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("필터 없이 전체 게더링 목록 반환")
+    @DisplayName("필터 없이 전체 회차 목록 반환 — 항목마다 종류 ID를 함께 준다")
     void listGatherings_noFilter_returnsAll() {
         // given
-        given(gatheringRepository.findByDeletedAtIsNull()).willReturn(List.of(gathering));
-        given(applicationRepository.countByGatheringIdsGroupByStatus(List.of(gatheringId)))
+        given(gatheringSessionRepository.findByDeletedAtIsNull()).willReturn(List.of(session));
+        given(applicationRepository.countBySessionIdsGroupByStatus(List.of(sessionId)))
                 .willReturn(List.of());
 
         // when
@@ -118,16 +148,18 @@ class AdminGatheringServiceTest {
 
         // then
         assertThat(result).hasSize(1);
+        assertThat(result.get(0).getId()).isEqualTo(sessionId);
+        assertThat(result.get(0).getGatheringId()).isEqualTo(gatheringId);
         assertThat(result.get(0).getTitle()).isEqualTo("재즈 게더링");
         assertThat(result.get(0).getApplicantCount()).isZero();
     }
 
     @Test
-    @DisplayName("status 필터로 게더링 목록 반환")
+    @DisplayName("status 필터로 회차 목록 반환")
     void listGatherings_withStatus_returnsFiltered() {
         // given
-        given(gatheringRepository.findByStatusAndDeletedAtIsNull(GatheringStatus.OPEN)).willReturn(List.of(gathering));
-        given(applicationRepository.countByGatheringIdsGroupByStatus(List.of(gatheringId)))
+        given(gatheringSessionRepository.findByStatusAndDeletedAtIsNull(GatheringSessionStatus.OPEN)).willReturn(List.of(session));
+        given(applicationRepository.countBySessionIdsGroupByStatus(List.of(sessionId)))
                 .willReturn(List.of());
 
         // when
@@ -139,10 +171,10 @@ class AdminGatheringServiceTest {
     }
 
     @Test
-    @DisplayName("조건에 맞는 게더링이 없으면 빈 리스트 반환")
+    @DisplayName("조건에 맞는 회차가 없으면 빈 리스트 반환")
     void listGatherings_noMatch_returnsEmpty() {
         // given
-        given(gatheringRepository.findByStatusAndDeletedAtIsNull(GatheringStatus.COMPLETED)).willReturn(List.of());
+        given(gatheringSessionRepository.findByStatusAndDeletedAtIsNull(GatheringSessionStatus.DONE)).willReturn(List.of());
 
         // when
         List<AdminGatheringResponse> result = adminGatheringService.listGatherings(GatheringStatus.COMPLETED, null, null, null);
@@ -152,13 +184,13 @@ class AdminGatheringServiceTest {
     }
 
     @Test
-    @DisplayName("eventDate 필터로 게더링 목록 반환")
+    @DisplayName("eventDate 필터로 회차 목록 반환")
     void listGatherings_withEventDate_returnsFiltered() {
         // given
         LocalDate eventDate = LocalDate.now().plusDays(7);
-        given(gatheringRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(eventDate))
-                .willReturn(List.of(gathering));
-        given(applicationRepository.countByGatheringIdsGroupByStatus(List.of(gatheringId)))
+        given(gatheringSessionRepository.findByEventDateAndDeletedAtIsNullOrderByStartTimeAscCreatedAtAsc(eventDate))
+                .willReturn(List.of(session));
+        given(applicationRepository.countBySessionIdsGroupByStatus(List.of(sessionId)))
                 .willReturn(List.of());
 
         // when
@@ -169,82 +201,14 @@ class AdminGatheringServiceTest {
         assertThat(result.get(0).getEventDate()).isEqualTo(eventDate);
     }
 
-    // ── createGathering() ────────────────────────────────────────────────────
+    // ── createGathering() (종류) ─────────────────────────────────────────────
 
     @Test
-    @DisplayName("thumbnailUrl가 있으면 storageService.move() 호출 후 URL 저장")
-    void createGathering_withThumbnailTempPath_movesFileAndSavesUrl() {
-        // given
-        String tempPath = "temp/gathering/550e8400.jpg";
-        String movedUrl = "https://storage.example.com/gathering/550e8400.jpg";
-        GatheringCreateRequest request = buildCreateRequest("재즈 게더링", tempPath);
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
-        given(storageService.move(tempPath, "gathering")).willReturn(movedUrl);
-        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
-
-        // when
-        GatheringDetailResponse response = adminGatheringService.createGathering(request);
-
-        // then
-        then(storageService).should().move(eq(tempPath), eq("gathering"));
-        assertThat(response.getThumbnailUrl()).isEqualTo(movedUrl);
-    }
-
-    @Test
-    @DisplayName("thumbnailUrl가 null이면 storageService.move() 미호출, thumbnailUrl은 null")
-    void createGathering_withoutThumbnailTempPath_thumbnailUrlIsNull() {
-        // given
-        GatheringCreateRequest request = buildCreateRequest("재즈 게더링", null);
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
-        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
-
-        // when
-        GatheringDetailResponse response = adminGatheringService.createGathering(request);
-
-        // then
-        then(storageService).should(never()).move(any(), any());
-        assertThat(response.getThumbnailUrl()).isNull();
-    }
-
-    @Test
-    @DisplayName("thumbnailUrl가 빈 문자열이면 storageService.move() 미호출, thumbnailUrl은 null")
-    void createGathering_withBlankThumbnailTempPath_thumbnailUrlIsNull() {
-        // given
-        GatheringCreateRequest request = buildCreateRequest("재즈 게더링", "");
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
-        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
-
-        // when
-        GatheringDetailResponse response = adminGatheringService.createGathering(request);
-
-        // then
-        then(storageService).should(never()).move(any(), any());
-        assertThat(response.getThumbnailUrl()).isNull();
-    }
-
-    @Test
-    @DisplayName("thumbnailUrl가 빈 문자열이면 storageService.move() 미호출, 기존 thumbnailUrl 유지")
-    void updateGathering_withBlankThumbnailTempPath_keepsPreviousThumbnailUrl() {
-        // given
-        String existingUrl = "https://example.com/thumb.jpg";
-        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", "");
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
-
-        // when
-        GatheringDetailResponse response = adminGatheringService.updateGathering(gatheringId, request);
-
-        // then
-        then(storageService).should(never()).move(any(), any());
-        assertThat(response.getThumbnailUrl()).isEqualTo(existingUrl);
-    }
-
-    @Test
-    @DisplayName("게더링 생성 성공 - 기본 필드 검증")
+    @DisplayName("종류 생성 — 회차 없이 종류 필드·기본 가격만 저장하고 신청폼을 만든다")
     void createGathering_success() {
         // given
-        GatheringCreateRequest request = buildCreateRequest("재즈 게더링", null);
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        GatheringCreateRequest request = GatheringCreateRequest.builder()
+                .title("재즈 게더링").basePrice(20000).gatheringType(GatheringType.RANDOM_TABLE).build();
         given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         // when
@@ -252,38 +216,24 @@ class AdminGatheringServiceTest {
 
         // then
         assertThat(response.getTitle()).isEqualTo("재즈 게더링");
-        assertThat(response.getStatus()).isEqualTo(GatheringStatus.OPEN);
-        assertThat(response.getLocation().getName()).isEqualTo("재즈바 A");
+        assertThat(response.getBasePrice()).isEqualTo(20000);
+        assertThat(response.getGatheringType()).isEqualTo(GatheringType.RANDOM_TABLE);
+        assertThat(response.getSessions()).isEmpty();
+        then(gatheringSessionRepository).should(never()).save(any());
+        then(formProvisionService).should().createDefaultForm(any(Gathering.class));
     }
 
     @Test
-    @DisplayName("존재하지 않는 장소로 게더링 생성 시 예외 발생")
-    void createGathering_locationNotFound_throwsException() {
+    @DisplayName("thumbnailUrl가 temp 경로면 storageService.move() 호출 후 URL 저장")
+    void createGathering_withThumbnailTempPath_movesFileAndSavesUrl() {
         // given
-        GatheringCreateRequest request = buildCreateRequest("재즈 게더링", null);
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.empty());
-
-        // when & then
-        assertThatThrownBy(() -> adminGatheringService.createGathering(request))
-                .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LOCATION_NOT_FOUND);
-    }
-
-    // ── updateGathering() ────────────────────────────────────────────────────
-
-    @Test
-    @DisplayName("thumbnailUrl가 있으면 storageService.move() 호출 후 URL 교체")
-    void updateGathering_withThumbnailTempPath_movesFileAndReplacesUrl() {
-        // given
-        String tempPath = "temp/gathering/new-thumb.jpg";
-        String movedUrl = "https://storage.example.com/gathering/new-thumb.jpg";
-        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", tempPath);
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        String tempPath = "temp/gathering/550e8400.jpg";
+        String movedUrl = "https://storage.example.com/gathering/550e8400.jpg";
         given(storageService.move(tempPath, "gathering")).willReturn(movedUrl);
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         // when
-        GatheringDetailResponse response = adminGatheringService.updateGathering(gatheringId, request);
+        GatheringDetailResponse response = adminGatheringService.createGathering(buildCreateRequest(tempPath));
 
         // then
         then(storageService).should().move(eq(tempPath), eq("gathering"));
@@ -291,20 +241,84 @@ class AdminGatheringServiceTest {
     }
 
     @Test
-    @DisplayName("thumbnailUrl가 null이면 storageService.move() 미호출, 기존 thumbnailUrl 유지")
-    void updateGathering_withoutThumbnailTempPath_keepsPreviousThumbnailUrl() {
+    @DisplayName("thumbnailUrl가 null·빈 문자열이면 move() 미호출, thumbnailUrl은 null")
+    void createGathering_withoutThumbnail_thumbnailUrlIsNull() {
         // given
-        String existingUrl = "https://example.com/thumb.jpg";
-        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", null);
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         // when
-        GatheringDetailResponse response = adminGatheringService.updateGathering(gatheringId, request);
+        GatheringDetailResponse nullThumb = adminGatheringService.createGathering(buildCreateRequest(null));
+        GatheringDetailResponse blankThumb = adminGatheringService.createGathering(buildCreateRequest(""));
 
         // then
         then(storageService).should(never()).move(any(), any());
-        assertThat(response.getThumbnailUrl()).isEqualTo(existingUrl);
+        assertThat(nullThumb.getThumbnailUrl()).isNull();
+        assertThat(blankThumb.getThumbnailUrl()).isNull();
+    }
+
+    @Test
+    @DisplayName("temp 경로가 아닌 외부 이미지 URL로 생성하면 move() 미호출, 입력값 그대로 저장")
+    void createGathering_withExternalImageUrl_doesNotMoveAndStoresAsIs() {
+        // given
+        String externalUrl = "https://example.com/thumbnail.jpg";
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        GatheringDetailResponse response = adminGatheringService.createGathering(buildCreateRequest(externalUrl));
+
+        // then
+        then(storageService).should(never()).move(any(), any());
+        assertThat(response.getThumbnailUrl()).isEqualTo(externalUrl);
+    }
+
+    // ── updateGathering() (종류) ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("종류 수정 — 제목·기본 가격이 종류에 반영된다")
+    void updateGathering_success() {
+        // given
+        GatheringUpdateRequest request = GatheringUpdateRequest.builder()
+                .title("재즈 게더링 (수정)").basePrice(18000).build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+
+        // when
+        adminGatheringService.updateGathering(gatheringId, request);
+
+        // then
+        assertThat(gathering.getTitle()).isEqualTo("재즈 게더링 (수정)");
+        assertThat(gathering.getBasePrice()).isEqualTo(18000);
+        then(gatheringService).should().getGathering(gatheringId);
+    }
+
+    @Test
+    @DisplayName("thumbnailUrl가 temp 경로면 move() 호출 후 URL 교체")
+    void updateGathering_withThumbnailTempPath_movesFileAndReplacesUrl() {
+        // given
+        String tempPath = "temp/gathering/new-thumb.jpg";
+        String movedUrl = "https://storage.example.com/gathering/new-thumb.jpg";
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(storageService.move(tempPath, "gathering")).willReturn(movedUrl);
+
+        // when
+        adminGatheringService.updateGathering(gatheringId, buildUpdateRequest(tempPath));
+
+        // then
+        assertThat(gathering.getThumbnailUrl()).isEqualTo(movedUrl);
+    }
+
+    @Test
+    @DisplayName("thumbnailUrl가 null·빈 문자열이면 move() 미호출, 기존 thumbnailUrl 유지")
+    void updateGathering_withoutThumbnail_keepsPreviousThumbnailUrl() {
+        // given
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+
+        // when
+        adminGatheringService.updateGathering(gatheringId, buildUpdateRequest(null));
+        adminGatheringService.updateGathering(gatheringId, buildUpdateRequest(""));
+
+        // then
+        then(storageService).should(never()).move(any(), any());
+        assertThat(gathering.getThumbnailUrl()).isEqualTo("https://example.com/thumb.jpg");
     }
 
     @Test
@@ -313,149 +327,344 @@ class AdminGatheringServiceTest {
         // given: 수정 폼은 저장된 thumbnailUrl을 prefill 해서 그대로 되돌려보낸다.
         // 이 값을 다시 move() 하면 sourceKey가 없어 IMAGE_UPLOAD_FAILED로 수정이 막혔다.
         String storedUrl = "https://storage.example.com/gathering/550e8400.jpg";
-        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", storedUrl);
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
 
         // when
-        GatheringDetailResponse response = adminGatheringService.updateGathering(gatheringId, request);
+        adminGatheringService.updateGathering(gatheringId, buildUpdateRequest(storedUrl));
 
         // then
         then(storageService).should(never()).move(any(), any());
-        assertThat(response.getThumbnailUrl()).isEqualTo(storedUrl);
+        assertThat(gathering.getThumbnailUrl()).isEqualTo(storedUrl);
     }
 
     @Test
-    @DisplayName("temp 경로가 아닌 외부 이미지 URL로 생성하면 move() 미호출, 입력값 그대로 저장")
-    void createGathering_withExternalImageUrl_doesNotMoveAndStoresAsIs() {
-        // given
-        String externalUrl = "https://example.com/thumbnail.jpg";
-        GatheringCreateRequest request = buildCreateRequest("재즈 게더링", externalUrl);
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
-        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
-
-        // when
-        GatheringDetailResponse response = adminGatheringService.createGathering(request);
-
-        // then
-        then(storageService).should(never()).move(any(), any());
-        assertThat(response.getThumbnailUrl()).isEqualTo(externalUrl);
-    }
-
-    @Test
-    @DisplayName("게더링 수정 성공 - 기본 필드 검증")
-    void updateGathering_success() {
-        // given
-        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", null);
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
-
-        // when
-        GatheringDetailResponse response = adminGatheringService.updateGathering(gatheringId, request);
-
-        // then
-        assertThat(response.getTitle()).isEqualTo("재즈 게더링 (수정)");
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 게더링 수정 시 예외 발생")
+    @DisplayName("종류 수정은 종류 ID만 받는다 — 없는 종류면 GATHERING_NOT_FOUND")
     void updateGathering_gatheringNotFound_throwsException() {
         // given
-        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", null);
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.empty());
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> adminGatheringService.updateGathering(gatheringId, request))
+        assertThatThrownBy(() -> adminGatheringService.updateGathering(sessionId, buildUpdateRequest(null)))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_NOT_FOUND);
     }
 
+    // ── deleteGathering() (종류) ─────────────────────────────────────────────
+
     @Test
-    @DisplayName("존재하지 않는 장소로 게더링 수정 시 예외 발생")
-    void updateGathering_locationNotFound_throwsException() {
+    @DisplayName("종류 삭제 — 신청이 없으면 종류와 회차를 함께 soft delete")
+    void deleteGathering_noApplications_deletesKindAndSessions() {
         // given
-        GatheringUpdateRequest request = buildUpdateRequest("재즈 게더링 (수정)", null);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(gatheringSessionRepository.findByGathering_IdInAndDeletedAtIsNull(List.of(gatheringId)))
+                .willReturn(List.of(session));
+        given(applicationService.hasActiveApplications(List.of(sessionId))).willReturn(false);
+
+        // when
+        adminGatheringService.deleteGathering(gatheringId);
+
+        // then
+        assertThat(gathering.getDeletedAt()).isNotNull();
+        assertThat(session.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("종류 삭제 — 신청이 있는 회차가 있으면 409 SESSION_HAS_APPLICATIONS, 아무것도 지우지 않는다")
+    void deleteGathering_withApplications_throwsConflict() {
+        // given
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(gatheringSessionRepository.findByGathering_IdInAndDeletedAtIsNull(List.of(gatheringId)))
+                .willReturn(List.of(session));
+        given(applicationService.hasActiveApplications(List.of(sessionId))).willReturn(true);
+
+        // when & then
+        assertThatThrownBy(() -> adminGatheringService.deleteGathering(gatheringId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_HAS_APPLICATIONS);
+        assertThat(gathering.getDeletedAt()).isNull();
+        assertThat(session.getDeletedAt()).isNull();
+    }
+
+    // ── createSessions() ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("회차 단건 생성 — 종류에 회차 하나를 붙이고 가격 오버라이드·마감을 저장한다")
+    void createSessions_single_createsOneSession() {
+        // given
+        LocalDate date = LocalDate.now().plusDays(3);
+        GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                .eventDate(date).locationId(locationId).maxAttendees(8).priceOverride(20000)
+                .applyDeadlineAt(date.atTime(12, 0)).build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        given(gatheringSessionRepository.saveAll(anyList())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        List<GatheringSessionResponse> result = adminGatheringService.createSessions(gatheringId, request);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getEventDate()).isEqualTo(date);
+        assertThat(result.get(0).getPrice()).isEqualTo(20000);
+        assertThat(result.get(0).getApplyDeadlineAt()).isEqualTo(date.atTime(12, 0));
+        assertThat(result.get(0).getStatus()).isEqualTo(GatheringSessionStatus.OPEN);
+    }
+
+    @Test
+    @DisplayName("주간 반복 생성 — 기준 날짜부터 until(포함)까지 7일 간격, 신청 마감도 같은 간격으로 민다")
+    void createSessions_repeatWeekly_createsWeeklySessions() {
+        // given
+        LocalDate base = LocalDate.now().plusDays(1);
+        LocalDateTime deadline = base.minusDays(1).atTime(18, 0);
+        GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                .eventDate(base).startTime(LocalTime.of(19, 0)).locationId(locationId).maxAttendees(8)
+                .applyDeadlineAt(deadline)
+                .repeatWeekly(new GatheringSessionCreateRequest.RepeatWeekly(base.plusWeeks(2).plusDays(3)))
+                .build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        given(gatheringSessionRepository.saveAll(anyList())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        List<GatheringSessionResponse> result = adminGatheringService.createSessions(gatheringId, request);
+
+        // then
+        assertThat(result).extracting(GatheringSessionResponse::getEventDate)
+                .containsExactly(base, base.plusWeeks(1), base.plusWeeks(2));
+        assertThat(result).extracting(GatheringSessionResponse::getApplyDeadlineAt)
+                .containsExactly(deadline, deadline.plusWeeks(1), deadline.plusWeeks(2));
+        assertThat(result).extracting(GatheringSessionResponse::getStartTime).containsOnly(LocalTime.of(19, 0));
+    }
+
+    @Test
+    @DisplayName("반복 종료일이 기준 날짜보다 앞서거나 1년을 넘으면 INVALID_REPEAT_RANGE")
+    void createSessions_repeatOutOfRange_throwsException() {
+        // given
+        LocalDate base = LocalDate.now().plusDays(1);
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+
+        // when & then
+        for (LocalDate until : List.of(base.minusDays(1), base.plusYears(1).plusDays(1))) {
+            GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                    .eventDate(base).locationId(locationId).maxAttendees(8)
+                    .repeatWeekly(new GatheringSessionCreateRequest.RepeatWeekly(until)).build();
+            assertThatThrownBy(() -> adminGatheringService.createSessions(gatheringId, request))
+                    .isInstanceOf(CustomException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REPEAT_RANGE);
+        }
+        then(gatheringSessionRepository).should(never()).saveAll(anyList());
+    }
+
+    @Test
+    @DisplayName("과거 날짜로 회차를 만들면 INVALID_GATHERING_DATE (KAN-221)")
+    void createSessions_pastDate_throwsException() {
+        // given
+        GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                .eventDate(LocalDate.now().minusDays(1)).locationId(locationId).maxAttendees(10).build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+
+        // when & then
+        assertThatThrownBy(() -> adminGatheringService.createSessions(gatheringId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_GATHERING_DATE);
+    }
+
+    @Test
+    @DisplayName("종료 시간이 시작 시간보다 이르면 다음날 새벽 종료로 보고 생성 허용 (KAN-293)")
+    void createSessions_overnightTime_allowsCreation() {
+        // given
+        GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                .eventDate(LocalDate.now().plusDays(7)).locationId(locationId).maxAttendees(10)
+                .startTime(LocalTime.of(20, 0)).endTime(LocalTime.of(2, 0)).build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        given(gatheringSessionRepository.saveAll(anyList())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        List<GatheringSessionResponse> result = adminGatheringService.createSessions(gatheringId, request);
+
+        // then
+        assertThat(result.get(0).getStartTime()).isEqualTo(LocalTime.of(20, 0));
+        assertThat(result.get(0).getEndTime()).isEqualTo(LocalTime.of(2, 0));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 장소로 회차를 만들면 LOCATION_NOT_FOUND")
+    void createSessions_locationNotFound_throwsException() {
+        // given
+        GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                .eventDate(LocalDate.now().plusDays(7)).locationId(locationId).maxAttendees(10).build();
         given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
         given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> adminGatheringService.updateGathering(gatheringId, request))
+        assertThatThrownBy(() -> adminGatheringService.createSessions(gatheringId, request))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LOCATION_NOT_FOUND);
+    }
+
+    // ── updateSession() / deleteSession() ────────────────────────────────────
+
+    @Test
+    @DisplayName("회차 수정 — 날짜·정원·가격 오버라이드·마감이 회차에만 반영된다")
+    void updateSession_success() {
+        // given
+        LocalDate newDate = LocalDate.now().plusDays(10);
+        GatheringSessionRequest request = GatheringSessionRequest.builder()
+                .eventDate(newDate).locationId(locationId).maxAttendees(12).priceOverride(0)
+                .applyDeadlineAt(newDate.atStartOfDay()).build();
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(session));
+        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
+        given(gatheringService.toSessionResponses(List.of(session)))
+                .willAnswer(inv -> List.of(GatheringSessionResponse.from(session, 0)));
+
+        // when
+        GatheringSessionResponse response = adminGatheringService.updateSession(sessionId, request);
+
+        // then
+        assertThat(response.getEventDate()).isEqualTo(newDate);
+        assertThat(session.getMaxAttendees()).isEqualTo(12);
+        assertThat(session.getEffectivePrice()).isZero();
+        assertThat(session.getApplyDeadlineAt()).isEqualTo(newDate.atStartOfDay());
+        assertThat(gathering.getBasePrice()).isEqualTo(15000);
+    }
+
+    @Test
+    @DisplayName("회차 삭제 — 신청이 있으면 409 SESSION_HAS_APPLICATIONS")
+    void deleteSession_withApplications_throwsConflict() {
+        // given
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(session));
+        given(applicationService.hasActiveApplications(List.of(sessionId))).willReturn(true);
+
+        // when & then
+        assertThatThrownBy(() -> adminGatheringService.deleteSession(sessionId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_HAS_APPLICATIONS);
+        assertThat(session.getDeletedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("회차 삭제 — 신청이 없으면 soft delete")
+    void deleteSession_noApplications_softDeletes() {
+        // given
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(session));
+        given(applicationService.hasActiveApplications(List.of(sessionId))).willReturn(false);
+
+        // when
+        adminGatheringService.deleteSession(sessionId);
+
+        // then
+        assertThat(session.getDeletedAt()).isNotNull();
     }
 
     // ── changeStatus() ───────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("게더링 상태 CLOSED로 변경 성공")
+    @DisplayName("회차 상태 CLOSED로 변경 성공")
     void changeStatus_toClosed_success() {
         // given
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        GatheringStatusRequest request = buildStatusRequest(GatheringStatus.CLOSED);
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(session));
 
         // when
-        adminGatheringService.changeStatus(gatheringId, request);
+        adminGatheringService.changeStatus(sessionId, buildStatusRequest(GatheringStatus.CLOSED));
 
         // then
-        assertThat(gathering.getStatus()).isEqualTo(GatheringStatus.CLOSED);
+        assertThat(session.getStatus()).isEqualTo(GatheringSessionStatus.CLOSED);
     }
 
     @Test
-    @DisplayName("게더링 상태 COMPLETED로 변경 성공")
+    @DisplayName("회차 상태 COMPLETED로 변경하면 DONE")
     void changeStatus_toCompleted_success() {
         // given
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        GatheringStatusRequest request = buildStatusRequest(GatheringStatus.COMPLETED);
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(session));
 
         // when
-        adminGatheringService.changeStatus(gatheringId, request);
+        adminGatheringService.changeStatus(sessionId, buildStatusRequest(GatheringStatus.COMPLETED));
 
         // then
-        assertThat(gathering.getStatus()).isEqualTo(GatheringStatus.COMPLETED);
+        assertThat(session.getStatus()).isEqualTo(GatheringSessionStatus.DONE);
     }
 
     @Test
-    @DisplayName("게더링 상태 CANCELLED로 변경 성공")
+    @DisplayName("회차 상태 CANCELLED로 변경 성공")
     void changeStatus_toCancelled_success() {
         // given
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
-        GatheringStatusRequest request = buildStatusRequest(GatheringStatus.CANCELLED);
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(session));
 
         // when
-        adminGatheringService.changeStatus(gatheringId, request);
+        adminGatheringService.changeStatus(sessionId, buildStatusRequest(GatheringStatus.CANCELLED));
 
         // then
-        assertThat(gathering.getStatus()).isEqualTo(GatheringStatus.CANCELLED);
+        assertThat(session.getStatus()).isEqualTo(GatheringSessionStatus.CANCELLED);
     }
 
     @Test
-    @DisplayName("우연한 식탁 게더링 취소 시 회원 신청자에게 이용권을 환불한다 (KAN-261)")
+    @DisplayName("우연한 식탁 회차 취소 시 회원 신청자에게 이용권을 환불한다 (KAN-261)")
     void changeStatus_cancelRandomTable_refundsTicketsToMembers() {
         // given
         Gathering randomTable = Gathering.builder()
                 .title("우연한 식탁")
-                .eventDate(LocalDate.now().plusDays(7))
-                .maxAttendees(8)
                 .gatheringType(GatheringType.RANDOM_TABLE)
                 .build();
         ReflectionTestUtils.setField(randomTable, "id", gatheringId);
+        GatheringSession randomTableSession = GatheringSession.builder()
+                .gathering(randomTable)
+                .eventDate(LocalDate.now().plusDays(7))
+                .maxAttendees(8)
+                .build();
+        ReflectionTestUtils.setField(randomTableSession, "id", sessionId);
 
         User member = buildMember("member@example.com", "member1");
-        Application memberApp = buildApplication(randomTable, member);
-        Application guestApp = buildApplication(randomTable, null); // 비회원: 환불 대상 아님
+        Application memberApp = buildApplication(randomTableSession, member);
+        Application guestApp = buildApplication(randomTableSession, null); // 비회원: 환불 대상 아님
 
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
-        given(applicationRepository.findByGatheringIdAndStatusInWithUser(eq(gatheringId), any()))
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(randomTableSession));
+        given(applicationRepository.findBySessionIdAndStatusInWithUser(eq(sessionId), any()))
                 .willReturn(List.of(memberApp, guestApp));
-        GatheringStatusRequest request = buildStatusRequest(GatheringStatus.CANCELLED);
 
         // when
-        adminGatheringService.changeStatus(gatheringId, request);
+        adminGatheringService.changeStatus(sessionId, buildStatusRequest(GatheringStatus.CANCELLED));
 
         // then
         then(ticketService).should().refundOneTicket(memberApp);
         then(ticketService).should().refundOneTicket(guestApp);
     }
+
+    @Test
+    @DisplayName("존재하지 않는 회차 상태 변경 시 SESSION_NOT_FOUND")
+    void changeStatus_notFound_throwsException() {
+        // given
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> adminGatheringService.changeStatus(sessionId, buildStatusRequest(GatheringStatus.CLOSED)))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_NOT_FOUND);
+    }
+
+    // ── reorderCurated() ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("큐레이션 순서 변경은 큐레이션 목록의 대표 회차 ID를 종류로 해석해 순위를 매긴다 (KAN-337)")
+    void reorderCurated_representativeSessionIds_updatesKindRank() {
+        // given
+        Gathering other = Gathering.builder().title("재즈 게더링 2").build();
+        UUID otherSessionId = UUID.randomUUID();
+        given(gatheringService.findGathering(otherSessionId)).willReturn(other);
+        given(gatheringService.findGathering(sessionId)).willReturn(gathering);
+        GatheringCurationOrderRequest request = new GatheringCurationOrderRequest();
+        ReflectionTestUtils.setField(request, "gatheringIds", List.of(otherSessionId, sessionId));
+
+        // when
+        adminGatheringService.reorderCurated(request);
+
+        // then
+        assertThat(other.getCuratedRank()).isZero();
+        assertThat(gathering.getCuratedRank()).isEqualTo(1);
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
 
     private User buildMember(String email, String nickname) {
         User member = User.builder()
@@ -471,10 +680,10 @@ class AdminGatheringServiceTest {
         return member;
     }
 
-    private Application buildApplication(Gathering targetGathering, User user) {
+    private Application buildApplication(GatheringSession targetSession, User user) {
         Application app = Application.builder()
                 .bookingNumber("WH260618-RT" + UUID.randomUUID().toString().substring(0, 4))
-                .gathering(targetGathering)
+                .session(targetSession)
                 .user(user)
                 .name(user != null ? user.getName() : "비회원")
                 .phone("01000000000")
@@ -483,62 +692,12 @@ class AdminGatheringServiceTest {
         return app;
     }
 
-    @Test
-    @DisplayName("존재하지 않는 게더링 상태 변경 시 예외 발생")
-    void changeStatus_notFound_throwsException() {
-        // given
-        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.empty());
-        GatheringStatusRequest request = buildStatusRequest(GatheringStatus.CLOSED);
-
-        // when & then
-        assertThatThrownBy(() -> adminGatheringService.changeStatus(gatheringId, request))
-                .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_NOT_FOUND);
+    private GatheringCreateRequest buildCreateRequest(String thumbnailUrl) {
+        return GatheringCreateRequest.builder().title("재즈 게더링").thumbnailUrl(thumbnailUrl).build();
     }
 
-    @Test
-    @DisplayName("과거 날짜로 생성하면 INVALID_GATHERING_DATE 예외 (KAN-221)")
-    void createGathering_pastDate_throwsException() {
-        GatheringCreateRequest request = GatheringCreateRequest.builder()
-                .title("과거 게더링").locationId(locationId)
-                .eventDate(LocalDate.now().minusDays(1)).maxAttendees(10).build();
-
-        assertThatThrownBy(() -> adminGatheringService.createGathering(request))
-                .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_GATHERING_DATE);
-    }
-
-    @Test
-    @DisplayName("종료 시간이 시작 시간보다 이르면 다음날 새벽 종료로 보고 생성 허용 (KAN-293)")
-    void createGathering_overnightTime_allowsCreation() {
-        GatheringCreateRequest request = GatheringCreateRequest.builder()
-                .title("밤샘 게더링").locationId(locationId)
-                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(10)
-                .startTime(LocalTime.of(20, 0)).endTime(LocalTime.of(2, 0)).build();
-
-        given(locationRepository.findByIdAndDeletedAtIsNull(locationId)).willReturn(Optional.of(location));
-        given(gatheringRepository.save(any(Gathering.class))).willAnswer(invocation -> invocation.getArgument(0));
-
-        GatheringDetailResponse result = adminGatheringService.createGathering(request);
-
-        assertThat(result.getStartTime()).isEqualTo(LocalTime.of(20, 0));
-        assertThat(result.getEndTime()).isEqualTo(LocalTime.of(2, 0));
-    }
-
-    // ── helpers ──────────────────────────────────────────────────────────────
-
-    private GatheringCreateRequest buildCreateRequest(String title, String thumbnailUrl) {
-        return GatheringCreateRequest.builder()
-                .title(title).locationId(locationId)
-                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(10)
-                .thumbnailUrl(thumbnailUrl).build();
-    }
-
-    private GatheringUpdateRequest buildUpdateRequest(String title, String thumbnailUrl) {
-        return GatheringUpdateRequest.builder()
-                .title(title).locationId(locationId)
-                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(10)
-                .thumbnailUrl(thumbnailUrl).build();
+    private GatheringUpdateRequest buildUpdateRequest(String thumbnailUrl) {
+        return GatheringUpdateRequest.builder().title("재즈 게더링 (수정)").thumbnailUrl(thumbnailUrl).build();
     }
 
     private GatheringStatusRequest buildStatusRequest(GatheringStatus status) {

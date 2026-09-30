@@ -8,8 +8,8 @@ import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -25,14 +25,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminFormService {
 
-    private final GatheringRepository gatheringRepository;
+    private final GatheringService gatheringService;
     private final FormRepository formRepository;
     private final FormQuestionRepository formQuestionRepository;
     private final FormProvisionService formProvisionService;
 
     // 관리자용 질문 목록 (매칭 설정 포함). 폼이 아직 없으면 빈 목록.
+    // 폼은 종류 단위다. 경로 ID가 회차 ID면 그 회차의 종류 폼을 준다. (KAN-337)
     public List<FormQuestionResponse> getQuestions(UUID gatheringId) {
-        return formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)
+        return formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringService.findGathering(gatheringId).getId())
                 .map(form -> formQuestionRepository
                         .findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form).stream()
                         .map(FormQuestionResponse::from)
@@ -44,12 +45,11 @@ public class AdminFormService {
     public FormQuestionResponse addQuestion(UUID gatheringId, FormQuestionCreateRequest request) {
         validate(request.getType(), request.getOptions(), request.isMatchingField(), request.getMatchingStrategy());
 
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        Gathering gathering = gatheringService.findGathering(gatheringId);
 
         // 폼 lazy 생성 시에도 예약질문(이름/연락처/이메일)을 함께 시드한다. (KAN-206)
         Form form = formRepository
-                .findByGathering_IdAndDeletedAtIsNull(gatheringId)
+                .findByGathering_IdAndDeletedAtIsNull(gathering.getId())
                 .orElseGet(() -> formProvisionService.createDefaultForm(gathering));
 
         BigDecimal weight = request.getMatchingWeight() != null
@@ -76,11 +76,22 @@ public class AdminFormService {
 
     @Transactional
     public FormQuestionResponse updateQuestion(UUID questionId, FormQuestionUpdateRequest request) {
-        validate(request.getType(), request.getOptions(), request.isMatchingField(), request.getMatchingStrategy());
-
         FormQuestion question = formQuestionRepository.findById(questionId)
                 .filter(q -> q.getDeletedAt() == null)
                 .orElseThrow(() -> new CustomException(ErrorCode.QUESTION_NOT_FOUND));
+
+        // 우연한 식탁 표준 질문은 매칭이 키·타입에 의존하므로 라벨·선택지(와 순서)만 바꾼다.
+        // 나머지 값(필수 여부·매칭 설정 등)은 요청과 무관하게 유지한다. (KAN-341)
+        if (question.getReservedKey() != null) {
+            if (question.getType() != request.getType() || !question.getQuestionKey().equals(request.getQuestionKey())) {
+                throw new CustomException(ErrorCode.RESERVED_QUESTION_LOCKED);
+            }
+            validate(question.getType(), request.getOptions(), false, null);
+            question.updateContent(request.getLabel(), request.getOptions(), request.getDisplayOrder());
+            return FormQuestionResponse.from(question);
+        }
+
+        validate(request.getType(), request.getOptions(), request.isMatchingField(), request.getMatchingStrategy());
 
         // 시스템 예약 질문(이름/연락처)은 question_key를 바꿀 수 없다 (라벨/순서 등은 허용)
         if (question.isSystemReserved() && !question.getQuestionKey().equals(request.getQuestionKey())) {
@@ -112,6 +123,9 @@ public class AdminFormService {
         // 시스템 예약 질문(이름/연락처)은 삭제할 수 없다
         if (question.isSystemReserved()) {
             throw new CustomException(ErrorCode.RESERVED_QUESTION_READONLY);
+        }
+        if (question.getReservedKey() != null) {
+            throw new CustomException(ErrorCode.RESERVED_QUESTION_LOCKED);
         }
         question.softDelete();
     }

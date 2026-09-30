@@ -26,6 +26,10 @@ import java.time.Duration;
 public class CacheConfig {
 
     public static final String CONTENT_TRANSLATION_CACHE = "contentTranslation";
+    /** 채팅 링크 미리보기 성공 결과(URL → LinkPreview). 1시간. (KAN-330) */
+    public static final String LINK_PREVIEW_CACHE = "chatLinkPreview";
+    /** 채팅 링크 미리보기 실패(차단·타임아웃·비HTML 등) 네거티브 캐시. 10분. (KAN-330) */
+    public static final String LINK_PREVIEW_FAILURE_CACHE = "chatLinkPreviewFailure";
 
     @Bean
     public CacheManager cacheManager() {
@@ -33,6 +37,14 @@ public class CacheConfig {
         cacheManager.setCaffeine(Caffeine.newBuilder()
                 .maximumSize(10_000)
                 .expireAfterWrite(Duration.ofMinutes(30)));
+        cacheManager.registerCustomCache(LINK_PREVIEW_CACHE, Caffeine.newBuilder()
+                .maximumSize(1_000)
+                .expireAfterWrite(Duration.ofHours(1))
+                .build());
+        cacheManager.registerCustomCache(LINK_PREVIEW_FAILURE_CACHE, Caffeine.newBuilder()
+                .maximumSize(1_000)
+                .expireAfterWrite(Duration.ofMinutes(10))
+                .build());
         return cacheManager;
     }
 }

@@ -52,3 +52,7 @@ gms:
 notification:
   email:
     from: noreply@test.com
+
+# 로컬/테스트 전용 고정 더미 키(0x00~0x1f). 운영 키와 무관하며 실데이터에 쓰지 않는다.
+chat:
+  encryption-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=

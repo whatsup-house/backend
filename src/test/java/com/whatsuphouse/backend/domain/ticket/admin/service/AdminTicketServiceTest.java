@@ -11,7 +11,9 @@ import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionReposi
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -85,26 +87,31 @@ class AdminTicketServiceTest {
         TicketPass pass = pendingPass();
         ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
         Gathering gathering = Gathering.builder().title("우연한 식탁")
-                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
                 .gatheringType(GatheringType.RANDOM_TABLE).build();
         ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
+        GatheringSession session = GatheringSession.builder().gathering(gathering)
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4).build();
+        ReflectionTestUtils.setField(session, "id", UUID.randomUUID());
         Application application = Application.builder().bookingNumber("WH-PAY-001")
-                .gathering(gathering).user(user).name("홍길동")
+                .session(session).user(user).name("홍길동")
                 .phone("01012345678").build();
         ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
         application.awaitPayment();
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
 
         given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
         given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
                 user.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
-        given(applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
-                gathering.getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                session.getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
 
         adminTicketService.confirm(id);
 
         assertThat(pass.getRemainingCount()).isEqualTo(3);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         assertThat(application.isPaymentConfirmed()).isTrue();
+        // 결제 후 차감이 끝나는 경로에서도 매칭 대기가 유지된다. (KAN-342)
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
@@ -167,13 +174,16 @@ class AdminTicketServiceTest {
         TicketPass pass = pendingPass();
         ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
         Gathering gathering = Gathering.builder().title("우연한 식탁")
-                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4)
                 .gatheringType(GatheringType.RANDOM_TABLE).build();
         ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
+        GatheringSession session = GatheringSession.builder().gathering(gathering)
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4).build();
+        ReflectionTestUtils.setField(session, "id", UUID.randomUUID());
         Application application = Application.builder().bookingNumber("WH-PAY-002")
-                .gathering(gathering).user(user).name("홍길동")
+                .session(session).user(user).name("홍길동")
                 .phone("01012345678").build();
         application.awaitPayment();
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
 
         given(ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING))
                 .willReturn(List.of(pass));

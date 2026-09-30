@@ -8,5 +8,5 @@ import java.util.UUID;
 
 public interface ApplicationRepositoryCustom {
 
-    List<Application> findApplications(UUID gatheringId, ApplicationStatus status);
+    List<Application> findApplications(UUID sessionId, ApplicationStatus status);
 }

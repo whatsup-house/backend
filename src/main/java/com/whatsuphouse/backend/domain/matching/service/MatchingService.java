@@ -3,213 +3,115 @@ package com.whatsuphouse.backend.domain.matching.service;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
-import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
-import com.whatsuphouse.backend.domain.form.entity.Form;
-import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
-import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
-import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
-import com.whatsuphouse.backend.domain.form.repository.FormRepository;
-import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
+import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
+import com.whatsuphouse.backend.domain.matching.dto.response.MatchRunResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
-import com.whatsuphouse.backend.domain.matching.entity.MatchingGroup;
-import com.whatsuphouse.backend.domain.matching.entity.MatchingMember;
-import com.whatsuphouse.backend.domain.matching.enums.MatchingGroupStatus;
-import com.whatsuphouse.backend.domain.matching.repository.MatchingGroupRepository;
-import com.whatsuphouse.backend.domain.matching.repository.MatchingMemberRepository;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
+import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
+import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
+import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
+import com.whatsuphouse.backend.domain.matching.repository.MatchRunRepository;
+import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/** 관리자 v1 매칭 API(/api/admin/gatherings/{id}/matching, /api/admin/matching). 수동 조정 재설계는 KAN-347. */
 @Service
 @RequiredArgsConstructor
 public class MatchingService {
 
-    private static final String ALGORITHM_VERSION = "rule-v1";
+    public static final int DEFAULT_GROUP_SIZE = 4;
 
-    private final GatheringRepository gatheringRepository;
+    private static final Set<DiningTableStatus> ACTIVE_TABLE_STATUSES =
+            EnumSet.of(DiningTableStatus.PROPOSED, DiningTableStatus.CONFIRMED);
+    private static final Set<DiningTableStatus> VISIBLE_TABLE_STATUSES =
+            EnumSet.of(DiningTableStatus.PROPOSED, DiningTableStatus.CONFIRMED, DiningTableStatus.DONE);
+
+    private final GatheringService gatheringService;
     private final ApplicationRepository applicationRepository;
-    private final ApplicationAnswerRepository applicationAnswerRepository;
-    private final FormRepository formRepository;
-    private final FormQuestionRepository formQuestionRepository;
-    private final MatchingGroupRepository matchingGroupRepository;
-    private final MatchingMemberRepository matchingMemberRepository;
-    private final MatchingEngine matchingEngine;
+    private final DiningTableRepository diningTableRepository;
+    private final DiningTableMemberRepository diningTableMemberRepository;
+    private final MatchRunRepository matchRunRepository;
+    private final DiningMatchService diningMatchService;
 
+    /**
+     * 기존 API 호환(KAN-338 전까지): 경로의 gatheringId는 회차 ID다.
+     * rule-v2 엔진으로 실행하되 v1처럼 그룹 인원을 groupSize로 고정한다(최소 = 최대). (KAN-345)
+     */
     @Transactional
     public MatchingRunResponse runMatching(UUID gatheringId, int groupSize) {
-        Gathering gathering = gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
-        if (gathering.getGatheringType() != GatheringType.RANDOM_TABLE) {
+        GatheringSession session = gatheringService.findSession(gatheringId);
+        if (session.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE) {
             throw new CustomException(ErrorCode.MATCHING_NOT_ALLOWED);
         }
         // 그룹 인원 수는 2~8 범위로 보정, 벗어나면 기본값 사용. (KAN-224)
-        int size = (groupSize >= 2 && groupSize <= 8) ? groupSize : MatchingEngine.DEFAULT_GROUP_SIZE;
-
-        // 1. 기존 추천(PENDING) 결과 정리 — 확정(CONFIRMED) 그룹은 유지한다.
-        clearPendingGroups(gatheringId);
-
-        // 2. 이미 살아있는 그룹(=확정 그룹)에 배정된 신청은 재매칭 대상에서 제외한다.
-        //    (확정 그룹 멤버를 다시 매칭하면 application_id 유니크 제약을 위반한다.)
-        Set<UUID> assignedAppIds = loadAssignedApplicationIds(gatheringId);
-
-        // 3. CONFIRMED 신청 중 아직 배정되지 않은 신청만 매칭 대상으로 삼는다.
-        List<Application> applications = applicationRepository
-                .findByGatheringIdAndStatusAndDeletedAtIsNull(gatheringId, ApplicationStatus.CONFIRMED).stream()
-                .filter(a -> !assignedAppIds.contains(a.getId()))
-                .toList();
-        List<UUID> appIds = applications.stream().map(Application::getId).toList();
-
-        // 4. 매칭 설정 (form_questions where is_matching_field)
-        List<MatchingEngine.MatchingField> fields = loadMatchingFields(gatheringId);
-
-        // 5. 신청별 답변 맵 (question_key → 값)
-        Map<UUID, Map<String, Object>> answersByApp = loadAnswers(appIds);
-
-        // 6. Applicant 구성
-        List<MatchingEngine.Applicant> applicants = applications.stream()
-                .map(a -> new MatchingEngine.Applicant(
-                        a.getId(), answersByApp.getOrDefault(a.getId(), Map.of())))
-                .toList();
-
-        // 7. 엔진 실행
-        List<MatchingEngine.GroupResult> groups =
-                matchingEngine.match(applicants, fields, gathering.getEventDate(), size);
-
-        // 8. 저장
-        Map<UUID, Application> appMap = new HashMap<>();
-        applications.forEach(a -> appMap.put(a.getId(), a));
-        int matched = 0;
-        for (MatchingEngine.GroupResult g : groups) {
-            MatchingGroup group = matchingGroupRepository.save(MatchingGroup.builder()
-                    .gathering(gathering)
-                    .eventDate(g.eventDate())
-                    .groupSize(g.applicationIds().size())
-                    .algorithmVersion(ALGORITHM_VERSION)
-                    .groupScore(g.score())
-                    .build());
-            group.markMatched(LocalDateTime.now());
-
-            int seat = 1;
-            for (UUID appId : g.applicationIds()) {
-                matchingMemberRepository.save(MatchingMember.builder()
-                        .application(appMap.get(appId))
-                        .group(group)
-                        .seatOrder(seat++)
-                        .isManualAssign(false)
-                        .build());
-                matched++;
-            }
-        }
-
+        int size = (groupSize >= 2 && groupSize <= 8) ? groupSize : DEFAULT_GROUP_SIZE;
+        MatchRunResponse run = diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, size);
         return MatchingRunResponse.builder()
                 .gatheringId(gatheringId)
-                .algorithmVersion(ALGORITHM_VERSION)
-                .confirmedCount(applications.size())
-                .groupCount(groups.size())
-                .matchedCount(matched)
-                .unmatchedCount(applications.size() - matched)
+                .algorithmVersion(run.getAlgorithmVersion())
+                .confirmedCount(run.getCandidateCount())
+                .groupCount(run.getTableCount())
+                .matchedCount(run.getCandidateCount() - run.getUnassignedCount())
+                .unmatchedCount(run.getUnassignedCount())
                 .build();
-    }
-
-    private List<MatchingEngine.MatchingField> loadMatchingFields(UUID gatheringId) {
-        Form form = formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.FORM_NOT_FOUND));
-        return formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form).stream()
-                .filter(FormQuestion::isMatchingField)
-                .filter(q -> q.getMatchingStrategy() != null)
-                .map(q -> new MatchingEngine.MatchingField(
-                        q.getQuestionKey(),
-                        q.getMatchingStrategy(),
-                        q.getMatchingWeight() != null ? q.getMatchingWeight().doubleValue() : 1.0))
-                .toList();
-    }
-
-    private Map<UUID, Map<String, Object>> loadAnswers(List<UUID> appIds) {
-        Map<UUID, Map<String, Object>> result = new HashMap<>();
-        if (appIds.isEmpty()) return result;
-        for (ApplicationAnswer aa : applicationAnswerRepository.findByApplicationIds(appIds)) {
-            UUID appId = aa.getApplication().getId();
-            Object value = aa.getValue() != null ? aa.getValue().get("value") : null;
-            result.computeIfAbsent(appId, k -> new HashMap<>())
-                    .put(aa.getQuestion().getQuestionKey(), value);
-        }
-        return result;
-    }
-
-    // 현재 게더링의 살아있는 그룹(PENDING 정리 후 남은 = 확정 그룹)에 배정된 신청 ID 집합
-    private Set<UUID> loadAssignedApplicationIds(UUID gatheringId) {
-        List<MatchingGroup> groups = matchingGroupRepository
-                .findByGathering_IdAndDeletedAtIsNullOrderByEventDateAsc(gatheringId);
-        if (groups.isEmpty()) return Set.of();
-        List<UUID> groupIds = groups.stream().map(MatchingGroup::getId).toList();
-        return matchingMemberRepository.findByGroupIdsWithApplication(groupIds).stream()
-                .map(m -> m.getApplication().getId())
-                .collect(Collectors.toSet());
-    }
-
-    private void clearPendingGroups(UUID gatheringId) {
-        List<MatchingGroup> pending = matchingGroupRepository
-                .findByGathering_IdAndStatusAndDeletedAtIsNull(gatheringId, MatchingGroupStatus.PENDING);
-        if (pending.isEmpty()) return;
-        matchingMemberRepository.deleteByGroupIn(pending);
-        matchingGroupRepository.deleteAll(pending);
-        // 기존 멤버 DELETE를 즉시 DB에 반영한다. flush하지 않으면 Hibernate 기본 flush 순서상
-        // 새 멤버 INSERT가 기존 멤버 DELETE보다 먼저 실행되어 application_id 유니크 제약을 위반한다.
-        matchingMemberRepository.flush();
-        matchingGroupRepository.flush();
     }
 
     // ── 관리자 검토 ────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public MatchingResultResponse getMatchingResult(UUID gatheringId) {
-        gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)
-                .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+        UUID sessionId = gatheringService.findSession(gatheringId).getId();
 
-        List<MatchingGroup> groups = matchingGroupRepository
-                .findByGathering_IdAndDeletedAtIsNullOrderByEventDateAsc(gatheringId);
-        List<UUID> groupIds = groups.stream().map(MatchingGroup::getId).toList();
-        List<MatchingMember> members = groupIds.isEmpty()
+        // 해체(DISSOLVED)된 테이블은 이력이라 보여주지 않는다.
+        List<DiningTable> tables = diningTableRepository
+                .findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(sessionId, VISIBLE_TABLE_STATUSES);
+        List<UUID> tableIds = tables.stream().map(DiningTable::getId).toList();
+        List<DiningTableMember> members = tableIds.isEmpty()
                 ? List.of()
-                : matchingMemberRepository.findByGroupIdsWithApplication(groupIds);
+                : diningTableMemberRepository.findByTableIdsWithApplication(tableIds);
 
-        Map<UUID, List<MatchingMember>> byGroup = members.stream()
-                .collect(java.util.stream.Collectors.groupingBy(m -> m.getGroup().getId()));
-        java.util.Set<UUID> matchedAppIds = members.stream()
+        Map<UUID, List<DiningTableMember>> byTable = members.stream()
+                .collect(Collectors.groupingBy(m -> m.getTable().getId()));
+        Set<UUID> matchedAppIds = members.stream()
                 .map(m -> m.getApplication().getId())
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
 
-        List<MatchingResultResponse.GroupView> groupViews = groups.stream()
-                .map(g -> MatchingResultResponse.GroupView.builder()
-                        .groupId(g.getId())
-                        .eventDate(g.getEventDate())
-                        .status(g.getStatus())
-                        .groupScore(g.getGroupScore())
-                        .groupSize(g.getGroupSize())
-                        .restaurantName(g.getRestaurantName())
-                        .restaurantAddress(g.getRestaurantAddress())
-                        .members(byGroup.getOrDefault(g.getId(), List.of()).stream()
+        List<MatchingResultResponse.GroupView> groupViews = tables.stream()
+                .map(t -> MatchingResultResponse.GroupView.builder()
+                        .groupId(t.getId())
+                        .eventDate(t.getEventDate())
+                        .status(t.getStatus())
+                        .groupScore(t.getGroupScore())
+                        .groupSize(t.getGroupSize())
+                        .restaurantName(t.getRestaurantName())
+                        .restaurantAddress(t.getRestaurantAddress())
+                        .venueId(t.getVenueId())
+                        .members(byTable.getOrDefault(t.getId(), List.of()).stream()
                                 .map(this::toMemberView).toList())
                         .build())
                 .toList();
 
         List<MatchingResultResponse.MemberView> unmatched = applicationRepository
-                .findByGatheringIdAndStatusAndDeletedAtIsNull(gatheringId, ApplicationStatus.CONFIRMED).stream()
+                .findBySession_IdAndStatusAndDeletedAtIsNull(sessionId, ApplicationStatus.CONFIRMED).stream()
                 .filter(a -> !matchedAppIds.contains(a.getId()))
                 .map(a -> MatchingResultResponse.MemberView.builder()
                         .applicationId(a.getId()).name(a.getName()).phone(a.getPhone()).build())
@@ -219,98 +121,121 @@ public class MatchingService {
                 .gatheringId(gatheringId).groups(groupViews).unmatched(unmatched).build();
     }
 
-    private MatchingResultResponse.MemberView toMemberView(MatchingMember m) {
+    private MatchingResultResponse.MemberView toMemberView(DiningTableMember m) {
         return MatchingResultResponse.MemberView.builder()
                 .memberId(m.getId())
                 .applicationId(m.getApplication().getId())
                 .name(m.getApplication().getName())
                 .phone(m.getApplication().getPhone())
                 .seatOrder(m.getSeatOrder())
-                .manualAssign(m.isManualAssign())
+                .manualAssign(m.isManual())
                 .build();
     }
 
     @Transactional
     public void moveMember(UUID memberId, UUID targetGroupId) {
-        MatchingMember member = matchingMemberRepository.findById(memberId)
+        DiningTableMember member = diningTableMemberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
-        MatchingGroup oldGroup = member.getGroup();
-        MatchingGroup target = matchingGroupRepository.findById(targetGroupId)
-                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+        DiningTable oldTable = member.getTable();
+        DiningTable target = findTable(targetGroupId);
 
-        member.moveTo(target, matchingMemberRepository.countByGroup_Id(targetGroupId) + 1);
-        matchingMemberRepository.flush();
-        oldGroup.updateGroupSize(matchingMemberRepository.countByGroup_Id(oldGroup.getId()));
-        target.updateGroupSize(matchingMemberRepository.countByGroup_Id(targetGroupId));
-        recalculateGroupScore(oldGroup);
-        recalculateGroupScore(target);
+        member.moveTo(target, diningTableMemberRepository.countByTable_Id(targetGroupId) + 1);
+        diningTableMemberRepository.flush();
+        oldTable.updateGroupSize(diningTableMemberRepository.countByTable_Id(oldTable.getId()));
+        target.updateGroupSize(diningTableMemberRepository.countByTable_Id(targetGroupId));
+        diningMatchService.rescoreTable(oldTable);
+        diningMatchService.rescoreTable(target);
     }
 
     @Transactional
     public void excludeMember(UUID memberId) {
-        MatchingMember member = matchingMemberRepository.findById(memberId)
+        DiningTableMember member = diningTableMemberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
-        MatchingGroup group = member.getGroup();
-        matchingMemberRepository.delete(member);
-        matchingMemberRepository.flush();
-        group.updateGroupSize(matchingMemberRepository.countByGroup_Id(group.getId()));
-        recalculateGroupScore(group);
+        DiningTable table = member.getTable();
+        diningTableMemberRepository.delete(member);
+        diningTableMemberRepository.flush();
+        table.updateGroupSize(diningTableMemberRepository.countByTable_Id(table.getId()));
+        diningMatchService.rescoreTable(table);
     }
 
     @Transactional
     public void assignMember(UUID groupId, UUID applicationId) {
-        MatchingGroup group = matchingGroupRepository.findById(groupId)
-                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
-        if (matchingMemberRepository.existsByApplication_Id(applicationId)) {
+        DiningTable table = findTable(groupId);
+        // 해체된 테이블의 멤버 행은 이력이므로 활성 테이블 배정만 막는다.
+        if (diningTableMemberRepository.existsByApplication_IdAndTable_StatusIn(applicationId, ACTIVE_TABLE_STATUSES)) {
             throw new CustomException(ErrorCode.MATCHING_ALREADY_ASSIGNED);
         }
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
 
-        matchingMemberRepository.save(MatchingMember.builder()
+        diningTableMemberRepository.save(DiningTableMember.builder()
                 .application(application)
-                .group(group)
-                .seatOrder(matchingMemberRepository.countByGroup_Id(groupId) + 1)
-                .isManualAssign(true)
+                .table(table)
+                .seatOrder(diningTableMemberRepository.countByTable_Id(groupId) + 1)
+                .assignReason(AssignReason.MANUAL)
+                .isManual(true)
                 .build());
-        matchingMemberRepository.flush();
-        group.updateGroupSize(matchingMemberRepository.countByGroup_Id(groupId));
-        recalculateGroupScore(group);
-    }
-
-    private void recalculateGroupScore(MatchingGroup group) {
-        List<MatchingMember> members = matchingMemberRepository.findByGroupIdWithApplication(group.getId());
-        if (members.isEmpty()) {
-            group.updateGroupScore(BigDecimal.ZERO);
-            return;
-        }
-
-        List<UUID> applicationIds = members.stream()
-                .map(member -> member.getApplication().getId())
-                .toList();
-        Map<UUID, Map<String, Object>> answersByApp = loadAnswers(applicationIds);
-        List<MatchingEngine.Applicant> applicants = members.stream()
-                .map(member -> new MatchingEngine.Applicant(
-                        member.getApplication().getId(),
-                        answersByApp.getOrDefault(member.getApplication().getId(), Map.of())))
-                .toList();
-
-        group.updateGroupScore(matchingEngine.scoreGroup(
-                applicants,
-                loadMatchingFields(group.getGathering().getId())));
+        diningTableMemberRepository.flush();
+        table.updateGroupSize(diningTableMemberRepository.countByTable_Id(groupId));
+        diningMatchService.rescoreTable(table);
     }
 
     @Transactional
     public void confirmGroup(UUID groupId) {
-        MatchingGroup group = matchingGroupRepository.findById(groupId)
-                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
-        group.confirm();
+        findTable(groupId).confirm();
     }
 
     @Transactional
     public void updateRestaurant(UUID groupId, String name, String address) {
-        MatchingGroup group = matchingGroupRepository.findById(groupId)
+        findTable(groupId).updateRestaurant(name, address);
+    }
+
+    public DiningTable findTable(UUID tableId) {
+        return diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
-        group.updateRestaurant(name, address);
+    }
+
+    /** 회차별·상태별 테이블 수. 테이블이 없는 회차는 결과에 없다. (KAN-348 운영 대시보드) */
+    @Transactional(readOnly = true)
+    public Map<UUID, Map<DiningTableStatus, Long>> countTablesBySessionIds(Collection<UUID> sessionIds) {
+        if (sessionIds.isEmpty()) {
+            return Map.of();
+        }
+        return diningTableRepository.countBySessionIdsGroupByStatus(sessionIds).stream()
+                .collect(Collectors.groupingBy(DiningTableRepository.SessionStatusCountProjection::getSessionId,
+                        Collectors.toMap(DiningTableRepository.SessionStatusCountProjection::getStatus,
+                                DiningTableRepository.SessionStatusCountProjection::getCount)));
+    }
+
+    /** 매칭 실행 기록이 있는 회차 ID. (KAN-348 운영 대시보드) */
+    @Transactional(readOnly = true)
+    public Set<UUID> findSessionIdsWithMatchRun(Collection<UUID> sessionIds) {
+        return sessionIds.isEmpty() ? Set.of() : Set.copyOf(matchRunRepository.findSessionIdsIn(sessionIds));
+    }
+
+    /** 조원 중 회원의 userId (채팅 단체방 멤버 프리필용). 비회원 신청은 제외. */
+    @Transactional(readOnly = true)
+    public List<UUID> listGroupMemberUserIds(UUID groupId) {
+        findTable(groupId);
+        return diningTableMemberRepository.findByTableIdWithApplication(groupId).stream()
+                .map(member -> member.getApplication().getUser())
+                .filter(Objects::nonNull)
+                .map(User::getId)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 신청별 활성(PROPOSED|CONFIRMED) 테이블. 활성 테이블에 앉지 않은 신청은 결과에 없다. 우연한 식탁 내 신청 조회의 테이블 요약용. (KAN-342)
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, DiningTable> findTablesByApplicationIds(Collection<UUID> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        // 활성 테이블은 신청당 1개를 서비스가 보장하지만 DB 제약은 없어서, 겹치면 먼저 온 행을 쓴다.
+        return diningTableMemberRepository.findByApplicationIdsWithTable(applicationIds, ACTIVE_TABLE_STATUSES).stream()
+                .collect(Collectors.toMap(member -> member.getApplication().getId(), DiningTableMember::getTable,
+                        (first, second) -> first));
     }
 }

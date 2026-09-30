@@ -29,7 +29,7 @@
 ```
 chat_rooms
   id UUID PK, type VARCHAR(10) (INQUIRY | GROUP), name VARCHAR(100) NULL (GROUP만),
-  source_type VARCHAR(20) NULL (GATHERING | MATCHING_GROUP), source_id UUID NULL,
+  source_type VARCHAR(20) NULL (GATHERING | DINING_TABLE), source_id UUID NULL,
   inquiry_user_id UUID NULL UNIQUE (INQUIRY: 문의한 사용자),
   notice_message_id UUID NULL, created_by UUID, created_at, updated_at, deleted_at NULL
 

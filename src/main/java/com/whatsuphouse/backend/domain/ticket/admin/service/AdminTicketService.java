@@ -21,6 +21,7 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEv
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.ApplicationEventPublisher;
@@ -98,10 +99,11 @@ public class AdminTicketService {
         TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNull(passId)
                 .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
         Application paymentPending = resolvePaymentPendingApplication(pass);
-        if (paymentPending != null) {
-            int occupied = applicationRepository.countByGatheringIdAndStatusInAndDeletedAtIsNull(
-                    paymentPending.getGathering().getId(), ApplicationStatus.SEAT_OCCUPYING);
-            if (occupied >= paymentPending.getGathering().getMaxAttendees()) {
+        // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 정원을 세지 않는다. (KAN-338)
+        if (paymentPending != null && paymentPending.getSession() != null) {
+            int occupied = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                    paymentPending.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING);
+            if (occupied >= paymentPending.getSession().getMaxAttendees()) {
                 throw new CustomException(ErrorCode.GATHERING_FULL);
             }
         }
@@ -114,6 +116,8 @@ public class AdminTicketService {
                     pass, paymentPending, TicketTransactionType.USE, -1, "이용권 구매 신청 자동 확정"));
             paymentPending.confirmPayment();
             paymentPending.confirm();
+            // @Async 확정 메일이 트랜잭션 밖에서 모임 제목(종류)을 읽으므로 여기서 로드해 둔다.
+            Hibernate.initialize(paymentPending.getGathering());
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
         }
         return AdminTicketPassResponse.from(pass);
