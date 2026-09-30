@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.repository;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -27,6 +28,22 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
             GROUP BY a.session.id, a.status
             """)
     List<ApplicationSessionCountProjection> countBySessionIdsGroupByStatus(@Param("sessionIds") List<UUID> sessionIds);
+
+    interface UserCountProjection {
+        UUID getUserId();
+        Long getCount();
+    }
+
+    @Query("""
+            SELECT a.user.id AS userId, COUNT(a) AS count
+            FROM Application a
+            WHERE a.user.id IN :userIds AND a.status = :status
+              AND a.gathering.gatheringType = :type AND a.deletedAt IS NULL
+            GROUP BY a.user.id
+            """)
+    List<UserCountProjection> countByUserIdsAndStatusAndType(@Param("userIds") Collection<UUID> userIds,
+                                                             @Param("status") ApplicationStatus status,
+                                                             @Param("type") GatheringType type);
 
     // 회원이 해당 회차에 이미 신청했는지.
     boolean existsBySession_IdAndUser_IdAndDeletedAtIsNull(UUID sessionId, UUID userId);

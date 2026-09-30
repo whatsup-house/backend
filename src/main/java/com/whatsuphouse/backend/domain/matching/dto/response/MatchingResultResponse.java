@@ -27,6 +27,7 @@ public class MatchingResultResponse {
         private int groupSize;
         private String restaurantName;
         private String restaurantAddress;
+        private UUID venueId;
         private List<MemberView> members;
     }
 

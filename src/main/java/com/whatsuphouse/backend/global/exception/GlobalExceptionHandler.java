@@ -2,12 +2,14 @@ package com.whatsuphouse.backend.global.exception;
 
 import com.whatsuphouse.backend.global.common.ApiResult;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -47,6 +49,19 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getDefaultMessage())
                 .orElse("입력값이 올바르지 않습니다.");
         log.warn("[ValidationException] {}", message);
+        return ResponseEntity
+                .badRequest()
+                .body(ApiResult.fail("VALIDATION_ERROR", message));
+    }
+
+    // @Valid List<...> 요청 본문처럼 메서드 검증으로 도는 항목 검증 실패. 없으면 500으로 떨어진다. (KAN-348)
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ApiResult<Void>> handleMethodValidationException(HandlerMethodValidationException e) {
+        String message = e.getAllErrors().stream()
+                .findFirst()
+                .map(MessageSourceResolvable::getDefaultMessage)
+                .orElse("입력값이 올바르지 않습니다.");
+        log.warn("[MethodValidationException] {}", message);
         return ResponseEntity
                 .badRequest()
                 .body(ApiResult.fail("VALIDATION_ERROR", message));

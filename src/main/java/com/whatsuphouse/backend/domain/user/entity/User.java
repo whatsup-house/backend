@@ -145,9 +145,12 @@ public class User extends BaseEntity {
         return getRandomTableEligibility() == RandomTableEligibility.APPROVED;
     }
 
+    // 새 자격 값이 생기면 여기서 제한 여부를 반드시 정하도록 전체 분기로 둔다.
     public boolean isRandomTableEligibilityRestricted() {
-        return getRandomTableEligibility() == RandomTableEligibility.REJECTED
-                || getRandomTableEligibility() == RandomTableEligibility.SUSPENDED;
+        return switch (getRandomTableEligibility()) {
+            case REJECTED, SUSPENDED, RESTRICTED -> true;
+            case UNREVIEWED, APPROVED -> false;
+        };
     }
 
     public boolean isAccountSuspended() {
@@ -168,6 +171,10 @@ public class User extends BaseEntity {
 
     public void suspendRandomTable() {
         this.randomTableEligibility = RandomTableEligibility.SUSPENDED;
+    }
+
+    public void restrictRandomTable() {
+        this.randomTableEligibility = RandomTableEligibility.RESTRICTED;
     }
 
     public Integer addMileage(int amount) {
