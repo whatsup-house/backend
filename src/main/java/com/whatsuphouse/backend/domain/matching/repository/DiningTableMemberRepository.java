@@ -67,6 +67,32 @@ public interface DiningTableMemberRepository extends JpaRepository<DiningTableMe
     List<UUID> findApplicationIdsByTableStatusIn(@Param("applicationIds") Collection<UUID> applicationIds,
                                                  @Param("statuses") Collection<DiningTableStatus> statuses);
 
+    // 회원의 멤버십(취소한 신청 제외) 중 테이블 상태가 statuses인 것, 최신 회차 순. 참가 이력용. (KAN-350)
+    @Query("""
+            select m from DiningTableMember m
+            join fetch m.table t
+            join fetch t.session s
+            left join fetch s.location
+            join m.application a
+            where a.user.id = :userId and a.deletedAt is null
+              and t.status in :statuses and t.deletedAt is null
+            order by s.eventDate desc, t.createdAt desc
+            """)
+    List<DiningTableMember> findByUserIdWithTable(@Param("userId") UUID userId,
+                                                  @Param("statuses") Collection<DiningTableStatus> statuses);
+
+    // 회차에서 상태가 statuses인 테이블의 멤버(취소한 신청 제외). 피드백 요약용. (KAN-350)
+    @Query("""
+            select m from DiningTableMember m
+            join fetch m.table t
+            join m.application a
+            where t.session.id = :sessionId and t.status in :statuses and t.deletedAt is null
+              and a.deletedAt is null
+            order by t.createdAt asc, m.seatOrder asc
+            """)
+    List<DiningTableMember> findBySessionIdAndTableStatusIn(@Param("sessionId") UUID sessionId,
+                                                            @Param("statuses") Collection<DiningTableStatus> statuses);
+
     // 이 회원들끼리 상태가 statuses인 같은 테이블에 앉았던 쌍. (a, b)와 (b, a)가 모두 나온다. excludeTableId(NULL 가능) 테이블은 뺀다.
     // 취소로 빠진 멤버는 함께 앉지 않았으므로 뺀다.
     @Query("""

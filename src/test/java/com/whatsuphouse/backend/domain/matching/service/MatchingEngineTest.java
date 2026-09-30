@@ -199,6 +199,23 @@ class MatchingEngineTest {
     }
 
     @Test
+    @DisplayName("이전에 만났어도 한쪽이 AGAIN을 남긴 쌍은 페널티가 면제된다")
+    void score_againPair_exemptFromMetBeforePenalty() {
+        List<MatchingEngine.Applicant> people = sameAge(4);
+        Map<UUID, Set<UUID>> met = Map.of(
+                people.get(0).userId(), Set.of(people.get(1).userId(), people.get(2).userId()));
+
+        MatchingEngine.Score penalized = engine.score(people, rules(0), new MatchingEngine.Relations(Map.of(), met));
+        // 1번이 0번에게 AGAIN(방향 무관) → 0-1 쌍만 면제, 0-2 쌍은 그대로 감점
+        MatchingEngine.Score again = engine.score(people, rules(0), new MatchingEngine.Relations(Map.of(), met,
+                block(people.get(1), List.of(people.get(0)))));
+
+        assertThat(penalized.detail().penalties()).containsEntry("metBefore", 0.30);
+        assertThat(again.detail().penalties()).containsEntry("metBefore", 0.15);
+        assertThat(again.value()).isEqualByComparingTo("0.5833");
+    }
+
+    @Test
     @DisplayName("MBTI 궁합표는 대칭이고 값은 0 / 0.5 / 1이다")
     void mbtiCompatibility_isSymmetric() {
         for (String a : MatchingEngine.MBTI_TYPES) {

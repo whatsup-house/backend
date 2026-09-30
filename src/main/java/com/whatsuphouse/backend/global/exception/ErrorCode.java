@@ -92,6 +92,13 @@ public enum ErrorCode {
     DINING_TABLE_FORBIDDEN("본인이 속한 확정 테이블만 볼 수 있습니다.", HttpStatus.FORBIDDEN),
     SYSTEM_ADMIN_NOT_FOUND("채팅방을 만들 시스템 관리자 계정이 없습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
+    // Dining (참가자 피드백·신고, KAN-350)
+    NOT_TABLE_MEMBER("이 테이블의 멤버가 아닙니다.", HttpStatus.FORBIDDEN),
+    FEEDBACK_NOT_OPEN("아직 피드백을 남길 수 없는 테이블입니다.", HttpStatus.BAD_REQUEST),
+    FEEDBACK_ALREADY_SUBMITTED("이미 피드백을 남긴 테이블입니다.", HttpStatus.CONFLICT),
+    INVALID_TABLE_PEER("같은 테이블의 다른 멤버만 한 번씩 지정할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    SELF_REPORT_NOT_ALLOWED("자기 자신은 신고할 수 없습니다.", HttpStatus.BAD_REQUEST),
+
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("이미 신청한 게더링입니다.", HttpStatus.CONFLICT),
