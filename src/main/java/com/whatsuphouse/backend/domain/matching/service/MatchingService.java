@@ -91,7 +91,7 @@ public class MatchingService {
 
         // 7. 엔진 실행
         List<MatchingEngine.GroupResult> groups =
-                matchingEngine.match(applicants, fields, session.getEventDate(), size);
+                matchingEngine.match(applicants, fields, size);
 
         // 8. 저장
         Map<UUID, Application> appMap = new HashMap<>();
@@ -100,7 +100,7 @@ public class MatchingService {
         for (MatchingEngine.GroupResult g : groups) {
             MatchingGroup group = matchingGroupRepository.save(MatchingGroup.builder()
                     .session(session)
-                    .eventDate(g.eventDate())
+                    .eventDate(session.getEventDate())
                     .groupSize(g.applicationIds().size())
                     .algorithmVersion(ALGORITHM_VERSION)
                     .groupScore(g.score())
