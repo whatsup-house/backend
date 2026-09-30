@@ -225,6 +225,26 @@ public class MatchingService {
                 .toList();
     }
 
+    /** 테이블 멤버(취소한 신청 제외). 신청·회원을 함께 읽는다. 피드백·신고의 멤버 확인용. (KAN-350) */
+    @Transactional(readOnly = true)
+    public List<DiningTableMember> listActiveTableMembers(UUID tableId) {
+        return diningTableMemberRepository.findByTableIdWithApplication(tableId).stream()
+                .filter(member -> member.getApplication().getDeletedAt() == null)
+                .toList();
+    }
+
+    /** 회원의 테이블 멤버십(취소한 신청 제외, 테이블·회차 포함) 중 테이블 상태가 statuses인 것, 최신 회차 순. (KAN-350 참가 이력) */
+    @Transactional(readOnly = true)
+    public List<DiningTableMember> listUserTableMembers(UUID userId, Collection<DiningTableStatus> statuses) {
+        return diningTableMemberRepository.findByUserIdWithTable(userId, statuses);
+    }
+
+    /** 회차에서 상태가 statuses인 테이블의 멤버(취소한 신청 제외, 테이블 포함). (KAN-350 피드백 요약) */
+    @Transactional(readOnly = true)
+    public List<DiningTableMember> listSessionTableMembers(UUID sessionId, Collection<DiningTableStatus> statuses) {
+        return diningTableMemberRepository.findBySessionIdAndTableStatusIn(sessionId, statuses);
+    }
+
     /**
      * 신청별 활성(PROPOSED|CONFIRMED) 테이블. 활성 테이블에 앉지 않은 신청은 결과에 없다. 우연한 식탁 내 신청 조회의 테이블 요약용. (KAN-342)
      */

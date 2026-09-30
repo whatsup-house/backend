@@ -4,10 +4,12 @@ import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicatio
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.ExceptionCaseStatusRequest;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.ExceptionCaseResponse;
 import com.whatsuphouse.backend.domain.dining.entity.ExceptionCase;
+import com.whatsuphouse.backend.domain.dining.entity.SafetyReport;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.enums.SafetyAction;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
+import com.whatsuphouse.backend.domain.dining.repository.SafetyReportRepository;
 import com.whatsuphouse.backend.domain.user.service.UserService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -32,6 +34,9 @@ class AdminExceptionCaseServiceTest {
 
     @Mock
     private ExceptionCaseRepository exceptionCaseRepository;
+
+    @Mock
+    private SafetyReportRepository safetyReportRepository;
 
     @Mock
     private AdminApplicationService adminApplicationService;
@@ -83,6 +88,28 @@ class AdminExceptionCaseServiceTest {
         assertThat(response.getResolvedBy()).isEqualTo(adminId);
         assertThat(response.getResolutionNote()).isEqualTo("반복 신고 확인");
         assertThat(response.getResolvedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("신고로 생긴 SAFETY 건을 처리·다시 열면 연결된 신고도 상태·조치·메모를 따라간다")
+    void resolveSafety_syncsSafetyReport() {
+        ExceptionCase exceptionCase = givenCase(ExceptionCaseType.SAFETY, UUID.randomUUID());
+        SafetyReport report = new SafetyReport(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "사유",
+                exceptionCase.getId());
+        given(safetyReportRepository.findByExceptionCaseId(exceptionCase.getId())).willReturn(Optional.of(report));
+
+        resolve(exceptionCase, "경고 안내", SafetyAction.WARN);
+
+        assertThat(report.getStatus()).isEqualTo(ExceptionCaseStatus.RESOLVED);
+        assertThat(report.getAction()).isEqualTo(SafetyAction.WARN);
+        assertThat(report.getAdminNote()).isEqualTo("경고 안내");
+        assertThat(report.getResolvedAt()).isNotNull();
+
+        adminExceptionCaseService.changeExceptionCaseStatus(exceptionCase.getId(), adminId,
+                new ExceptionCaseStatusRequest(ExceptionCaseStatus.OPEN, null, null));
+
+        assertThat(report.getStatus()).isEqualTo(ExceptionCaseStatus.OPEN);
+        assertThat(report.getResolvedAt()).isNull();
     }
 
     @Test

@@ -85,10 +85,17 @@ public class MatchingEngine {
                         MatchingWeights weights, List<CustomField> customFields) {
     }
 
-    /** 회원 ID 기준 관계. blocked는 같은 테이블 금지(하드), metBefore는 이전 같은 테이블(페널티). 한 방향만 있어도 양방향으로 본다. */
-    public record Relations(Map<UUID, Set<UUID>> blocked, Map<UUID, Set<UUID>> metBefore) {
+    /**
+     * 회원 ID 기준 관계. blocked는 같은 테이블 금지(하드), metBefore는 이전 같은 테이블(페널티),
+     * again은 다시 만나고 싶다고 한 쌍(metBefore 페널티 면제). 한 방향만 있어도 양방향으로 본다.
+     */
+    public record Relations(Map<UUID, Set<UUID>> blocked, Map<UUID, Set<UUID>> metBefore, Map<UUID, Set<UUID>> again) {
+        public Relations(Map<UUID, Set<UUID>> blocked, Map<UUID, Set<UUID>> metBefore) {
+            this(blocked, metBefore, Map.of());
+        }
+
         public static Relations none() {
-            return new Relations(Map.of(), Map.of());
+            return new Relations(Map.of(), Map.of(), Map.of());
         }
     }
 
@@ -149,7 +156,7 @@ public class MatchingEngine {
                     Applicant b = people.get(j);
                     pair[i][j] = pair[j][i] = pairScore(a, b);
                     blocked[i][j] = blocked[j][i] = related(relations.blocked(), a, b);
-                    met[i][j] = met[j][i] = related(relations.metBefore(), a, b);
+                    met[i][j] = met[j][i] = related(relations.metBefore(), a, b) && !related(relations.again(), a, b);
                 }
             }
         }

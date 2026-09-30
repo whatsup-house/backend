@@ -344,7 +344,8 @@ public class DiningMatchService {
         Map<UUID, Set<UUID>> metBefore = new HashMap<>();
         diningTableMemberRepository.findUserPairsByTableStatusIn(userIds, MET_TABLE_STATUSES, excludeTableId)
                 .forEach(p -> metBefore.computeIfAbsent(p.getUserId(), id -> new HashSet<>()).add(p.getOtherUserId()));
-        return new MatchingEngine.Relations(matchExclusionProvider.findExcludedPairs(userIds), metBefore);
+        return new MatchingEngine.Relations(matchExclusionProvider.findExcludedPairs(userIds), metBefore,
+                matchExclusionProvider.findAgainPairs(userIds));
     }
 
     // ── 응답 ────────────────────────────────────────────────────────────────
