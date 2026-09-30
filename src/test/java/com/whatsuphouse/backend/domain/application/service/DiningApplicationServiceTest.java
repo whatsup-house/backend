@@ -132,7 +132,7 @@ class DiningApplicationServiceTest {
         Application application = confirmedApplication(null);
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
         // 1순위는 다음 주, 2순위는 내일: 내일 회차가 기준이라 기한이 지났다.
-        given(applicationCandidateSessionRepository.findWithSessionByApplicationIds(List.of(applicationId)))
+        given(applicationCandidateSessionRepository.findByApplicationIdsWithSession(List.of(applicationId)))
                 .willReturn(List.of(candidate(application, sessionOn(7), 1), candidate(application, sessionOn(1), 2)));
 
         assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId))
@@ -145,7 +145,7 @@ class DiningApplicationServiceTest {
     void cancel_waiting_ignoresPastCandidate() {
         Application application = confirmedApplication(null);
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
-        given(applicationCandidateSessionRepository.findWithSessionByApplicationIds(List.of(applicationId)))
+        given(applicationCandidateSessionRepository.findByApplicationIdsWithSession(List.of(applicationId)))
                 .willReturn(List.of(candidate(application, sessionOn(-1), 1), candidate(application, sessionOn(5), 2)));
 
         diningApplicationService.cancelApplication(applicationId, userId);

@@ -43,7 +43,7 @@ public class DiningApplicationListResponse {
         @Schema(description = "신청 상태", example = "CONFIRMED")
         private ApplicationStatus status;
 
-        @Schema(description = "매칭 상태. 확정(이용권 차감) 전이면 null", example = "WAITING")
+        @Schema(description = "매칭 상태. 접수 시점부터 WAITING이며 결제 상태와는 별개", example = "WAITING")
         private MatchStatus matchStatus;
 
         @Schema(description = "이용권 차감 상태. 차감 기록이 없으면(결제 대기 등) null", example = "DEDUCTED")

@@ -151,7 +151,7 @@ public class DiningApplicationService {
 
     // 신청 ID → 희망 회차(우선순위 순)
     private Map<UUID, List<GatheringSession>> findCandidateSessions(Collection<UUID> applicationIds) {
-        return applicationCandidateSessionRepository.findWithSessionByApplicationIds(applicationIds).stream()
+        return applicationCandidateSessionRepository.findByApplicationIdsWithSession(applicationIds).stream()
                 .collect(Collectors.groupingBy(candidate -> candidate.getApplication().getId(),
                         Collectors.mapping(ApplicationCandidateSession::getSession, Collectors.toList())));
     }

@@ -30,6 +30,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -194,6 +195,35 @@ class TicketServiceTest {
         then(ticketTransactionRepository).should().save(captor.capture());
         assertThat(captor.getValue().getTransactionType()).isEqualTo(TicketTransactionType.REFUND);
         assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.RESTORED);
+    }
+
+    @Test
+    @DisplayName("차감 상태는 신청별 최신 USE 기준이며, V8 백필 전 status가 빈 USE 행은 DEDUCTED로 본다")
+    void findDeductionStatuses_latestWinsAndNullIsDeducted() {
+        TicketPass pass = activePass(2);
+        Application legacy = mock(Application.class);
+        Application restored = mock(Application.class);
+        UUID legacyId = UUID.randomUUID();
+        UUID restoredId = UUID.randomUUID();
+        given(legacy.getId()).willReturn(legacyId);
+        given(restored.getId()).willReturn(restoredId);
+        LocalDateTime now = LocalDateTime.now();
+
+        TicketTransaction legacyUse = TicketTransaction.of(pass, legacy, TicketTransactionType.USE, -1, "V8 이전");
+        ReflectionTestUtils.setField(legacyUse, "status", null);
+        ReflectionTestUtils.setField(legacyUse, "createdAt", now);
+        TicketTransaction newer = TicketTransaction.of(pass, restored, TicketTransactionType.USE, -1, "최신");
+        newer.restore();
+        ReflectionTestUtils.setField(newer, "createdAt", now.minusDays(1));
+        TicketTransaction older = TicketTransaction.of(pass, restored, TicketTransactionType.USE, -1, "과거");
+        ReflectionTestUtils.setField(older, "createdAt", now.minusDays(2));
+        List<UUID> ids = List.of(legacyId, restoredId);
+        given(ticketTransactionRepository.findByApplication_IdInAndTransactionType(ids, TicketTransactionType.USE))
+                .willReturn(List.of(legacyUse, newer, older));
+
+        assertThat(ticketService.findDeductionStatuses(ids))
+                .containsEntry(legacyId, TicketDeductionStatus.DEDUCTED)
+                .containsEntry(restoredId, TicketDeductionStatus.RESTORED);
     }
 
     @Test

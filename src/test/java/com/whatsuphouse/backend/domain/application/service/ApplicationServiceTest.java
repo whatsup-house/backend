@@ -216,8 +216,9 @@ class ApplicationServiceTest {
         ApplicationResponse response = applicationService.apply(sessionId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
-        // 결제 전에는 매칭 대상이 아니다. 결제 대기 알림(DINING_PAYMENT_PENDING)은 이 이벤트로 나간다. (KAN-342)
-        assertThat(saved.getValue().getMatchStatus()).isNull();
+        // 결제 대기여도 매칭 상태는 WAITING. 엔진은 CONFIRMED만 후보로 보므로 섞이지 않는다.
+        // 결제 대기 알림(DINING_PAYMENT_PENDING)은 이 이벤트로 나간다. (KAN-342)
+        assertThat(saved.getValue().getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         then(eventPublisher).should().publishEvent(any(ApplicationApprovedEvent.class));
     }
 
@@ -419,7 +420,7 @@ class ApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("우연한 식탁은 희망 회차를 요청 순서대로 저장하고 배정 회차 없이 접수한다. 심사 전이라 매칭 상태는 아직 없다")
+    @DisplayName("우연한 식탁은 희망 회차를 요청 순서대로 저장하고, 배정 회차 없이 매칭 대기(WAITING)로 접수한다")
     void applyWithCandidates_randomTable_savesCandidatesInOrderAndWaits() {
         // given
         Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
@@ -443,7 +444,7 @@ class ApplicationServiceTest {
         assertThat(application.getSession()).isNull();
         assertThat(application.getGathering()).isSameAs(randomTable);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PENDING);
-        assertThat(application.getMatchStatus()).isNull();
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         assertThat(response.getGatheringId()).isEqualTo(gatheringId);
         ArgumentCaptor<ApplicationCandidateSession> candidates = ArgumentCaptor.forClass(ApplicationCandidateSession.class);
         then(applicationCandidateSessionRepository).should(times(2)).save(candidates.capture());

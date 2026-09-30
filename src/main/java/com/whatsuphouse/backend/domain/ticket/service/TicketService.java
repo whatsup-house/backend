@@ -31,6 +31,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -184,7 +185,10 @@ public class TicketService {
                 });
     }
 
-    /** 신청별 이용권 차감 상태(가장 최근 USE 거래 기준). 차감 기록이 없는 신청은 결과에 없다. (KAN-342) */
+    /**
+     * 신청별 이용권 차감 상태(가장 최근 USE 거래 기준). 차감 기록이 없는 신청은 결과에 없다.
+     * V8 백필 전 USE 행은 status가 비어 있을 수 있어 DEDUCTED로 본다. (KAN-342)
+     */
     @Transactional(readOnly = true)
     public Map<UUID, TicketDeductionStatus> findDeductionStatuses(Collection<UUID> applicationIds) {
         if (applicationIds.isEmpty()) {
@@ -193,7 +197,8 @@ public class TicketService {
         return ticketTransactionRepository
                 .findByApplication_IdInAndTransactionType(applicationIds, TicketTransactionType.USE).stream()
                 .sorted(Comparator.comparing(TicketTransaction::getCreatedAt))
-                .collect(Collectors.toMap(use -> use.getApplication().getId(), TicketTransaction::getStatus,
+                .collect(Collectors.toMap(use -> use.getApplication().getId(),
+                        use -> Objects.requireNonNullElse(use.getStatus(), TicketDeductionStatus.DEDUCTED),
                         (older, newer) -> newer));
     }
 }

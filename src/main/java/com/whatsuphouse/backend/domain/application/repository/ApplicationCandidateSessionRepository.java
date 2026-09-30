@@ -25,14 +25,5 @@ public interface ApplicationCandidateSessionRepository extends JpaRepository<App
             where c.application.id in :applicationIds
             order by c.priority asc
             """)
-    List<ApplicationCandidateSession> findWithSessionByApplicationIds(
-            @Param("applicationIds") Collection<UUID> applicationIds);
-
-    @Query("""
-            select c from ApplicationCandidateSession c
-            join fetch c.session
-            where c.application.id in :applicationIds
-            order by c.priority asc
-            """)
     List<ApplicationCandidateSession> findByApplicationIdsWithSession(@Param("applicationIds") Collection<UUID> applicationIds);
 }

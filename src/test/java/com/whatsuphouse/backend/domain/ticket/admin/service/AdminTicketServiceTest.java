@@ -97,7 +97,7 @@ class AdminTicketServiceTest {
                 .phone("01012345678").build();
         ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
         application.awaitPayment();
-        assertThat(application.getMatchStatus()).isNull();
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
 
         given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
         given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
@@ -110,7 +110,7 @@ class AdminTicketServiceTest {
         assertThat(pass.getRemainingCount()).isEqualTo(3);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         assertThat(application.isPaymentConfirmed()).isTrue();
-        // 결제 후 차감이 끝나는 경로에서도 매칭 대기로 들어간다. (KAN-342)
+        // 결제 후 차감이 끝나는 경로에서도 매칭 대기가 유지된다. (KAN-342)
         assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
@@ -183,7 +183,7 @@ class AdminTicketServiceTest {
                 .session(session).user(user).name("홍길동")
                 .phone("01012345678").build();
         application.awaitPayment();
-        assertThat(application.getMatchStatus()).isNull();
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
 
         given(ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING))
                 .willReturn(List.of(pass));
