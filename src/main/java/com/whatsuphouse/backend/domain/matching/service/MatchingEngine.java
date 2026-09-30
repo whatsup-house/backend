@@ -5,7 +5,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -17,10 +16,10 @@ import java.util.UUID;
 
 /**
  * 우연한 식탁(RANDOM_TABLE) 자동매칭 rule-v1 엔진.
- * - Hard condition: 나이 ±8 / 예산 겹침 / 참가 가능 날짜 겹침 (question_key 기준, 폼에 있으면 적용)
- * - Pair score: SAME(나이 근접도) / DIVERSE(다르면 +1) / OVERLAP(Jaccard), 질문 가중치 가중평균
+ * - 하드 조건 없음. age/budget/available_dates 매직 키 분기는 삭제했다. (KAN-341, 표준 질문 기반 v2는 KAN-345)
+ * - Pair score: SAME(같으면 +1) / DIVERSE(다르면 +1) / OVERLAP(Jaccard), 질문 가중치 가중평균
  * - Group score: avg × 0.7 + min × 0.3, 다양성 보정 감점
- * - 그룹 묶기: greedy(배치 어려운 사람 우선 seed → best 멤버 추가), 4명 미달은 미배정으로 남김
+ * - 그룹 묶기: greedy(남은 순서대로 seed → best 멤버 추가), groupSize 미달 잔여 인원은 미배정으로 남김
  */
 @Component
 public class MatchingEngine {
@@ -28,11 +27,7 @@ public class MatchingEngine {
     public static final int DEFAULT_GROUP_SIZE = 4;
     private static final double AVG_WEIGHT = 0.7;
     private static final double MIN_WEIGHT = 0.3;
-    private static final int AGE_LIMIT = 8;
 
-    private static final String KEY_AGE = "age";
-    private static final String KEY_BUDGET = "budget";
-    private static final String KEY_DATES = "available_dates";
     private static final String KEY_GENDER = "gender";
     private static final String KEY_JOB = "job_category";
     private static final String KEY_MBTI = "mbti";
@@ -41,85 +36,40 @@ public class MatchingEngine {
 
     public record MatchingField(String questionKey, MatchingStrategy strategy, double weight) {}
 
-    public record GroupResult(List<UUID> applicationIds, BigDecimal score, LocalDate eventDate) {}
+    public record GroupResult(List<UUID> applicationIds, BigDecimal score) {}
 
     // groupSize: 그룹당 인원 수(관리자 지정, 기본 DEFAULT_GROUP_SIZE). 잔여 인원은 미배정으로 남긴다. (KAN-224)
-    public List<GroupResult> match(List<Applicant> applicants, List<MatchingField> fields, LocalDate fallbackDate, int groupSize) {
-        boolean datesUsed = applicants.stream().anyMatch(a -> !dates(a).isEmpty());
-
+    public List<GroupResult> match(List<Applicant> applicants, List<MatchingField> fields, int groupSize) {
         List<Applicant> pool = new ArrayList<>(applicants);
         List<GroupResult> results = new ArrayList<>();
 
         while (pool.size() >= groupSize) {
-            Applicant seed = hardestToPlace(pool);
             List<Applicant> group = new ArrayList<>();
-            group.add(seed);
-            Set<String> groupDates = datesUsed ? new LinkedHashSet<>(dates(seed)) : null;
+            group.add(pool.get(0));
 
             while (group.size() < groupSize) {
                 Applicant best = null;
                 double bestScore = -1;
-                Set<String> bestDates = null;
-
                 for (Applicant c : pool) {
                     if (group.contains(c)) continue;
-                    if (!compatibleWithAll(c, group)) continue;
-
-                    Set<String> nextDates = groupDates;
-                    if (datesUsed) {
-                        nextDates = intersect(groupDates, dates(c));
-                        if (nextDates.isEmpty()) continue;
-                    }
                     double s = partialAvgPairScore(group, c, fields);
                     if (s > bestScore) {
                         bestScore = s;
                         best = c;
-                        bestDates = nextDates;
                     }
                 }
-                if (best == null) break;
                 group.add(best);
-                groupDates = bestDates;
             }
 
-            if (group.size() == groupSize) {
-                BigDecimal score = groupScore(group, fields);
-                LocalDate eventDate = pickEventDate(groupDates, fallbackDate);
-                results.add(new GroupResult(
-                        group.stream().map(Applicant::applicationId).toList(), score, eventDate));
-                pool.removeAll(group);
-            } else {
-                // groupSize를 못 채우는 seed는 미배정으로 남긴다 (관리자가 수동 처리)
-                pool.remove(seed);
-            }
+            results.add(new GroupResult(
+                    group.stream().map(Applicant::applicationId).toList(), groupScore(group, fields)));
+            pool.removeAll(group);
         }
         return results;
     }
 
     public BigDecimal scoreGroup(List<Applicant> group, List<MatchingField> fields) {
         return groupScore(group, fields);
-    }
-
-    // ── Hard condition ────────────────────────────────────────────────────────
-
-    private boolean compatibleWithAll(Applicant c, List<Applicant> group) {
-        for (Applicant m : group) {
-            if (!hardCompatible(c, m)) return false;
-        }
-        return true;
-    }
-
-    private boolean hardCompatible(Applicant a, Applicant b) {
-        Integer ageA = age(a), ageB = age(b);
-        if (ageA != null && ageB != null && Math.abs(ageA - ageB) > AGE_LIMIT) return false;
-
-        Set<String> budgetA = listValue(a, KEY_BUDGET), budgetB = listValue(b, KEY_BUDGET);
-        if (!budgetA.isEmpty() && !budgetB.isEmpty() && disjoint(budgetA, budgetB)) return false;
-
-        Set<String> dA = dates(a), dB = dates(b);
-        if (!dA.isEmpty() && !dB.isEmpty() && disjoint(dA, dB)) return false;
-
-        return true;
     }
 
     // ── Pair score ──────────────────────────────────────────────────────────
@@ -150,20 +100,15 @@ public class MatchingEngine {
     private Double scoreFor(MatchingField f, Applicant a, Applicant b) {
         String key = f.questionKey();
         return switch (f.strategy()) {
-            case SAME -> KEY_AGE.equals(key) ? ageProximity(a, b) : null; // 예산/날짜 same은 hard condition 전용
+            case SAME -> sameScore(a, b, key);
             case DIVERSE -> diverseScore(a, b, key);
             case OVERLAP -> overlapScore(a, b, key);
         };
     }
 
-    private Double ageProximity(Applicant a, Applicant b) {
-        Integer ageA = age(a), ageB = age(b);
-        if (ageA == null || ageB == null) return null;
-        int d = Math.abs(ageA - ageB);
-        if (d <= 3) return 1.0;
-        if (d <= 5) return 0.5;
-        if (d <= 8) return 0.2;
-        return 0.0;
+    private Double sameScore(Applicant a, Applicant b, String key) {
+        Double diverse = diverseScore(a, b, key);
+        return diverse == null ? null : 1.0 - diverse;
     }
 
     private Double diverseScore(Applicant a, Applicant b, String key) {
@@ -227,54 +172,7 @@ public class MatchingEngine {
         return counts.values().stream().mapToLong(Long::longValue).max().orElse(0);
     }
 
-    // ── 그룹 날짜 ──────────────────────────────────────────────────────────────
-
-    private LocalDate pickEventDate(Set<String> groupDates, LocalDate fallback) {
-        if (groupDates != null) {
-            return groupDates.stream()
-                    .map(this::parseDate)
-                    .filter(d -> d != null)
-                    .sorted()
-                    .findFirst()
-                    .orElse(fallback);
-        }
-        return fallback;
-    }
-
-    private LocalDate parseDate(String s) {
-        try {
-            return LocalDate.parse(s.trim());
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     // ── 답변 값 추출 헬퍼 ──────────────────────────────────────────────────────
-
-    private Applicant hardestToPlace(List<Applicant> pool) {
-        Applicant hardest = pool.get(0);
-        int min = Integer.MAX_VALUE;
-        for (Applicant a : pool) {
-            int c = 0;
-            for (Applicant b : pool) {
-                if (a != b && hardCompatible(a, b)) c++;
-            }
-            if (c < min) {
-                min = c;
-                hardest = a;
-            }
-        }
-        return hardest;
-    }
-
-    private Integer age(Applicant a) {
-        Object v = a.answers().get(KEY_AGE);
-        if (v instanceof Number n) return n.intValue();
-        if (v instanceof String s) {
-            try { return Integer.parseInt(s.trim()); } catch (NumberFormatException e) { return null; }
-        }
-        return null;
-    }
 
     private String stringValue(Applicant a, String key) {
         Object v = a.answers().get(key);
@@ -292,22 +190,5 @@ public class MatchingEngine {
             result.add(s);
         }
         return result;
-    }
-
-    private Set<String> dates(Applicant a) {
-        return listValue(a, KEY_DATES);
-    }
-
-    private Set<String> intersect(Set<String> a, Set<String> b) {
-        Set<String> r = new LinkedHashSet<>(a);
-        r.retainAll(b);
-        return r;
-    }
-
-    private boolean disjoint(Set<String> a, Set<String> b) {
-        for (String s : a) {
-            if (b.contains(s)) return false;
-        }
-        return true;
     }
 }

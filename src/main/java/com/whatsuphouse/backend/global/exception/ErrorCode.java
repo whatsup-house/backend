@@ -46,6 +46,8 @@ public enum ErrorCode {
     FORM_NOT_FOUND("신청폼이 존재하지 않습니다.", HttpStatus.NOT_FOUND),
     QUESTION_NOT_FOUND("존재하지 않는 질문입니다.", HttpStatus.NOT_FOUND),
     RESERVED_QUESTION_READONLY("시스템 예약 질문(이름/연락처)은 삭제하거나 질문 키를 변경할 수 없습니다.", HttpStatus.BAD_REQUEST),
+    RESERVED_QUESTION_LOCKED("우연한 식탁 표준 질문은 삭제하거나 질문 키·타입을 변경할 수 없습니다.", HttpStatus.BAD_REQUEST),
+    STANDARD_QUESTIONS_MISSING("우연한 식탁 폼에는 표준 질문 7개가 모두 있어야 합니다.", HttpStatus.BAD_REQUEST),
     OPTIONS_REQUIRED("선택형 질문은 options가 필수입니다.", HttpStatus.BAD_REQUEST),
     MATCHING_STRATEGY_REQUIRED("매칭 필드는 matchingStrategy가 필수입니다.", HttpStatus.BAD_REQUEST),
     MATCHING_FIELD_TYPE_NOT_ALLOWED("주관식 질문은 매칭에 사용할 수 없습니다.", HttpStatus.BAD_REQUEST),
