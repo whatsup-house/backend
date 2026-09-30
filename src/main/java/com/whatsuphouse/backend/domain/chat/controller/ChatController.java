@@ -10,6 +10,7 @@ import com.whatsuphouse.backend.domain.chat.dto.response.ChatMessageResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomSummaryResponse;
+import com.whatsuphouse.backend.domain.chat.dto.response.ChatSocketTokenResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.PushPublicKeyResponse;
 import com.whatsuphouse.backend.domain.chat.service.ChatPushService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
@@ -166,6 +167,16 @@ public class ChatController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(ApiResult.success(chatService.uploadImage(file, principal.getUserId())));
+    }
+
+    @Operation(summary = "채팅 소켓 토큰 발급",
+            description = "쿠키 인증 필수. STOMP CONNECT 의 Authorization: Bearer 헤더에 넣을 단기 토큰(기본 2분)을 발급한다. "
+                    + "CONNECT 시점에만 검증하므로 연결 중 만료돼도 끊기지 않는다. REST 인증에는 쓸 수 없다. 정지·탈퇴 계정은 403.")
+    @GetMapping("/socket-token")
+    public ResponseEntity<ApiResult<ChatSocketTokenResponse>> getSocketToken(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResult.success(chatService.createSocketToken(principal)));
     }
 
     @Operation(summary = "웹 푸시 공개키", description = "VAPID 공개키. PushManager.subscribe의 applicationServerKey로 쓴다. VAPID 미설정이면 503.")

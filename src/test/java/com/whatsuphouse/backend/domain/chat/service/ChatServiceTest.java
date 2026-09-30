@@ -16,6 +16,7 @@ import com.whatsuphouse.backend.domain.chat.repository.ChatRoomRepository;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
+import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.config.TestJpaConfig;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -51,7 +52,7 @@ import static org.mockito.BDDMockito.given;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({TestJpaConfig.class, ChatService.class, AdminChatService.class, ChatAccessPolicy.class,
-        ChatCipher.class, ChatResponseAssembler.class})
+        ChatCipher.class, ChatResponseAssembler.class, JwtTokenProvider.class})
 @ActiveProfiles("test")
 class ChatServiceTest {
 

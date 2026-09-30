@@ -31,10 +31,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(token)) {
             try {
                 jwtTokenProvider.validateToken(token);
-                UserPrincipal principal = jwtTokenProvider.getUserPrincipal(token);
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                // 채팅 소켓 토큰은 STOMP CONNECT 전용 — REST 인증에는 쓰지 않고 무시한다(보호 API는 401).
+                if (!jwtTokenProvider.isChatSocketToken(token)) {
+                    UserPrincipal principal = jwtTokenProvider.getUserPrincipal(token);
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                }
             } catch (CustomException e) {
                 request.setAttribute("jwtErrorCode", e.getErrorCode());
             }

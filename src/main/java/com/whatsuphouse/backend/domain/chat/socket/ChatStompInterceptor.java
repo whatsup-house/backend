@@ -22,7 +22,10 @@ import java.util.UUID;
 
 /**
  * STOMP 인바운드 검사. 거부는 CustomException → STOMP ERROR 프레임(message 헤더 = ErrorCode 이름, WebSocketConfig).
- * - CONNECT: Authorization: Bearer JWT 네이티브 헤더만 본다(URL 쿼리·쿠키 토큰 미사용). 정지·탈퇴 계정 거부.
+ * - CONNECT: Authorization: Bearer {소켓 토큰} 네이티브 헤더만 본다(URL 쿼리·쿠키 토큰 미사용).
+ *   access 토큰은 HttpOnly 쿠키라 FE가 읽을 수 없으므로, 쿠키 인증으로 GET /api/chat/socket-token 에서 받은
+ *   단기 토큰(typ=chat-socket)만 허용한다. 일반 access·refresh 토큰은 UNAUTHORIZED, 만료는 TOKEN_EXPIRED.
+ *   토큰은 CONNECT 시점에만 검증하므로 연결 중 만료돼도 끊지 않는다. 정지·탈퇴 계정 거부.
  * - SUBSCRIBE: /topic/rooms/{roomId}는 참여 중 멤버만, /user/queue/rooms(본인 큐)만 허용. 그 외 목적지·와일드카드 거부.
  * - SEND: /app/** 만. 클라이언트가 /topic·/user 로 직접 보내 이벤트를 위조하는 것을 막는다.
  */
@@ -60,6 +63,9 @@ public class ChatStompInterceptor implements ChannelInterceptor {
         }
         String token = authorization.substring(BEARER_PREFIX.length());
         jwtTokenProvider.validateToken(token);
+        if (!jwtTokenProvider.isChatSocketToken(token)) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED);
+        }
         UserPrincipal principal = jwtTokenProvider.getUserPrincipal(token);
         chatService.checkConnectable(principal.getUserId());
         // getName() = userId 문자열 → /user/{userId}/queue/rooms 라우팅 키
