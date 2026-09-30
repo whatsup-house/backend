@@ -114,6 +114,18 @@ public class MatchingEngine {
         return new Run(members, rules, relations).score(IntStream.range(0, members.size()).boxed().toList());
     }
 
+    /** 하드 조건(설계 4.3) 항목. 수동 조정·재조정 재검증의 위반 사유로 노출된다. */
+    public enum HardRule {
+        TABLE_SIZE,
+        AGE_GAP,
+        BLOCKED_PAIR
+    }
+
+    /** 이미 정해진 멤버 구성의 하드 조건 위반. 비어 있으면 통과. (수동 조정·재조정 재검증용, KAN-347) */
+    public List<HardRule> violations(List<Applicant> members, Rules rules, Relations relations) {
+        return new Run(members, rules, relations).violations(IntStream.range(0, members.size()).boxed().toList());
+    }
+
     static Double mbtiCompatibility(String a, String b) {
         int i = a == null ? -1 : MBTI_TYPES.indexOf(a);
         int j = b == null ? -1 : MBTI_TYPES.indexOf(b);
@@ -398,6 +410,22 @@ public class MatchingEngine {
                 }
             }
             return ageGap(group) <= rules.maxAgeGap();
+        }
+
+        List<HardRule> violations(List<Integer> group) {
+            List<HardRule> result = new ArrayList<>();
+            if (group.size() < rules.tableSizeMin() || group.size() > rules.tableSizeMax()) {
+                result.add(HardRule.TABLE_SIZE);
+            }
+            if (ageGap(group) > rules.maxAgeGap()) {
+                result.add(HardRule.AGE_GAP);
+            }
+            boolean blockedPair = IntStream.range(0, group.size()).anyMatch(i ->
+                    IntStream.range(i + 1, group.size()).anyMatch(j -> blocked[group.get(i)][group.get(j)]));
+            if (blockedPair) {
+                result.add(HardRule.BLOCKED_PAIR);
+            }
+            return result;
         }
 
         private boolean isValid(List<Integer> group) {

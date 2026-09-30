@@ -43,6 +43,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class TicketServiceTest {
@@ -195,6 +196,27 @@ class TicketServiceTest {
         then(ticketTransactionRepository).should().save(captor.capture());
         assertThat(captor.getValue().getTransactionType()).isEqualTo(TicketTransactionType.REFUND);
         assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.RESTORED);
+    }
+
+    @Test
+    @DisplayName("구매 건 환불(모의)은 차감 레코드를 REFUNDED로 넘기고 잔여는 그대로 두며, 이후 취소 복구는 이용권을 돌려주지 않는다")
+    void refundPurchase_refundsDeductionWithoutRestoringTicket() {
+        TicketPass pass = activePass(2);
+        UUID applicationId = UUID.randomUUID();
+        Application application = mock(Application.class);
+        given(application.getId()).willReturn(applicationId);
+        TicketTransaction use = TicketTransaction.of(pass, application, TicketTransactionType.USE, -1, "테스트");
+        given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE))
+                .willReturn(Optional.of(use));
+
+        assertThat(ticketService.refundPurchase(application)).contains(TicketDeductionStatus.REFUNDED);
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.REFUNDED);
+        assertThat(pass.getRemainingCount()).isEqualTo(2);
+
+        ticketService.refundOneTicket(application);
+        assertThat(pass.getRemainingCount()).isEqualTo(2);
+        assertThat(ticketService.refundPurchase(application)).isEmpty();
+        then(ticketTransactionRepository).should(never()).save(any());
     }
 
     @Test

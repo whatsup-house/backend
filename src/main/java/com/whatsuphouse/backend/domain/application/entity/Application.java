@@ -136,6 +136,12 @@ public class Application extends BaseEntity {
         this.matchStatus = matchStatus;
     }
 
+    /** 대체 회차로 옮긴다(MatchResolution TRANSFER). 배정 회차를 비우고 매칭 대기로 돌아간다. 희망 회차 교체는 서비스가 한다. (KAN-347) */
+    public void transfer() {
+        this.session = null;
+        this.matchStatus = MatchStatus.WAITING;
+    }
+
     public void attend() {
         this.status = ApplicationStatus.ATTENDED;
     }

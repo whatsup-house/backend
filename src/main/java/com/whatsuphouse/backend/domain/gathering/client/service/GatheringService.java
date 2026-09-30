@@ -165,6 +165,13 @@ public class GatheringService {
         return session;
     }
 
+    /** 종류의 삭제되지 않은 회차 전부(장소 포함). 매칭 실패 신청의 대체 회차 후보용. (KAN-347) */
+    public List<GatheringSession> listSessionsByGathering(UUID gatheringId) {
+        return gatheringSessionRepository.findByGathering_IdInAndDeletedAtIsNull(List.of(gatheringId)).stream()
+                .sorted(SESSION_ORDER)
+                .toList();
+    }
+
     /** 오늘 이후(오늘 포함) 취소되지 않은 해당 타입 회차, 날짜·시작 시간 순. (KAN-348 운영 대시보드) */
     public List<GatheringSession> listUpcomingSessions(GatheringType type) {
         return gatheringSessionRepository.findByEventDateGreaterThanEqualAndDeletedAtIsNull(LocalDate.now()).stream()
