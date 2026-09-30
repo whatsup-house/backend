@@ -128,7 +128,9 @@ public enum ErrorCode {
     CHAT_INVALID_EMOJI("사용할 수 없는 이모지입니다.", HttpStatus.BAD_REQUEST),
     CHAT_IMAGE_TOO_LARGE("이미지는 5MB 이하만 업로드할 수 있습니다.", HttpStatus.BAD_REQUEST),
     CHAT_REPORT_NOT_FOUND("존재하지 않는 신고입니다.", HttpStatus.NOT_FOUND),
-    CHAT_CRYPTO_FAILED("메시지를 처리하지 못했습니다.", HttpStatus.INTERNAL_SERVER_ERROR);
+    CHAT_CRYPTO_FAILED("메시지를 처리하지 못했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    CHAT_PUSH_DISABLED("웹 푸시를 사용할 수 없습니다.", HttpStatus.SERVICE_UNAVAILABLE),
+    CHAT_PUSH_INVALID_ENDPOINT("올바르지 않은 푸시 구독 주소입니다.", HttpStatus.BAD_REQUEST);
 
     private final String message;
     private final HttpStatus status;

@@ -70,6 +70,11 @@ dependencies {
 	// Mail
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 
+	// 채팅 웹 푸시 (KAN-335). 5.1.2는 API 타입(httpcore·jose4j)을 컴파일 클래스패스에 노출하지 않아 5.1.1 사용.
+	// BouncyCastle은 web-push가 선언하지 않아 직접 추가한다(VAPID·구독 키 로딩에 "BC" 프로바이더 필요).
+	implementation 'nl.martijndwars:web-push:5.1.1'
+	implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'

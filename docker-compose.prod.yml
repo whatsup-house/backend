@@ -16,6 +16,9 @@ services:
       MAIL_FROM: ${MAIL_FROM}
       RESEND_API_KEY: ${RESEND_API_KEY}
       CHAT_ENCRYPTION_KEY: ${CHAT_ENCRYPTION_KEY}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
     depends_on:
       - redis
     restart: unless-stopped
