@@ -27,6 +27,12 @@ public class UserNotificationService {
      * 호출자의 트랜잭션 내에서 실행되어, 발행 트랜잭션이 롤백되면 알림도 롤백된다.
      */
     public void create(User user, NotificationType type, String title, String content, NotificationLink link) {
+        create(user, type, title, content, link, null);
+    }
+
+    /** linkId: link가 가리키는 대상 ID(예: DINING_TABLE → 테이블 ID). */
+    public void create(User user, NotificationType type, String title, String content, NotificationLink link,
+                       UUID linkId) {
         if (user == null) {
             return;
         }
@@ -36,6 +42,7 @@ public class UserNotificationService {
                 .title(title)
                 .content(content)
                 .link(link)
+                .linkId(linkId)
                 .build());
     }
 

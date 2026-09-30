@@ -76,6 +76,10 @@ server:
 app:
   frontend-url: ${FRONTEND_URL:https://www.whatsup.house}
 
+# 우연한 식탁 자동 확정 채팅방 개설자(관리자 회원 UUID). 비우면 활성 관리자 중 한 명이 개설자가 된다. (KAN-346)
+dining:
+  system-admin-id: ${DINING_SYSTEM_ADMIN_ID:}
+
 # 채팅 본문 AES-256-GCM 키(base64 32바이트). 운영 필수 — 없으면 기동 실패가 의도된 동작.
 # 생성: openssl rand -base64 32 / 키를 바꾸면 기존 메시지는 복호화되지 않는다(키 로테이션 미지원).
 chat:

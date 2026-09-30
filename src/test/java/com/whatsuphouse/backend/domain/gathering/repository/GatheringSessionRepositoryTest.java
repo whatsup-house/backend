@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.gathering.repository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.global.config.TestJpaConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,8 +14,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
@@ -154,7 +157,35 @@ class GatheringSessionRepositoryTest {
                 .allMatch(session -> session.getGathering().getId().equals(kind.getId()));
     }
 
+    // SKIP LOCKED 자체(다른 트랜잭션이 잠근 행 건너뛰기)는 단일 연결 테스트로 재현하지 않는다. 여기서는 네이티브 쿼리의 조건을 확인한다.
+    @Test
+    @DisplayName("매칭 시각이 된 모집 중 우연한 식탁 회차만 잠금 조회한다")
+    void findDueRandomTableSessionIdsForUpdate_returnsOnlyDueOpenRandomTableSessions() {
+        LocalDateTime now = LocalDateTime.now();
+        Gathering randomTable = gatheringRepository.save(
+                Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
+        GatheringSession due = saveRandomTableSession(randomTable, eventDate, now.minusMinutes(1));
+        saveRandomTableSession(randomTable, eventDate, now.plusMinutes(10));      // 매칭 시각 전
+        saveRandomTableSession(randomTable, eventDate, null);                     // 매칭 시각 없음
+        saveRandomTableSession(randomTable, LocalDate.now().minusDays(1), now.minusDays(2)); // 행사일 지남
+        saveRandomTableSession(randomTable, eventDate, now.minusMinutes(1)).changeStatus(GatheringSessionStatus.CLOSED);
+        GatheringSession regular = saveSession("일반 게더링", eventDate);
+        ReflectionTestUtils.setField(regular, "matchRunAt", now.minusMinutes(1)); // 일반 모임은 대상 아님
+        em.flush();
+        em.clear();
+
+        List<String> result = gatheringSessionRepository.findDueRandomTableSessionIdsForUpdate(now, now.toLocalDate());
+
+        assertThat(result).containsExactly(due.getId().toString());
+    }
+
     // ── helper ───────────────────────────────────────────────────────────────
+
+    private GatheringSession saveRandomTableSession(Gathering gathering, LocalDate date, LocalDateTime matchRunAt) {
+        GatheringSession session = GatheringSession.builder().gathering(gathering).eventDate(date).maxAttendees(12).build();
+        session.changeMatchingRules(matchRunAt, null, null, null, null, null);
+        return gatheringSessionRepository.save(session);
+    }
 
     private GatheringSession saveSession(String title, LocalDate date) {
         return saveSession(title, date, null);
