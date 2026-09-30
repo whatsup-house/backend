@@ -206,6 +206,7 @@ public class MatchingService {
                         .groupSize(g.getGroupSize())
                         .restaurantName(g.getRestaurantName())
                         .restaurantAddress(g.getRestaurantAddress())
+                        .venueId(g.getVenueId())
                         .members(byGroup.getOrDefault(g.getId(), List.of()).stream()
                                 .map(this::toMemberView).toList())
                         .build())
@@ -315,6 +316,23 @@ public class MatchingService {
         MatchingGroup group = matchingGroupRepository.findById(groupId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
         group.updateRestaurant(name, address);
+    }
+
+    public MatchingGroup findGroup(UUID groupId) {
+        return matchingGroupRepository.findById(groupId)
+                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+    }
+
+    /** 회차별·상태별 그룹 수. 그룹이 없는 회차는 결과에 없다. (KAN-348 운영 대시보드) */
+    @Transactional(readOnly = true)
+    public Map<UUID, Map<MatchingGroupStatus, Long>> countGroupsBySessionIds(Collection<UUID> sessionIds) {
+        if (sessionIds.isEmpty()) {
+            return Map.of();
+        }
+        return matchingGroupRepository.countBySessionIdsGroupByStatus(sessionIds).stream()
+                .collect(Collectors.groupingBy(MatchingGroupRepository.SessionStatusCountProjection::getSessionId,
+                        Collectors.toMap(MatchingGroupRepository.SessionStatusCountProjection::getStatus,
+                                MatchingGroupRepository.SessionStatusCountProjection::getCount)));
     }
 
     /** 조원 중 회원의 userId (채팅 단체방 멤버 프리필용). 비회원 신청은 제외. */

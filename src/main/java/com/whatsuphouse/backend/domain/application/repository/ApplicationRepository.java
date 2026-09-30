@@ -29,6 +29,22 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
             """)
     List<ApplicationSessionCountProjection> countBySessionIdsGroupByStatus(@Param("sessionIds") List<UUID> sessionIds);
 
+    interface UserCountProjection {
+        UUID getUserId();
+        Long getCount();
+    }
+
+    @Query("""
+            SELECT a.user.id AS userId, COUNT(a) AS count
+            FROM Application a
+            WHERE a.user.id IN :userIds AND a.status = :status
+              AND a.gathering.gatheringType = :type AND a.deletedAt IS NULL
+            GROUP BY a.user.id
+            """)
+    List<UserCountProjection> countByUserIdsAndStatusAndType(@Param("userIds") Collection<UUID> userIds,
+                                                             @Param("status") ApplicationStatus status,
+                                                             @Param("type") GatheringType type);
+
     // 회원이 해당 회차에 이미 신청했는지.
     boolean existsBySession_IdAndUser_IdAndDeletedAtIsNull(UUID sessionId, UUID userId);
 

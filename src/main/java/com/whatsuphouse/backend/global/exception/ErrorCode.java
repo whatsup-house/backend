@@ -63,6 +63,19 @@ public enum ErrorCode {
     MATCHING_MEMBER_NOT_FOUND("존재하지 않는 매칭 멤버입니다.", HttpStatus.NOT_FOUND),
     MATCHING_ALREADY_ASSIGNED("이미 다른 그룹에 배정된 신청입니다.", HttpStatus.BAD_REQUEST),
 
+    // Dining (우연한 식탁 운영자 어드민)
+    NOT_RANDOM_TABLE_SESSION("우연한 식탁 회차가 아닙니다.", HttpStatus.BAD_REQUEST),
+    EXCEPTION_CASE_NOT_FOUND("존재하지 않는 예외 건입니다.", HttpStatus.NOT_FOUND),
+    EXCEPTION_NOTE_REQUIRED("예외를 처리하려면 처리 메모가 필요합니다.", HttpStatus.BAD_REQUEST),
+    EXCEPTION_ACTION_NOT_ALLOWED("조치는 안전(SAFETY) 예외를 처리할 때만 지정할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    EXCEPTION_ACTION_TARGET_MISSING("조치할 회원 신청이 연결되지 않은 예외입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_TABLE_SIZE_RANGE("테이블 최소 인원은 최대 인원보다 클 수 없습니다.", HttpStatus.BAD_REQUEST),
+    VENUE_NOT_FOUND("존재하지 않는 식당입니다.", HttpStatus.NOT_FOUND),
+    VENUE_INACTIVE("비활성 식당은 배정할 수 없습니다.", HttpStatus.BAD_REQUEST),
+    VENUE_NOT_IN_SESSION("회차 식당 풀에 없는 식당입니다.", HttpStatus.BAD_REQUEST),
+    DUPLICATE_SESSION_VENUE("같은 식당을 중복으로 설정할 수 없습니다.", HttpStatus.BAD_REQUEST),
+    VENUE_CAPACITY_EXCEEDED("식당의 수용 테이블 수를 넘을 수 없습니다.", HttpStatus.CONFLICT),
+
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("이미 신청한 게더링입니다.", HttpStatus.CONFLICT),

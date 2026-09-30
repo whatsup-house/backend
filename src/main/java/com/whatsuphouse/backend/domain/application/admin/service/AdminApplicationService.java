@@ -8,9 +8,11 @@ import com.whatsuphouse.backend.domain.application.admin.dto.response.Applicatio
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.mileage.entity.MileageHistory;
@@ -29,9 +31,12 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -42,6 +47,7 @@ public class AdminApplicationService {
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
+    private final ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
     private final GatheringSessionRepository gatheringSessionRepository;
     private final MileageService mileageService;
     private final TicketService ticketService;
@@ -240,6 +246,55 @@ public class AdminApplicationService {
                 history.getAmount(),
                 history.getBalanceAfter()
         );
+    }
+
+    // ── 우연한 식탁 운영자 어드민용 조회 (KAN-348) ────────────────────────────────
+
+    /** 회차 신청자: 이 회차에 배정됐거나, 배정 전이고 이 회차를 희망 회차로 고른 활성 신청. 최신 신청 우선. */
+    public List<Application> listSessionApplications(UUID sessionId) {
+        return applicationRepository.findApplications(sessionId, null);
+    }
+
+    /** 신청별 답변 값(question_key → value). questionKeys에 든 질문만 담는다. */
+    public Map<UUID, Map<String, Object>> findAnswerValues(Collection<UUID> applicationIds, Collection<String> questionKeys) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Map<String, Object>> result = new HashMap<>();
+        applicationAnswerRepository.findByApplicationIds(List.copyOf(applicationIds)).stream()
+                .filter(answer -> questionKeys.contains(answer.getQuestion().getQuestionKey()))
+                .forEach(answer -> result.computeIfAbsent(answer.getApplication().getId(), id -> new HashMap<>())
+                        .put(answer.getQuestion().getQuestionKey(),
+                                answer.getValue() != null ? answer.getValue().get("value") : null));
+        return result;
+    }
+
+    /** 신청별 희망 회차, 1순위부터. */
+    public Map<UUID, List<ApplicationCandidateSession>> findCandidateSessions(Collection<UUID> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        return applicationCandidateSessionRepository.findByApplicationIdsWithSession(applicationIds).stream()
+                .collect(Collectors.groupingBy(candidate -> candidate.getApplication().getId()));
+    }
+
+    /** 회원별 우연한 식탁 참가(출석 처리된 신청) 횟수. 참가가 없으면 결과에 없다. */
+    public Map<UUID, Long> countRandomTableAttendance(Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        // TODO(KAN-345 이후): 참석 기록이 attendances(ATTENDED)로 옮겨가면 그 기준으로 센다.
+        return applicationRepository.countByUserIdsAndStatusAndType(
+                        userIds, ApplicationStatus.ATTENDED, GatheringType.RANDOM_TABLE).stream()
+                .collect(Collectors.toMap(ApplicationRepository.UserCountProjection::getUserId,
+                        ApplicationRepository.UserCountProjection::getCount));
+    }
+
+    /** 신청한 회원 ID. 취소된 신청도 찾는다(신고 조치 대상은 취소 여부와 무관). 비회원 신청이면 비어 있다. */
+    public Optional<UUID> findApplicantUserId(UUID applicationId) {
+        Application application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        return Optional.ofNullable(application.getUser()).map(User::getId);
     }
 
     /**
