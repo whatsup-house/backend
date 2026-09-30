@@ -126,6 +126,11 @@ public class MatchingEngine {
         return new Run(members, rules, relations).violations(IntStream.range(0, members.size()).boxed().toList());
     }
 
+    /** 이미 정해진 멤버 구성이 하드 조건(인원 [min, max], 나이 차, 제외 관계)을 지키는지. 확정 직전 최종 검증용. (KAN-346) */
+    public boolean satisfiesHardConditions(List<Applicant> members, Rules rules, Relations relations) {
+        return violations(members, rules, relations).isEmpty();
+    }
+
     static Double mbtiCompatibility(String a, String b) {
         int i = a == null ? -1 : MBTI_TYPES.indexOf(a);
         int j = b == null ? -1 : MBTI_TYPES.indexOf(b);

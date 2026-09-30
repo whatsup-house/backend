@@ -142,6 +142,12 @@ public class Application extends BaseEntity {
         this.matchStatus = MatchStatus.WAITING;
     }
 
+    /** 우연한 식탁 테이블 확정: 그 테이블의 회차를 배정 회차로 두고 매칭 상태를 CONFIRMED로. (KAN-346) */
+    public void confirmMatch(GatheringSession session) {
+        this.session = session;
+        this.matchStatus = MatchStatus.CONFIRMED;
+    }
+
     public void attend() {
         this.status = ApplicationStatus.ATTENDED;
     }

@@ -87,6 +87,10 @@ public enum ErrorCode {
     VENUE_NOT_IN_SESSION("회차 식당 풀에 없는 식당입니다.", HttpStatus.BAD_REQUEST),
     DUPLICATE_SESSION_VENUE("같은 식당을 중복으로 설정할 수 없습니다.", HttpStatus.BAD_REQUEST),
     VENUE_CAPACITY_EXCEEDED("식당의 수용 테이블 수를 넘을 수 없습니다.", HttpStatus.CONFLICT),
+    TABLE_NOT_PROPOSED("제안(PROPOSED) 상태 테이블만 확정할 수 있습니다.", HttpStatus.CONFLICT),
+    TABLE_NOT_CONFIRMED("확정된 테이블에서만 할 수 있습니다.", HttpStatus.CONFLICT),
+    DINING_TABLE_FORBIDDEN("본인이 속한 확정 테이블만 볼 수 있습니다.", HttpStatus.FORBIDDEN),
+    SYSTEM_ADMIN_NOT_FOUND("채팅방을 만들 시스템 관리자 계정이 없습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
     // Application
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),

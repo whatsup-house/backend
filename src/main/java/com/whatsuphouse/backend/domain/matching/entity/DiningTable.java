@@ -162,4 +162,21 @@ public class DiningTable extends BaseEntity {
         log.add(entry);
         this.reallocationLog = log;
     }
+
+    // 관리자 즉시 확정: 유예를 끝내고 확정 파이프라인이 바로 집어 가게 한다. (KAN-346)
+    public void changeConfirmAt(LocalDateTime confirmAt) {
+        this.confirmAt = confirmAt;
+    }
+
+    public void linkChatRoom(UUID chatRoomId) {
+        this.chatRoomId = chatRoomId;
+    }
+
+    /** 표시용 지역. 테이블 값이 없으면 회차 장소 이름, 둘 다 없으면 null. */
+    public String getDisplayRegion() {
+        if (region != null && !region.isBlank()) {
+            return region;
+        }
+        return session.getLocation() != null ? session.getLocation().getName() : null;
+    }
 }

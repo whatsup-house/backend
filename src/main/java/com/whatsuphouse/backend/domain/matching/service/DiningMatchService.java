@@ -255,6 +255,30 @@ public class DiningMatchService {
                 relations(applicants, tableId));
     }
 
+    /** 테이블 멤버 구성이 하드 조건(인원·나이 차·제외 관계)을 지키는지. 자동 확정 직전 최종 검증. (KAN-346) */
+    public boolean satisfiesHardConditions(DiningTable table, List<Application> applications) {
+        if (applications.isEmpty()) {
+            return false;
+        }
+        List<ApplicationAnswer> answers = adminApplicationService.findAnswers(
+                applications.stream().map(Application::getId).toList());
+        List<MatchingEngine.Applicant> applicants = toApplicants(applications, answers);
+        return matchingEngine.satisfiesHardConditions(applicants,
+                rules(table.getSession(), adminMatchingRuleService.findMatchingRuleSetting(), answers, null),
+                relations(applicants, table.getId()));
+    }
+
+    /** 신청 ID → 매칭 프로필(표준 질문 답). 참가자 테이블 상세의 멤버 소개용. (KAN-346) */
+    public Map<UUID, MatchingEngine.Applicant> findProfiles(List<Application> applications) {
+        if (applications.isEmpty()) {
+            return Map.of();
+        }
+        return toApplicants(applications,
+                adminApplicationService.findAnswers(applications.stream().map(Application::getId).toList()))
+                .stream()
+                .collect(Collectors.toMap(MatchingEngine.Applicant::applicationId, Function.identity(), (a, b) -> a));
+    }
+
     // ── 실행 단계 ────────────────────────────────────────────────────────────
 
     private void dissolveProposedTables(UUID sessionId) {
