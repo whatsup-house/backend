@@ -228,7 +228,7 @@ class DiningLifecycleTest {
         for (int i = 0; i < 3; i++) {
             assertThat(notifications(memberUserId(table, i), NotificationType.DINING_FEEDBACK_REQUEST)).singleElement()
                     .satisfies(n -> {
-                        assertThat(n.getLink()).isEqualTo(NotificationLink.DINING_FEEDBACK);
+                        assertThat(n.getLink()).isEqualTo(NotificationLink.DINING_FEEDBACK_REQUEST);
                         assertThat(n.getLinkId()).isEqualTo(table.getId());
                     });
         }

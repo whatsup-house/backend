@@ -84,7 +84,7 @@ public class DiningLifecycleNotificationListener {
                 user -> isReminder
                         ? "하루 앞으로 다가왔어요. 테이블 상세에서 시간과 식당을 확인해 주세요."
                         : "함께한 테이블에 대한 피드백을 남겨 주세요. 다음 매칭에 반영돼요.",
-                isReminder ? NotificationLink.DINING_TABLE : NotificationLink.DINING_FEEDBACK, event.getTableId(),
+                isReminder ? NotificationLink.DINING_TABLE : NotificationLink.DINING_FEEDBACK_REQUEST, event.getTableId(),
                 new Target(event.getSessionId(), event.getTableId(), null));
     }
 
