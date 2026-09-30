@@ -8,6 +8,7 @@ import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringSe
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.translation.enums.TranslatableType;
@@ -142,6 +143,25 @@ public class GatheringService {
         return gatheringSessionRepository.findByIdAndDeletedAtIsNull(id)
                 .or(() -> pickRepresentative(gatheringSessionRepository.findByGathering_IdInAndDeletedAtIsNull(List.of(id))))
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+    }
+
+    /** 우연한 식탁 회차. findSession과 달리 종류 ID 폴백 없이 회차 ID만 받는다. (KAN-348) */
+    public GatheringSession findRandomTableSession(UUID sessionId) {
+        GatheringSession session = gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)
+                .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND));
+        if (session.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE) {
+            throw new CustomException(ErrorCode.NOT_RANDOM_TABLE_SESSION);
+        }
+        return session;
+    }
+
+    /** 오늘 이후(오늘 포함) 취소되지 않은 해당 타입 회차, 날짜·시작 시간 순. (KAN-348 운영 대시보드) */
+    public List<GatheringSession> listUpcomingSessions(GatheringType type) {
+        return gatheringSessionRepository.findByEventDateGreaterThanEqualAndDeletedAtIsNull(LocalDate.now()).stream()
+                .filter(session -> session.getGathering().getGatheringType() == type)
+                .filter(session -> session.getStatus() != GatheringSessionStatus.CANCELLED)
+                .sorted(SESSION_ORDER)
+                .toList();
     }
 
     /** "게더링 ID" 자리로 들어온 값을 종류로 해석한다. 종류 ID를 먼저 찾고, 없으면 회차 ID로 보고 그 회차의 종류를 쓴다. */

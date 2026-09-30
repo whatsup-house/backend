@@ -109,6 +109,11 @@ public class UserService {
         return userRepository.findActiveAdminIds();
     }
 
+    /** 우연한 식탁 참여 제한. 예외함 SAFETY 건을 RESTRICT/BAN 조치로 처리할 때 쓴다. (KAN-348) */
+    public void restrictRandomTable(UUID userId) {
+        findActiveUser(userId).restrictRandomTable();
+    }
+
     private User findActiveUser(UUID userId) {
         return userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));

@@ -57,6 +57,10 @@ public class MatchingGroup extends BaseEntity {
     @Column(name = "group_score", precision = 5, scale = 4)
     private BigDecimal groupScore;
 
+    // 배정 식당(venues.id). 운영자 어드민에서 지정한다. 매칭 엔진 v2(KAN-345)에서 dining_tables.venue_id로 옮겨간다. (KAN-348)
+    @Column(name = "venue_id")
+    private UUID venueId;
+
     @Builder
     public MatchingGroup(GatheringSession session, LocalDate eventDate, String region, int groupSize,
                          String restaurantName, String restaurantAddress,
@@ -86,6 +90,10 @@ public class MatchingGroup extends BaseEntity {
 
     public void confirm() {
         this.status = MatchingGroupStatus.CONFIRMED;
+    }
+
+    public void assignVenue(UUID venueId) {
+        this.venueId = venueId;
     }
 
     public void updateRestaurant(String restaurantName, String restaurantAddress) {
