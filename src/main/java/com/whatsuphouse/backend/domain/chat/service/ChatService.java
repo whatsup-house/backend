@@ -8,6 +8,7 @@ import com.whatsuphouse.backend.domain.chat.dto.response.ChatMessageResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomSummaryResponse;
+import com.whatsuphouse.backend.domain.chat.dto.response.ChatSocketTokenResponse;
 import com.whatsuphouse.backend.domain.chat.entity.ChatMember;
 import com.whatsuphouse.backend.domain.chat.entity.ChatMessage;
 import com.whatsuphouse.backend.domain.chat.entity.ChatReaction;
@@ -28,6 +29,8 @@ import com.whatsuphouse.backend.domain.chat.repository.ChatReportRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatRoomRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
+import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
+import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
@@ -69,6 +72,7 @@ public class ChatService {
     private final UserService userService;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
+    private final JwtTokenProvider jwtTokenProvider;
 
     @Transactional(readOnly = true)
     public List<ChatRoomSummaryResponse> listRooms(UUID userId, boolean isAdmin) {
@@ -275,6 +279,14 @@ public class ChatService {
         if (!isActiveAccount(userId)) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
+    }
+
+    /** STOMP CONNECT 전용 단기 토큰 발급. 정지·탈퇴 계정은 CONNECT 와 같은 FORBIDDEN. */
+    @Transactional(readOnly = true)
+    public ChatSocketTokenResponse createSocketToken(UserPrincipal principal) {
+        checkConnectable(principal.getUserId());
+        return new ChatSocketTokenResponse(jwtTokenProvider.generateChatSocketToken(principal),
+                jwtTokenProvider.getChatSocketExpiration() / 1000);
     }
 
     /** STOMP SUBSCRIBE /topic/rooms/{roomId}: 참여 중(left_at NULL) 멤버만. */

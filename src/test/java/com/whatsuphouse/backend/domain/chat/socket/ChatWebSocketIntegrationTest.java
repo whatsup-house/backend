@@ -15,15 +15,23 @@ import com.whatsuphouse.backend.global.auth.JwtTokenProvider;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.config.CacheConfig;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.cache.CacheManager;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -38,6 +46,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +67,12 @@ class ChatWebSocketIntegrationTest {
 
     @LocalServerPort
     private int port;
+
+    @Value("${jwt.secret}")
+    private String jwtSecret;
+
+    @Autowired
+    private TestRestTemplate restTemplate;
 
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
@@ -136,6 +151,85 @@ class ChatWebSocketIntegrationTest {
     }
 
     @Test
+    @DisplayName("쿠키 인증으로 소켓 토큰(typ=chat-socket)을 발급받아 그 토큰으로 CONNECT 할 수 있다")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void socketToken_cookieAuth_issuedAndConnects() throws Exception {
+        // given
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.COOKIE, "accessToken=" + jwtTokenProvider.generateAccessToken(principal(memberId)));
+
+        // when
+        ResponseEntity<Map> response = restTemplate.exchange(
+                "/api/chat/socket-token", HttpMethod.GET, new HttpEntity<>(headers), Map.class);
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, Object> data = (Map<String, Object>) response.getBody().get("data");
+        assertThat(data).containsEntry("expiresIn", 120);
+        String token = (String) data.get("token");
+        Map<String, Object> claims = Jwts.parser()
+                .verifyWith(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
+                .build().parseSignedClaims(token).getPayload();
+        assertThat(claims).containsEntry("typ", "chat-socket").containsEntry("sub", memberId.toString());
+
+        StompSession session = connectWith(token, new ErrorCollector());
+        assertThat(session.isConnected()).isTrue();
+    }
+
+    @Test
+    @DisplayName("미인증으로 소켓 토큰을 요청하면 401")
+    void socketToken_noAuth_returns401() {
+        // when
+        ResponseEntity<String> response = restTemplate.getForEntity("/api/chat/socket-token", String.class);
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("소켓 토큰으로는 REST API를 인증할 수 없다(401)")
+    void restApi_socketToken_returns401() {
+        // given
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(jwtTokenProvider.generateChatSocketToken(principal(memberId)));
+
+        // when
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/chat/rooms", HttpMethod.GET, new HttpEntity<>(headers), String.class);
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("일반 access 토큰으로 CONNECT 하면 ERROR(UNAUTHORIZED)로 거부된다")
+    void connect_accessToken_rejected() throws Exception {
+        // given
+        ErrorCollector errors = new ErrorCollector();
+        String accessToken = jwtTokenProvider.generateAccessToken(principal(memberId));
+
+        // when
+        stompClient.connectAsync(url(), new WebSocketHttpHeaders(), bearer(accessToken), errors);
+
+        // then
+        assertThat(errors.messages.poll(5, SECONDS)).isEqualTo("UNAUTHORIZED");
+    }
+
+    @Test
+    @DisplayName("만료된 소켓 토큰으로 CONNECT 하면 ERROR(TOKEN_EXPIRED)로 거부된다")
+    void connect_expiredSocketToken_rejected() throws Exception {
+        // given: 같은 서명키, 수명 -1초
+        ErrorCollector errors = new ErrorCollector();
+        String expired = new JwtTokenProvider(jwtSecret, 0, 0, -1000).generateChatSocketToken(principal(memberId));
+
+        // when
+        stompClient.connectAsync(url(), new WebSocketHttpHeaders(), bearer(expired), errors);
+
+        // then
+        assertThat(errors.messages.poll(5, SECONDS)).isEqualTo("TOKEN_EXPIRED");
+    }
+
+    @Test
     @DisplayName("비멤버가 방 토픽을 구독하면 ERROR(CHAT_NOT_MEMBER)로 거부된다")
     void subscribe_nonMember_rejected() throws Exception {
         // given
@@ -200,12 +294,24 @@ class ChatWebSocketIntegrationTest {
     }
 
     private StompSession connect(UUID userId, StompSessionHandlerAdapter handler) throws Exception {
-        StompHeaders headers = new StompHeaders();
-        String token = jwtTokenProvider.generateAccessToken(new UserPrincipal(userId, userId + "@example.com", false));
-        headers.add(HttpHeaders.AUTHORIZATION, "Bearer " + token);
-        StompSession session = stompClient.connectAsync(url(), new WebSocketHttpHeaders(), headers, handler).get(5, SECONDS);
+        return connectWith(jwtTokenProvider.generateChatSocketToken(principal(userId)), handler);
+    }
+
+    private StompSession connectWith(String socketToken, StompSessionHandlerAdapter handler) throws Exception {
+        StompSession session = stompClient.connectAsync(url(), new WebSocketHttpHeaders(), bearer(socketToken), handler)
+                .get(5, SECONDS);
         sessions.add(session);
         return session;
+    }
+
+    private StompHeaders bearer(String token) {
+        StompHeaders headers = new StompHeaders();
+        headers.add(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        return headers;
+    }
+
+    private UserPrincipal principal(UUID userId) {
+        return new UserPrincipal(userId, userId + "@example.com", false);
     }
 
     // SUBSCRIBE는 브로커에 비동기로 등록되므로, 프로브가 도착할 때까지 다시 보낸다.
