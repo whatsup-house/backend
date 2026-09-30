@@ -94,6 +94,13 @@ public class DiningTable extends BaseEntity {
     @Column(nullable = false)
     private boolean locked = false;
 
+    // 24시간 전 리마인드·시작 시각 대화 콘텐츠를 보낸 시각. 테이블마다 1회만 보내는 표시. (KAN-349)
+    @Column(name = "reminder_sent_at")
+    private LocalDateTime reminderSentAt;
+
+    @Column(name = "contents_posted_at")
+    private LocalDateTime contentsPostedAt;
+
     @Builder
     public DiningTable(GatheringSession session, UUID matchRunId, LocalDate eventDate, String region, int groupSize,
                        String algorithmVersion, BigDecimal groupScore, ScoreDetail scoreDetail,
@@ -170,6 +177,13 @@ public class DiningTable extends BaseEntity {
 
     public void linkChatRoom(UUID chatRoomId) {
         this.chatRoomId = chatRoomId;
+    }
+
+    // 회차 종료 처리(KAN-349). 확정 테이블만 완료로 넘긴다.
+    public void done() {
+        if (status == DiningTableStatus.CONFIRMED) {
+            this.status = DiningTableStatus.DONE;
+        }
     }
 
     /** 표시용 지역. 테이블 값이 없으면 회차 장소 이름, 둘 다 없으면 null. */

@@ -54,7 +54,8 @@ public class DiningApplicantResponse {
     private Boolean hasExcludedRelation;
 
     public static DiningApplicantResponse of(Application application, String age, String gender, String mbti,
-                                             List<ApplicationCandidateSession> candidates, long participationCount) {
+                                             List<ApplicationCandidateSession> candidates, long participationCount,
+                                             boolean hasExcludedRelation) {
         return DiningApplicantResponse.builder()
                 .applicationId(application.getId())
                 .userId(application.getUser() != null ? application.getUser().getId() : null)
@@ -67,8 +68,7 @@ public class DiningApplicantResponse {
                 .matchStatus(application.getMatchStatus())
                 .candidateSessions(candidates.stream().map(CandidateSession::from).toList())
                 .participationCount(participationCount)
-                // TODO(peer_preferences·safety_reports 도입 후): 같은 회차 신청자와의 AVOID·신고 관계로 채운다. 지금은 항상 false.
-                .hasExcludedRelation(false)
+                .hasExcludedRelation(hasExcludedRelation)
                 .build();
     }
 

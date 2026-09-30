@@ -17,7 +17,9 @@ import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
+import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -52,6 +54,7 @@ public class DiningService {
             EnumSet.of(DiningTableStatus.CONFIRMED, DiningTableStatus.DONE);
 
     private final MatchingService matchingService;
+    private final DiningAttendanceService diningAttendanceService;
     private final ExceptionCaseService exceptionCaseService;
     private final FeedbackRepository feedbackRepository;
     private final PeerPreferenceRepository peerPreferenceRepository;
@@ -128,8 +131,9 @@ public class DiningService {
         if (memberships.isEmpty()) {
             return List.of();
         }
-        Set<UUID> submitted = Set.copyOf(feedbackRepository.findTableMemberIdsIn(
-                memberships.stream().map(DiningTableMember::getId).toList()));
+        List<UUID> memberIds = memberships.stream().map(DiningTableMember::getId).toList();
+        Set<UUID> submitted = Set.copyOf(feedbackRepository.findTableMemberIdsIn(memberIds));
+        Map<UUID, AttendanceStatus> attendanceStatuses = diningAttendanceService.findAttendanceStatuses(memberIds);
         Map<UUID, String> venueNames = venueRepository.findAllById(memberships.stream()
                         .map(member -> member.getTable().getVenueId()).filter(Objects::nonNull).distinct().toList())
                 .stream()
@@ -149,6 +153,7 @@ public class DiningService {
                                     ? venueNames.get(table.getVenueId()) : table.getRestaurantName())
                             .tableStatus(table.getStatus())
                             .feedbackSubmitted(submitted.contains(member.getId()))
+                            .attendanceStatus(attendanceStatuses.get(member.getId()))
                             .build();
                 })
                 .toList();

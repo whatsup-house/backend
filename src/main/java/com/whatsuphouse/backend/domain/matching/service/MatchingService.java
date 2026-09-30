@@ -49,6 +49,7 @@ public class MatchingService {
     private final DiningTableMemberRepository diningTableMemberRepository;
     private final MatchRunRepository matchRunRepository;
     private final DiningMatchService diningMatchService;
+    private final DiningAttendanceService diningAttendanceService;
 
     /**
      * 기존 API 호환(KAN-338 전까지): 경로의 gatheringId는 회차 ID다.
@@ -135,7 +136,9 @@ public class MatchingService {
         DiningTableMember member = diningTableMemberRepository.findByIdAndRemovedAtIsNull(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
         DiningTable table = member.getTable();
-        diningTableMemberRepository.delete(member);
+        // 행을 지우지 않고 removed_at만 채운다(DiningTableService와 같은 방식). 운영 조정이라 참석 행은 CANCELED_EARLY 없이 지운다. (KAN-349)
+        diningAttendanceService.releaseSeat(memberId);
+        member.remove();
         diningTableMemberRepository.flush();
         table.updateGroupSize(diningTableMemberRepository.countByTable_IdAndRemovedAtIsNull(table.getId()));
         diningMatchService.rescoreTable(table);

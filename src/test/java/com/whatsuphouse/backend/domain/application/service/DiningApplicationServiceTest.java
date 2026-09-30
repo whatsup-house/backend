@@ -17,6 +17,7 @@ import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.DiningTableService;
 import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
@@ -30,6 +31,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -49,6 +51,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,6 +71,9 @@ class DiningApplicationServiceTest {
 
     @Mock
     private MatchingService matchingService;
+
+    @Mock
+    private DiningAttendanceService diningAttendanceService;
 
     @Mock
     private DiningTableService diningTableService;
@@ -119,11 +125,12 @@ class DiningApplicationServiceTest {
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(ticketService).should().refundOneTicket(application);
+        then(diningAttendanceService).should().cancelAttendance(applicationId);
         then(eventPublisher).should().publishEvent(any(ApplicationCancelledEvent.class));
     }
 
     @Test
-    @DisplayName("테이블에 앉아 있던 신청을 취소하면 그 테이블을 재조정한다")
+    @DisplayName("테이블에 앉아 있던 신청을 취소하면 참석을 CANCELED_EARLY로 남긴 뒤(멤버 행이 빠지기 전) 그 테이블을 재조정한다")
     void cancel_seated_rebalancesTable() {
         GatheringSession session = sessionOn(3);
         Application application = confirmedApplication(session);
@@ -135,7 +142,10 @@ class DiningApplicationServiceTest {
 
         diningApplicationService.cancelApplication(applicationId, userId);
 
-        then(diningTableService).should().rebalance(table.getId());
+        // 재조정이 멤버 행에 removed_at을 채우면 cancelAttendance가 좌석을 못 찾으므로 순서가 중요하다.
+        InOrder order = inOrder(diningAttendanceService, diningTableService);
+        order.verify(diningAttendanceService).cancelAttendance(applicationId);
+        order.verify(diningTableService).rebalance(table.getId());
     }
     @Test
     @DisplayName("배정 회차 시작 2일 이내면 CANCEL_WINDOW_CLOSED")

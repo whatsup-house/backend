@@ -57,6 +57,8 @@ public class DiningTableService {
     private final SessionVenueService sessionVenueService;
     private final ExceptionCaseService exceptionCaseService;
     private final AdminChatService adminChatService;
+    // 좌석이 바뀔 때 참석(Attendance) 행을 맞춘다(확정 테이블에 앉으면 SCHEDULED, 떠나면 삭제). (KAN-349)
+    private final DiningAttendanceService diningAttendanceService;
 
     // ── 확정 후 취소 재조정 ──────────────────────────────────────────────────────
 
@@ -79,7 +81,7 @@ public class DiningTableService {
         if (!cancelled.isEmpty()) {
             table.recordReallocation("CANCEL_REMOVE", null, "참가자 취소", memberIds(cancelled));
             // 행은 지우지 않고 removed_at만 채운다(참석 기록이 이 행을 참조한다). 이후 조회·인원·검증에서 빠진다.
-            // TODO(KAN-349): 취소 멤버의 Attendance를 CANCELED_EARLY로 전환한다.
+            // 취소 멤버의 참석은 호출 전에 DiningAttendanceService.cancelAttendance가 CANCELED_EARLY로 남긴다(KAN-349).
             cancelled.forEach(DiningTableMember::remove);
             diningTableMemberRepository.flush();
             syncChat(table, List.of(), cancelled);
@@ -108,6 +110,7 @@ public class DiningTableService {
                         .build()));
                 application.changeMatchStatus(seatedStatus(table));
             }
+            added.forEach(diningAttendanceService::seat);
             settle(table, evaluator, Stream.concat(seated.stream(), refill.stream().map(Application::getId)).toList());
             table.recordReallocation("REFILL", null, "취소 후 대기자 충원", memberIds(added));
             syncChat(table, added, List.of());
@@ -207,6 +210,7 @@ public class DiningTableService {
             int seat = targetMembers.getOrDefault(target.getId(), List.of()).size() + moved.size();
             member.moveTo(target, seat, AssignReason.REALLOCATED, false);
             member.getApplication().changeMatchStatus(seatedStatus(target));
+            diningAttendanceService.seat(member);
         });
         movedByTarget.forEach((target, moved) -> {
             settle(target, evaluators.get(target.getId()), seating.get(target.getId()));
@@ -252,6 +256,7 @@ public class DiningTableService {
 
         member.moveTo(target, diningTableMemberRepository.countByTable_IdAndRemovedAtIsNull(targetTableId) + 1);
         member.getApplication().changeMatchStatus(seatedStatus(target));
+        diningAttendanceService.seat(member);
         validateAndRecord("MOVE", adminId, reason, tables, List.of(member));
         syncChat(source, List.of(), List.of(member));
         syncChat(target, List.of(member), List.of());
@@ -290,6 +295,8 @@ public class DiningTableService {
         for (DiningTableMember member : moving) {
             member.moveTo(created, seat++);
             member.getApplication().changeMatchStatus(MatchStatus.CONFIRM_PENDING);
+            // 새 테이블은 제안(PROPOSED)이라 확정 테이블에서 떠난 좌석의 참석 행을 지운다.
+            diningAttendanceService.releaseSeat(member.getId());
         }
         List<DiningTable> tables = List.of(source, created);
         validateAndRecord("SPLIT", adminId, reason, tables, moving);
@@ -316,6 +323,7 @@ public class DiningTableService {
         for (DiningTableMember member : moving) {
             member.moveTo(target, seat++);
             member.getApplication().changeMatchStatus(seatedStatus(target));
+            diningAttendanceService.seat(member);
         }
         others.forEach(this::dissolve);
         validateAndRecord("MERGE", adminId, reason, tables, moving);
@@ -329,7 +337,11 @@ public class DiningTableService {
         DiningTable table = lockAdjustableTable(tableId);
         checkReason(List.of(table), reason);
         List<DiningTableMember> members = diningTableMemberRepository.findByTableIdWithApplication(tableId);
-        members.forEach(member -> member.getApplication().changeMatchStatus(MatchStatus.REALLOCATING));
+        members.forEach(member -> {
+            member.getApplication().changeMatchStatus(MatchStatus.REALLOCATING);
+            // 멤버 행은 해체된 테이블에 이력으로 남고 좌석은 없어지므로 참석 행을 지운다.
+            diningAttendanceService.releaseSeat(member.getId());
+        });
         dissolve(table);
         validateAndRecord("DISSOLVE", adminId, reason, List.of(table), members);
         syncChat(table, List.of(), members);
@@ -359,6 +371,7 @@ public class DiningTableService {
                 .isManual(true)
                 .build());
         application.changeMatchStatus(seatedStatus(table));
+        diningAttendanceService.seat(member);
         validateAndRecord("ASSIGN", adminId, reason, List.of(table), List.of(member));
         syncChat(table, List.of(member), List.of());
         return response(table.getSession().getId(), List.of(table));

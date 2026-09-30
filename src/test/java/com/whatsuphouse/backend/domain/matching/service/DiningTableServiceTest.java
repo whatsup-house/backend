@@ -80,6 +80,8 @@ class DiningTableServiceTest {
     private ExceptionCaseService exceptionCaseService;
     @Mock
     private AdminChatService adminChatService;
+    @Mock
+    private DiningAttendanceService diningAttendanceService;
 
     @InjectMocks
     private DiningTableService diningTableService;
@@ -190,6 +192,7 @@ class DiningTableServiceTest {
         then(diningTableMemberRepository).should().save(added.capture());
         assertThat(added.getValue().getApplication()).isSameAs(waiting);
         assertThat(added.getValue().getAssignReason()).isEqualTo(AssignReason.REALLOCATED);
+        then(diningAttendanceService).should().seat(added.getValue());
         assertThat(waiting.getMatchStatus()).isEqualTo(MatchStatus.CONFIRMED);
         assertThat(tooOld.getMatchStatus()).isEqualTo(MatchStatus.REALLOCATING);
         assertThat(table.getGroupSize()).isEqualTo(3);
@@ -297,6 +300,7 @@ class DiningTableServiceTest {
         assertThat(moving.getTable()).isSameAs(target);
         assertThat(moving.isManual()).isTrue();
         assertThat(moving.getAssignReason()).isEqualTo(AssignReason.MANUAL);
+        then(diningAttendanceService).should().seat(moving);
         assertThat(source.getGroupSize()).isEqualTo(3);
         assertThat(target.getGroupSize()).isEqualTo(4);
         assertThat(source.isLocked()).isTrue();
@@ -367,6 +371,7 @@ class DiningTableServiceTest {
 
         assertThat(table.getStatus()).isEqualTo(DiningTableStatus.DISSOLVED);
         assertThat(seated).allSatisfy(m -> assertThat(m.getApplication().getMatchStatus()).isEqualTo(MatchStatus.REALLOCATING));
+        seated.forEach(m -> then(diningAttendanceService).should().releaseSeat(m.getId()));
         assertThat(actions(table)).containsExactly("DISSOLVE");
     }
 }

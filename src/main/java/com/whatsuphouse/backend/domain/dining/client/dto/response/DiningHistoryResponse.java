@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.dining.client.dto.response;
 
+import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -34,7 +35,7 @@ public class DiningHistoryResponse {
     @Schema(description = "피드백 제출 여부", example = "false")
     private boolean feedbackSubmitted;
 
-    // TODO(KAN-349): 참석 상태(Attendance)로 채운다. 지금은 항상 null.
-    @Schema(description = "참석 상태. 아직 제공하지 않아 항상 null", nullable = true)
-    private String attendanceStatus;
+    @Schema(description = "참석 상태 (SCHEDULED: 예정, ATTENDED: 참석, CANCELED_EARLY: 사전 취소, CANCELED_LATE: 늦은 취소, "
+            + "NO_SHOW: 노쇼). 참석 기록이 없으면 null", example = "ATTENDED", nullable = true)
+    private AttendanceStatus attendanceStatus;
 }

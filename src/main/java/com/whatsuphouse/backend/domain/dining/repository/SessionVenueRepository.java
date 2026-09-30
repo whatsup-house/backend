@@ -14,6 +14,9 @@ import java.util.UUID;
 // used_tables 증감과 수용 수 변경이 겹쳐 capacity를 넘지 않도록 수정 경로는 행을 잠근 뒤 읽는다.
 public interface SessionVenueRepository extends JpaRepository<SessionVenue, SessionVenue.Key> {
 
+    // 조회 전용(잠금 없음)
+    List<SessionVenue> findBySessionIdOrderByVenueIdAsc(UUID sessionId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select sv from SessionVenue sv where sv.sessionId = :sessionId order by sv.venueId")
     List<SessionVenue> findBySessionIdForUpdate(@Param("sessionId") UUID sessionId);

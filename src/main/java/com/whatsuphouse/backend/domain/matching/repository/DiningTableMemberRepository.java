@@ -48,6 +48,16 @@ public interface DiningTableMemberRepository extends JpaRepository<DiningTableMe
             """)
     List<DiningTableMember> findByTableIdsWithApplication(@Param("tableIds") Collection<UUID> tableIds);
 
+    // 위와 같되 취소로 빠진(removed_at) 행도 포함한다. 운영자 참석 탭이 CANCELED_EARLY 기록을 보여 주는 데만 쓴다. (KAN-349)
+    @Query("""
+            select m from DiningTableMember m
+            join fetch m.application a
+            left join fetch a.user
+            where m.table.id in :tableIds
+            order by m.seatOrder asc
+            """)
+    List<DiningTableMember> findByTableIdsWithApplicationIncludingRemoved(@Param("tableIds") Collection<UUID> tableIds);
+
     // 신청들이 앉은 상태가 statuses인 테이블(보통 활성 PROPOSED|CONFIRMED)과 그 멤버 행. 우연한 식탁 내 신청 조회용. (KAN-342)
     @Query("""
             select m from DiningTableMember m

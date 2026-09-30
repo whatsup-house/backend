@@ -16,6 +16,7 @@ import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.service.MatchExclusionProvider;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.CsvWriter;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +61,7 @@ public class AdminDiningService {
     private final MatchingService matchingService;
     private final ExceptionCaseRepository exceptionCaseRepository;
     private final VenueRepository venueRepository;
+    private final MatchExclusionProvider matchExclusionProvider;
 
     public DiningDashboardResponse getDashboard() {
         List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE);
@@ -107,6 +110,7 @@ public class AdminDiningService {
                 adminApplicationService.findCandidateSessions(applicationIds);
         Map<UUID, Long> participation = adminApplicationService.countRandomTableAttendance(applications.stream()
                 .map(Application::getUser).filter(Objects::nonNull).map(User::getId).distinct().toList());
+        Set<UUID> excludedUserIds = findUsersWithExcludedRelation(applications);
 
         return applications.stream()
                 .map(application -> {
@@ -117,9 +121,29 @@ public class AdminDiningService {
                             text(answer.get(GENDER_QUESTION_KEY)),
                             text(answer.get(MBTI_QUESTION_KEY)),
                             candidates.getOrDefault(application.getId(), List.of()),
-                            userId != null ? participation.getOrDefault(userId, 0L) : 0L);
+                            userId != null ? participation.getOrDefault(userId, 0L) : 0L,
+                            userId != null && excludedUserIds.contains(userId));
                 })
                 .toList();
+    }
+
+    // 이 회차의 진행 중(반려·취소 아님) 신청자끼리 제외 관계(피하고 싶음·신고)가 있는 회원. 관계는 한 방향만 있어도 양쪽 모두 표시한다.
+    private Set<UUID> findUsersWithExcludedRelation(List<Application> applications) {
+        List<UUID> userIds = applications.stream()
+                .filter(application -> !CLOSED_APPLICATION_STATUSES.contains(application.getStatus()))
+                .map(Application::getUser).filter(Objects::nonNull).map(User::getId).distinct().toList();
+        if (userIds.size() < 2) {
+            return Set.of();
+        }
+        Set<UUID> candidates = Set.copyOf(userIds);
+        Set<UUID> result = new HashSet<>();
+        matchExclusionProvider.findExcludedPairs(userIds).forEach((userId, others) -> others.stream()
+                .filter(other -> candidates.contains(userId) && candidates.contains(other) && !other.equals(userId))
+                .forEach(other -> {
+                    result.add(userId);
+                    result.add(other);
+                }));
+        return result;
     }
 
     public byte[] exportApplicantsCsv(UUID sessionId) {

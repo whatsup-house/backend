@@ -21,10 +21,13 @@ import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleSer
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminVenueService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.matching.dto.request.AttendanceStatusRequest;
+import com.whatsuphouse.backend.domain.matching.dto.response.DiningAttendanceResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableConfirmResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableListResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchRunResponse;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.DiningConfirmService;
 import com.whatsuphouse.backend.domain.matching.service.DiningMatchService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
@@ -54,7 +57,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "우연한 식탁 운영 (관리자)", description = "운영 대시보드, 회차 신청자·CSV, 매칭 실행·테이블·즉시 확정·재시도, 예외함, 매칭 규칙, 식당 풀 API")
+@Tag(name = "우연한 식탁 운영 (관리자)", description = "운영 대시보드, 회차 신청자·CSV, 매칭 실행·테이블·즉시 확정·재시도, 참석, 예외함, 매칭 규칙, 식당 풀 API")
 @RestController
 @RequestMapping("/api/admin/dining")
 @RequiredArgsConstructor
@@ -69,6 +72,7 @@ public class AdminDiningController {
     private final AdminVenueService adminVenueService;
     private final DiningMatchService diningMatchService;
     private final DiningConfirmService diningConfirmService;
+    private final DiningAttendanceService diningAttendanceService;
 
     // ── 대시보드·신청자 ────────────────────────────────────────────────────────
 
@@ -154,6 +158,27 @@ public class AdminDiningController {
         return ResponseEntity.ok(ApiResult.success(null));
     }
 
+    // ── 참석 ──────────────────────────────────────────────────────────────────
+
+    @Operation(summary = "회차 참석 현황", description = "확정·완료 테이블 멤버의 참석(취소한 신청 포함), 테이블 생성 순 → 좌석 순. "
+            + "noShowCandidate는 종료 1시간 뒤까지 체크인하지 않은 예정 참석(운영자 확정 전). 우연한 식탁 회차가 아니면 400, 없으면 404.")
+    @GetMapping("/sessions/{id}/attendance")
+    public ResponseEntity<ApiResult<List<DiningAttendanceResponse>>> listSessionAttendances(
+            @Parameter(description = "회차 ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(diningAttendanceService.listSessionAttendances(id)));
+    }
+
+    @Operation(summary = "참석 상태 확정", description = "ATTENDED·NO_SHOW·CANCELED_LATE로 바꾸고 바꾼 관리자를 남긴다. 노쇼 후보 표시는 내린다. "
+            + "SCHEDULED·CANCELED_EARLY로 바꾸거나 사전 취소(CANCELED_EARLY)된 참석을 바꾸면 400, 없으면 404.")
+    @PatchMapping("/attendances/{id}")
+    public ResponseEntity<ApiResult<DiningAttendanceResponse>> changeAttendanceStatus(
+            @Parameter(description = "참석 ID") @PathVariable UUID id,
+            @Valid @RequestBody AttendanceStatusRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(ApiResult.success(
+                diningAttendanceService.changeAttendanceStatus(id, request.getStatus(), principal.getUserId())));
+    }
+
     // ── 예외함 ────────────────────────────────────────────────────────────────
 
     @Operation(summary = "예외함 목록", description = "전체 회차 횡단. type·status 미지정 시 전체, 최신 건 우선")
@@ -217,6 +242,13 @@ public class AdminDiningController {
     public ResponseEntity<ApiResult<Void>> deleteVenue(@Parameter(description = "식당 ID") @PathVariable UUID id) {
         adminVenueService.deleteVenue(id);
         return ResponseEntity.ok(ApiResult.success(null));
+    }
+
+    @Operation(summary = "회차 식당 풀 조회", description = "회차 식당 풀의 식당·수용 테이블 수·배정된 테이블 수. 풀에 남은 삭제·비활성 식당도 포함")
+    @GetMapping("/sessions/{id}/venues")
+    public ResponseEntity<ApiResult<List<SessionVenueResponse>>> listSessionVenues(
+            @Parameter(description = "회차 ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(adminVenueService.listSessionVenues(id)));
     }
 
     @Operation(summary = "회차 식당 풀 일괄 설정", description = "요청 목록으로 통째로 교체. 배정된 테이블 수보다 작게 줄이거나 "

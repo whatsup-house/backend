@@ -91,6 +91,9 @@ public enum ErrorCode {
     TABLE_NOT_CONFIRMED("확정된 테이블에서만 할 수 있습니다.", HttpStatus.CONFLICT),
     DINING_TABLE_FORBIDDEN("본인이 속한 확정 테이블만 볼 수 있습니다.", HttpStatus.FORBIDDEN),
     SYSTEM_ADMIN_NOT_FOUND("채팅방을 만들 시스템 관리자 계정이 없습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    // 참석·체크인 (KAN-349)
+    CHECKIN_WINDOW_CLOSED("체크인은 회차 시작 2시간 전부터 2시간 후까지만 할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    ATTENDANCE_NOT_FOUND("존재하지 않는 참석 기록입니다.", HttpStatus.NOT_FOUND),
 
     // Dining (참가자 피드백·신고, KAN-350)
     NOT_TABLE_MEMBER("이 테이블의 멤버가 아닙니다.", HttpStatus.FORBIDDEN),

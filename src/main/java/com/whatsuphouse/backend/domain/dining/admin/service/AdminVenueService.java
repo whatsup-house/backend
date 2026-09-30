@@ -61,6 +61,18 @@ public class AdminVenueService {
         findVenue(venueId).delete();
     }
 
+    /** 회차 식당 풀(수용·배정 테이블 수). 풀에 남아 있는 삭제·비활성 식당도 보여준다. (KAN-349) */
+    public List<SessionVenueResponse> listSessionVenues(UUID sessionId) {
+        gatheringService.findRandomTableSession(sessionId);
+        List<SessionVenue> sessionVenues = sessionVenueRepository.findBySessionIdOrderByVenueIdAsc(sessionId);
+        Map<UUID, Venue> venues = venueRepository.findAllById(sessionVenues.stream().map(SessionVenue::getVenueId).toList())
+                .stream().collect(Collectors.toMap(Venue::getId, Function.identity()));
+        return sessionVenues.stream()
+                .filter(sessionVenue -> venues.containsKey(sessionVenue.getVenueId()))
+                .map(sessionVenue -> SessionVenueResponse.of(sessionVenue, venues.get(sessionVenue.getVenueId())))
+                .toList();
+    }
+
     /**
      * 회차 식당 풀을 요청 목록으로 통째로 바꾼다.
      * - 새로 넣는 식당은 활성이어야 한다(VENUE_INACTIVE 400). 이미 풀에 있던 식당은 비활성이 됐어도 유지·수정할 수 있다.

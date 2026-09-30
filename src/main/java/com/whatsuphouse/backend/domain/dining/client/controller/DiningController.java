@@ -59,7 +59,7 @@ public class DiningController {
     }
 
     @Operation(summary = "내 우연한 식탁 참가 이력",
-            description = "확정·종료 테이블 멤버십 기준, 최신 회차 순. 취소한 신청은 빠집니다. attendanceStatus는 아직 항상 null입니다.")
+            description = "확정·종료 테이블 멤버십 기준, 최신 회차 순. 취소한 신청은 빠집니다. attendanceStatus는 참석 기록이 없으면 null입니다.")
     @GetMapping("/me/history")
     public ResponseEntity<ApiResult<List<DiningHistoryResponse>>> listMyHistory(
             @AuthenticationPrincipal UserPrincipal principal

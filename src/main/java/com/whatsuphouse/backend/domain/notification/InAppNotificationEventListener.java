@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationLink;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
@@ -24,10 +25,13 @@ public class InAppNotificationEventListener {
 
     private final UserNotificationService userNotificationService;
 
-    /** 참가 확정 → 마이페이지 신청 내역으로 이동하는 알림. */
+    /** 참가 확정 → 마이페이지 신청 내역으로 이동하는 알림. 우연한 식탁은 매칭 대기 알림(DINING_WAITING, KAN-349)으로 대신한다. */
     @EventListener
     public void onApplicationConfirmed(ApplicationConfirmedEvent event) {
         Application application = event.getApplication();
+        if (application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE) {
+            return;
+        }
         userNotificationService.create(
                 application.getUser(),
                 NotificationType.PARTICIPATION_CONFIRMED,
@@ -49,7 +53,8 @@ public class InAppNotificationEventListener {
                 NotificationType.DINING_PAYMENT_PENDING,
                 "이용권 결제가 필요해요",
                 application.getGathering().getTitle() + " 신청을 마치려면 이용권을 구매해 주세요.",
-                NotificationLink.TICKET_PURCHASE);
+                NotificationLink.TICKET_PURCHASE,
+                application.getId());
     }
 
     /** 참석 처리 시 마일리지 적립 → 마일리지 현황으로 이동하는 알림. */

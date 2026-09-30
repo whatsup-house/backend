@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository.ApplicationSessionCountProjection;
+import com.whatsuphouse.backend.domain.notification.event.DiningSessionsCreatedEvent;
 import com.whatsuphouse.backend.domain.notification.event.GatheringCancelledEvent;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCreateRequest;
 import com.whatsuphouse.backend.domain.gathering.admin.dto.request.GatheringCurationOrderRequest;
@@ -197,9 +198,15 @@ public class AdminGatheringService {
                     return session;
                 })
                 .toList();
-        return gatheringSessionRepository.saveAll(sessions).stream()
+        List<GatheringSessionResponse> created = gatheringSessionRepository.saveAll(sessions).stream()
                 .map(session -> GatheringSessionResponse.from(session, 0))
                 .toList();
+        // 우연한 식탁 새 회차 → 최근 참석자에게 다음 모집 알림. 반복 생성도 요청 1건에 이벤트 1건(회원당 알림 1건). (KAN-349)
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
+            eventPublisher.publishEvent(new DiningSessionsCreatedEvent(
+                    gathering.getId(), gathering.getTitle(), location.getId(), location.getName()));
+        }
+        return created;
     }
 
     // 우연한 식탁 매칭 설정. 우연한 식탁이 아닌 회차에 값이 오면 400. (KAN-345)
