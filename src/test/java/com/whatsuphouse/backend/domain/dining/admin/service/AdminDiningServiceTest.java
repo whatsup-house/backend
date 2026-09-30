@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.service.MatchExclusionProvider;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,9 @@ class AdminDiningServiceTest {
 
     @Mock
     private VenueRepository venueRepository;
+
+    @Mock
+    private MatchExclusionProvider matchExclusionProvider;
 
     @InjectMocks
     private AdminDiningService adminDiningService;

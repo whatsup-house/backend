@@ -25,11 +25,13 @@ import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.matching.repository.MatchRunRepository;
+import com.whatsuphouse.backend.domain.notification.event.DiningReallocatingEvent;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.enums.Job;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,6 +77,7 @@ public class DiningMatchService {
     private final DiningTableRepository diningTableRepository;
     private final DiningTableMemberRepository diningTableMemberRepository;
     private final MatchRunRepository matchRunRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 회차 매칭을 실행하고 MatchRun에 기록한다. 회차 행을 잠가 같은 회차의 실행을 직렬화한다.
@@ -153,7 +156,7 @@ public class DiningMatchService {
 
         Set<UUID> pendingSessionIds = findPendingSessionIds(wishes, sessionId);
         List<MatchRun.Unassigned> unassigned = result.unassigned().stream()
-                .map(u -> settleUnassigned(byId.get(u.applicationId()), u, wishes, pendingSessionIds))
+                .map(u -> settleUnassigned(sessionId, byId.get(u.applicationId()), u, wishes, pendingSessionIds))
                 .toList();
         run.finish(candidates.size(), result.tables().size(), result.splitCount(), result.mergeCount(),
                 result.reallocatedCount(), unassigned);
@@ -184,6 +187,7 @@ public class DiningMatchService {
                         .confirmAt(table.getConfirmAt())
                         .locked(table.isLocked())
                         .venueId(table.getVenueId())
+                        .chatRoomId(table.getChatRoomId())
                         .members(membersByTable.getOrDefault(table.getId(), List.of()).stream()
                                 .map(member -> toMemberView(member, profiles.get(member.getApplication().getId())))
                                 .toList())
@@ -283,12 +287,16 @@ public class DiningMatchService {
     }
 
     // 다음 희망 회차가 남아 있으면 REALLOCATING(그 회차 실행 때 후보로 들어간다), 마지막이면 ALTERNATIVE_OFFERED.
-    private MatchRun.Unassigned settleUnassigned(Application application, MatchRun.Unassigned unassigned,
+    // REALLOCATING으로 새로 바뀔 때만 알림 이벤트를 낸다(같은 회차 재실행으로 다시 미배정돼도 한 번).
+    private MatchRun.Unassigned settleUnassigned(UUID sessionId, Application application, MatchRun.Unassigned unassigned,
                                                  Map<UUID, List<ApplicationCandidateSession>> wishes,
                                                  Set<UUID> pendingSessionIds) {
         boolean hasNextSession = wishes.getOrDefault(application.getId(), List.of()).stream()
                 .anyMatch(wish -> pendingSessionIds.contains(wish.getSession().getId()));
         if (hasNextSession) {
+            if (application.getMatchStatus() != MatchStatus.REALLOCATING && application.getUser() != null) {
+                eventPublisher.publishEvent(new DiningReallocatingEvent(application.getId(), sessionId, application.getUser().getId()));
+            }
             application.changeMatchStatus(MatchStatus.REALLOCATING);
             return new MatchRun.Unassigned(application.getId(), UnassignedReason.NEXT_SESSION_WAITING);
         }

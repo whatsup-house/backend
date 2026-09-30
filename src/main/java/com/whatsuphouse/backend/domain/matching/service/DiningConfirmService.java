@@ -214,7 +214,7 @@ public class DiningConfirmService {
         UUID roomId = adminChatService.createGroupRoom(creatorId, true, new ChatGroupRoomCreateRequest(
                 roomName(table), findMemberUserIds(tableId), ChatSourceType.DINING_TABLE, tableId)).getRoomId();
         table.linkChatRoom(roomId);
-        chatService.postSystemNotice(roomId, confirmNotice(table));
+        chatService.postSystemNotice(roomId, tableNotice(table, "우연한 식탁 테이블이 확정되었어요."));
         return roomId;
     }
 
@@ -234,15 +234,15 @@ public class DiningConfirmService {
         return name.length() > ROOM_NAME_MAX_LENGTH ? name.substring(0, ROOM_NAME_MAX_LENGTH) : name;
     }
 
-    // 시간·지역·식당·취소 정책
-    private String confirmNotice(DiningTable table) {
+    // 확정·리마인드(KAN-349) 채팅 안내: 첫 줄 + 시간·지역·식당·취소 정책
+    String tableNotice(DiningTable table, String headline) {
         GatheringSession session = table.getSession();
         String time = session.getStartTime() == null ? ""
                 : " " + session.getStartTime().format(NOTICE_TIME)
                 + (session.getEndTime() != null ? "~" + session.getEndTime().format(NOTICE_TIME) : "");
         Venue venue = table.getVenueId() == null ? null : sessionVenueService.findVenue(table.getVenueId()).orElse(null);
         List<String> lines = new ArrayList<>();
-        lines.add("우연한 식탁 테이블이 확정되었어요.");
+        lines.add(headline);
         lines.add("일시: " + session.getEventDate().format(NOTICE_DATE) + time);
         if (table.getDisplayRegion() != null) {
             lines.add("지역: " + table.getDisplayRegion());

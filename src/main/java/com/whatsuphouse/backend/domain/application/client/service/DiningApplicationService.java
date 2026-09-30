@@ -14,6 +14,7 @@ import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
@@ -54,6 +55,7 @@ public class DiningApplicationService {
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final TicketService ticketService;
     private final MatchingService matchingService;
+    private final DiningAttendanceService diningAttendanceService;
     private final FormService formService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -131,6 +133,8 @@ public class DiningApplicationService {
         // 차감 기록(USE)이 있으면 RESTORED로 바꾸고 잔여를 1회 복구한다. 결제 대기(차감 없음)나
         // 회차 취소로 이미 복구된 신청은 refundOneTicket이 무시한다(멱등).
         ticketService.refundOneTicket(application);
+        // 확정 테이블 멤버였다면 참석을 CANCELED_EARLY로(참석 행이 있을 때만). 재조정으로 좌석이 빠지기 전에 기록한다. (KAN-349)
+        diningAttendanceService.cancelAttendance(applicationId);
         // TODO(KAN-347): 확정 테이블 멤버였다면 DiningTableService.rebalance(table)로 충원·재배치한다. (설계 4.7)
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }

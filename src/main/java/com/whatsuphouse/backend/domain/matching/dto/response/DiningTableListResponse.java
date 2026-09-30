@@ -45,6 +45,8 @@ public class DiningTableListResponse {
         private boolean locked;
         @Schema(description = "배정 식당 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
         private UUID venueId;
+        @Schema(description = "테이블 채팅방 ID. 확정 전이거나 생성 실패면 null", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6", nullable = true)
+        private UUID chatRoomId;
         @Schema(description = "멤버, 좌석 순")
         private List<MemberView> members;
     }

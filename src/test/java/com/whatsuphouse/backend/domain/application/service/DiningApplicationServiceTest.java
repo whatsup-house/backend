@@ -16,6 +16,7 @@ import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
@@ -67,6 +68,9 @@ class DiningApplicationServiceTest {
     private MatchingService matchingService;
 
     @Mock
+    private DiningAttendanceService diningAttendanceService;
+
+    @Mock
     private FormService formService;
 
     @Mock
@@ -110,6 +114,7 @@ class DiningApplicationServiceTest {
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(ticketService).should().refundOneTicket(application);
+        then(diningAttendanceService).should().cancelAttendance(applicationId);
         then(eventPublisher).should().publishEvent(any(ApplicationCancelledEvent.class));
     }
 

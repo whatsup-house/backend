@@ -51,6 +51,7 @@ public class MatchingService {
     private final DiningTableMemberRepository diningTableMemberRepository;
     private final MatchRunRepository matchRunRepository;
     private final DiningMatchService diningMatchService;
+    private final DiningAttendanceService diningAttendanceService;
 
     /**
      * 기존 API 호환(KAN-338 전까지): 경로의 gatheringId는 회차 ID다.
@@ -140,6 +141,8 @@ public class MatchingService {
         DiningTable target = findTable(targetGroupId);
 
         member.moveTo(target, diningTableMemberRepository.countByTable_Id(targetGroupId) + 1);
+        // 같은 멤버 행이 옮겨 가므로 참석 행도 따라간다. 확정 테이블이면 확정 규칙 적용, 확정 전 테이블이면 참석 행 정리. (KAN-349)
+        diningAttendanceService.seat(member);
         diningTableMemberRepository.flush();
         oldTable.updateGroupSize(diningTableMemberRepository.countByTable_Id(oldTable.getId()));
         target.updateGroupSize(diningTableMemberRepository.countByTable_Id(targetGroupId));
@@ -152,6 +155,8 @@ public class MatchingService {
         DiningTableMember member = diningTableMemberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
         DiningTable table = member.getTable();
+        // TODO(KAN-347 머지 후): 행 삭제 대신 removed_at 표시로 바꿔 멤버·참석 이력을 남긴다(DiningTableService 방식으로 통일).
+        diningAttendanceService.releaseSeat(memberId);
         diningTableMemberRepository.delete(member);
         diningTableMemberRepository.flush();
         table.updateGroupSize(diningTableMemberRepository.countByTable_Id(table.getId()));
@@ -168,13 +173,15 @@ public class MatchingService {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
 
-        diningTableMemberRepository.save(DiningTableMember.builder()
+        DiningTableMember member = diningTableMemberRepository.save(DiningTableMember.builder()
                 .application(application)
                 .table(table)
                 .seatOrder(diningTableMemberRepository.countByTable_Id(groupId) + 1)
                 .assignReason(AssignReason.MANUAL)
                 .isManual(true)
                 .build());
+        // 확정 테이블에 새로 앉으면 확정 파이프라인의 개인 규칙(배정 회차·매칭 CONFIRMED·참석 SCHEDULED)을 적용한다. (KAN-349)
+        diningAttendanceService.seat(member);
         diningTableMemberRepository.flush();
         table.updateGroupSize(diningTableMemberRepository.countByTable_Id(groupId));
         diningMatchService.rescoreTable(table);
