@@ -347,4 +347,17 @@ public class MatchingService {
                 .distinct()
                 .toList();
     }
+
+    /**
+     * 신청별 배정 그룹. 배정되지 않은 신청은 결과에 없다. 우연한 식탁 내 신청 조회의 테이블 요약용. (KAN-342)
+     * KAN-345에서 matching_groups가 dining_tables로 바뀌면 DiningTable을 돌려주도록 바뀐다.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, MatchingGroup> findGroupsByApplicationIds(Collection<UUID> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        return matchingMemberRepository.findByApplicationIdsWithGroup(applicationIds).stream()
+                .collect(Collectors.toMap(member -> member.getApplication().getId(), MatchingMember::getGroup));
+    }
 }

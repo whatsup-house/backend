@@ -63,6 +63,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
+import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
@@ -184,11 +185,14 @@ class ApplicationServiceTest {
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         user.approveRandomTable();
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(true);
-        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
+        given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(sessionId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        // 차감 성공 → 매칭 대기 (KAN-342)
+        assertThat(saved.getValue().getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         then(ticketService).should().tryUseOneTicket(eq(user), any(Application.class));
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
@@ -206,11 +210,16 @@ class ApplicationServiceTest {
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(false);
-        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
+        given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(sessionId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        // 결제 대기여도 매칭 상태는 WAITING. 엔진은 CONFIRMED만 후보로 보므로 섞이지 않는다.
+        // 결제 대기 알림(DINING_PAYMENT_PENDING)은 이 이벤트로 나간다. (KAN-342)
+        assertThat(saved.getValue().getMatchStatus()).isEqualTo(MatchStatus.WAITING);
+        then(eventPublisher).should().publishEvent(any(ApplicationApprovedEvent.class));
     }
 
     @Test
@@ -434,6 +443,7 @@ class ApplicationServiceTest {
         Application application = savedApplication.getValue();
         assertThat(application.getSession()).isNull();
         assertThat(application.getGathering()).isSameAs(randomTable);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PENDING);
         assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         assertThat(response.getGatheringId()).isEqualTo(gatheringId);
         ArgumentCaptor<ApplicationCandidateSession> candidates = ArgumentCaptor.forClass(ApplicationCandidateSession.class);
@@ -478,7 +488,7 @@ class ApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("다른 종류의 회차를 고르면 SESSION_NOT_FOUND")
+    @DisplayName("다른 종류의 회차를 고르면 SESSION_GATHERING_MISMATCH(400)")
     void applyWithCandidates_sessionOfOtherGathering_throwsException() {
         // given
         Gathering otherKind = Gathering.builder().title("다른 모임").build();
@@ -489,7 +499,7 @@ class ApplicationServiceTest {
         // when & then
         assertThatThrownBy(() -> applicationService.apply(createRequest(foreign.getId()), userId))
                 .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_NOT_FOUND);
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_GATHERING_MISMATCH);
     }
 
     // ── cancel() ─────────────────────────────────────────────────────────────

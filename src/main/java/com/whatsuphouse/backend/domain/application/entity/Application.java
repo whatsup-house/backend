@@ -106,10 +106,17 @@ public class Application extends BaseEntity {
         delete();
     }
 
+    /**
+     * 참가 확정. 우연한 식탁은 생성 시점에 이미 WAITING이지만, match_status 도입(V5) 전 신청은 NULL일 수 있어
+     * 확정 시점에 비어 있으면 WAITING으로 보정한다. 이미 매칭 상태가 있으면 건드리지 않는다. (KAN-342)
+     */
     public void confirm() {
         this.status = ApplicationStatus.CONFIRMED;
         if (this.reviewedAt == null) {
             this.reviewedAt = LocalDateTime.now();
+        }
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE && this.matchStatus == null) {
+            this.matchStatus = MatchStatus.WAITING;
         }
     }
 

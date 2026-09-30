@@ -89,4 +89,12 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
     Optional<Application> findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
             UUID userId, ApplicationStatus status);
 
+    // 우연한 식탁 내 신청 목록. 배정 회차의 지역(장소)까지 함께 로드한다. (KAN-342)
+    @EntityGraph(attributePaths = {"gathering", "session", "session.location"})
+    List<Application> findByUser_IdAndGathering_GatheringTypeAndDeletedAtIsNullOrderByCreatedAtDesc(
+            UUID userId, GatheringType gatheringType);
+
+    // 삭제(취소)된 신청까지 조회한다. 이미 취소된 신청을 404가 아닌 409로 구분할 때만 쓴다. (KAN-342)
+    @EntityGraph(attributePaths = {"gathering", "session", "user"})
+    Optional<Application> findIncludingDeletedById(UUID id);
 }

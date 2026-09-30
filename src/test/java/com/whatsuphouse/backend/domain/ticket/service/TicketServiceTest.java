@@ -7,6 +7,7 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationReposit
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
@@ -29,6 +30,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -172,7 +174,7 @@ class TicketServiceTest {
     }
 
     @Test
-    @DisplayName("취소 시 USE 거래를 기준으로 환불하고 REFUND 거래를 남긴다")
+    @DisplayName("취소 시 USE 거래를 기준으로 환불하고 REFUND 거래를 남기며, 차감 레코드는 RESTORED가 된다")
     void refundOneTicket_restoresByLedger() {
         TicketPass usedUp = activePass(0);   // USED_UP, remaining 0
         UUID applicationId = UUID.randomUUID();
@@ -180,8 +182,10 @@ class TicketServiceTest {
         given(application.getId()).willReturn(applicationId);
         given(ticketTransactionRepository.existsByApplication_IdAndTransactionType(applicationId, TicketTransactionType.REFUND))
                 .willReturn(false);
+        TicketTransaction use = TicketTransaction.of(usedUp, application, TicketTransactionType.USE, -1, "테스트");
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.DEDUCTED);
         given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE))
-                .willReturn(Optional.of(TicketTransaction.of(usedUp, application, TicketTransactionType.USE, -1, "테스트")));
+                .willReturn(Optional.of(use));
 
         ticketService.refundOneTicket(application);
 
@@ -190,6 +194,36 @@ class TicketServiceTest {
         ArgumentCaptor<TicketTransaction> captor = ArgumentCaptor.forClass(TicketTransaction.class);
         then(ticketTransactionRepository).should().save(captor.capture());
         assertThat(captor.getValue().getTransactionType()).isEqualTo(TicketTransactionType.REFUND);
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.RESTORED);
+    }
+
+    @Test
+    @DisplayName("차감 상태는 신청별 최신 USE 기준이며, V8 백필 전 status가 빈 USE 행은 DEDUCTED로 본다")
+    void findDeductionStatuses_latestWinsAndNullIsDeducted() {
+        TicketPass pass = activePass(2);
+        Application legacy = mock(Application.class);
+        Application restored = mock(Application.class);
+        UUID legacyId = UUID.randomUUID();
+        UUID restoredId = UUID.randomUUID();
+        given(legacy.getId()).willReturn(legacyId);
+        given(restored.getId()).willReturn(restoredId);
+        LocalDateTime now = LocalDateTime.now();
+
+        TicketTransaction legacyUse = TicketTransaction.of(pass, legacy, TicketTransactionType.USE, -1, "V8 이전");
+        ReflectionTestUtils.setField(legacyUse, "status", null);
+        ReflectionTestUtils.setField(legacyUse, "createdAt", now);
+        TicketTransaction newer = TicketTransaction.of(pass, restored, TicketTransactionType.USE, -1, "최신");
+        newer.restore();
+        ReflectionTestUtils.setField(newer, "createdAt", now.minusDays(1));
+        TicketTransaction older = TicketTransaction.of(pass, restored, TicketTransactionType.USE, -1, "과거");
+        ReflectionTestUtils.setField(older, "createdAt", now.minusDays(2));
+        List<UUID> ids = List.of(legacyId, restoredId);
+        given(ticketTransactionRepository.findByApplication_IdInAndTransactionType(ids, TicketTransactionType.USE))
+                .willReturn(List.of(legacyUse, newer, older));
+
+        assertThat(ticketService.findDeductionStatuses(ids))
+                .containsEntry(legacyId, TicketDeductionStatus.DEDUCTED)
+                .containsEntry(restoredId, TicketDeductionStatus.RESTORED);
     }
 
     @Test
