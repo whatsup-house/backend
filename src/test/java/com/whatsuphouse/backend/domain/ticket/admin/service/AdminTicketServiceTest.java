@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionReposi
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
@@ -96,6 +97,7 @@ class AdminTicketServiceTest {
                 .phone("01012345678").build();
         ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
         application.awaitPayment();
+        assertThat(application.getMatchStatus()).isNull();
 
         given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
         given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
@@ -108,6 +110,8 @@ class AdminTicketServiceTest {
         assertThat(pass.getRemainingCount()).isEqualTo(3);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         assertThat(application.isPaymentConfirmed()).isTrue();
+        // 결제 후 차감이 끝나는 경로에서도 매칭 대기로 들어간다. (KAN-342)
+        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
@@ -179,6 +183,7 @@ class AdminTicketServiceTest {
                 .session(session).user(user).name("홍길동")
                 .phone("01012345678").build();
         application.awaitPayment();
+        assertThat(application.getMatchStatus()).isNull();
 
         given(ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING))
                 .willReturn(List.of(pass));

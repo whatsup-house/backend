@@ -87,11 +87,16 @@ public class ApplicationService {
         List<UUID> candidateIds = request.getCandidateSessionIds().stream().distinct().toList();
         // 정원 체크~신청 저장 구간의 동시 신청 race를 막기 위해 회차 행을 잠근다. 교착을 피하려 ID 순으로 잠근다.
         Map<UUID, GatheringSession> locked = new HashMap<>();
-        candidateIds.stream().sorted().forEach(id -> locked.put(id, gatheringSessionRepository
-                .findByIdAndDeletedAtIsNullForUpdate(id)
-                .filter(s -> s.getGathering().getId().equals(request.getGatheringId())
-                        && s.getGathering().getDeletedAt() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND))));
+        candidateIds.stream().sorted().forEach(id -> {
+            GatheringSession session = gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(id)
+                    .filter(s -> s.getGathering().getDeletedAt() == null)
+                    .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND));
+            // 다른 종류의 회차가 섞이면 잘못된 요청이다. (KAN-342)
+            if (!session.getGathering().getId().equals(request.getGatheringId())) {
+                throw new CustomException(ErrorCode.SESSION_GATHERING_MISMATCH);
+            }
+            locked.put(id, session);
+        });
         return applyInternal(candidateIds.stream().map(locked::get).toList(), request.getAnswers(), userId);
     }
 

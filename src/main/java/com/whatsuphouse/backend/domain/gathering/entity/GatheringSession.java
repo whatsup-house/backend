@@ -135,6 +135,11 @@ public class GatheringSession extends BaseEntity {
         }
     }
 
+    /** 회차 시작 시각. 시작 시간이 없으면 행사일 0시. (KAN-342 취소 기한 기준) */
+    public LocalDateTime getStartAt() {
+        return eventDate.atTime(startTime != null ? startTime : LocalTime.MIDNIGHT);
+    }
+
     /** 종류·회차 API(KAN-338)용 유효 상태. eventDate가 지난 OPEN 회차는 DONE. */
     public GatheringSessionStatus getEffectiveSessionStatus() {
         return GatheringSessionStatus.from(getEffectiveStatus());

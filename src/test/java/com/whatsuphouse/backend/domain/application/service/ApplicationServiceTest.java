@@ -63,6 +63,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
+import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
@@ -184,11 +185,14 @@ class ApplicationServiceTest {
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         user.approveRandomTable();
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(true);
-        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
+        given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(sessionId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        // 차감 성공 → 매칭 대기 (KAN-342)
+        assertThat(saved.getValue().getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         then(ticketService).should().tryUseOneTicket(eq(user), any(Application.class));
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
@@ -206,11 +210,15 @@ class ApplicationServiceTest {
         given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(false);
-        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
+        given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
         ApplicationResponse response = applicationService.apply(sessionId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        // 결제 전에는 매칭 대상이 아니다. 결제 대기 알림(DINING_PAYMENT_PENDING)은 이 이벤트로 나간다. (KAN-342)
+        assertThat(saved.getValue().getMatchStatus()).isNull();
+        then(eventPublisher).should().publishEvent(any(ApplicationApprovedEvent.class));
     }
 
     @Test
@@ -411,7 +419,7 @@ class ApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("우연한 식탁은 희망 회차를 요청 순서대로 저장하고, 배정 회차 없이 매칭 대기(WAITING)로 접수한다")
+    @DisplayName("우연한 식탁은 희망 회차를 요청 순서대로 저장하고 배정 회차 없이 접수한다. 심사 전이라 매칭 상태는 아직 없다")
     void applyWithCandidates_randomTable_savesCandidatesInOrderAndWaits() {
         // given
         Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
@@ -434,7 +442,8 @@ class ApplicationServiceTest {
         Application application = savedApplication.getValue();
         assertThat(application.getSession()).isNull();
         assertThat(application.getGathering()).isSameAs(randomTable);
-        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+        assertThat(application.getMatchStatus()).isNull();
         assertThat(response.getGatheringId()).isEqualTo(gatheringId);
         ArgumentCaptor<ApplicationCandidateSession> candidates = ArgumentCaptor.forClass(ApplicationCandidateSession.class);
         then(applicationCandidateSessionRepository).should(times(2)).save(candidates.capture());
@@ -478,7 +487,7 @@ class ApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("다른 종류의 회차를 고르면 SESSION_NOT_FOUND")
+    @DisplayName("다른 종류의 회차를 고르면 SESSION_GATHERING_MISMATCH(400)")
     void applyWithCandidates_sessionOfOtherGathering_throwsException() {
         // given
         Gathering otherKind = Gathering.builder().title("다른 모임").build();
@@ -489,7 +498,7 @@ class ApplicationServiceTest {
         // when & then
         assertThatThrownBy(() -> applicationService.apply(createRequest(foreign.getId()), userId))
                 .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_NOT_FOUND);
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_GATHERING_MISMATCH);
     }
 
     // ── cancel() ─────────────────────────────────────────────────────────────

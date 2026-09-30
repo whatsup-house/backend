@@ -7,6 +7,7 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationReposit
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
@@ -172,7 +173,7 @@ class TicketServiceTest {
     }
 
     @Test
-    @DisplayName("취소 시 USE 거래를 기준으로 환불하고 REFUND 거래를 남긴다")
+    @DisplayName("취소 시 USE 거래를 기준으로 환불하고 REFUND 거래를 남기며, 차감 레코드는 RESTORED가 된다")
     void refundOneTicket_restoresByLedger() {
         TicketPass usedUp = activePass(0);   // USED_UP, remaining 0
         UUID applicationId = UUID.randomUUID();
@@ -180,8 +181,10 @@ class TicketServiceTest {
         given(application.getId()).willReturn(applicationId);
         given(ticketTransactionRepository.existsByApplication_IdAndTransactionType(applicationId, TicketTransactionType.REFUND))
                 .willReturn(false);
+        TicketTransaction use = TicketTransaction.of(usedUp, application, TicketTransactionType.USE, -1, "테스트");
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.DEDUCTED);
         given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE))
-                .willReturn(Optional.of(TicketTransaction.of(usedUp, application, TicketTransactionType.USE, -1, "테스트")));
+                .willReturn(Optional.of(use));
 
         ticketService.refundOneTicket(application);
 
@@ -190,6 +193,7 @@ class TicketServiceTest {
         ArgumentCaptor<TicketTransaction> captor = ArgumentCaptor.forClass(TicketTransaction.class);
         then(ticketTransactionRepository).should().save(captor.capture());
         assertThat(captor.getValue().getTransactionType()).isEqualTo(TicketTransactionType.REFUND);
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.RESTORED);
     }
 
     @Test

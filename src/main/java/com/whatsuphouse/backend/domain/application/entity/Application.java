@@ -89,10 +89,7 @@ public class Application extends BaseEntity {
         this.bookingNumber = bookingNumber;
         this.session = session;
         this.gathering = session != null ? session.getGathering() : gathering;
-        // 우연한 식탁 신청은 매칭 대기로 시작한다.
-        if (this.gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
-            this.matchStatus = MatchStatus.WAITING;
-        }
+        // 우연한 식탁 매칭 상태는 확정(이용권 차감) 시점에 WAITING으로 시작한다. 심사·결제 대기 중엔 NULL. (KAN-342)
         this.user = user;
         this.name = name;
         this.phone = phone;
@@ -106,10 +103,17 @@ public class Application extends BaseEntity {
         delete();
     }
 
+    /**
+     * 참가 확정. 우연한 식탁은 이 시점(신청 즉시 차감, 관리자 승인 후 차감, 이용권 입금 확인 후 차감 모두 여기로 온다)에
+     * 매칭 대기(WAITING)에 들어간다. 이미 매칭 상태가 있으면 건드리지 않는다. (KAN-342)
+     */
     public void confirm() {
         this.status = ApplicationStatus.CONFIRMED;
         if (this.reviewedAt == null) {
             this.reviewedAt = LocalDateTime.now();
+        }
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE && this.matchStatus == null) {
+            this.matchStatus = MatchStatus.WAITING;
         }
     }
 
