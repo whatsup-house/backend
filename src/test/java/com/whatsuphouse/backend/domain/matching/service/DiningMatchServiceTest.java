@@ -22,6 +22,7 @@ import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
 import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
+import com.whatsuphouse.backend.domain.notification.event.DiningReallocatingEvent;
 import com.whatsuphouse.backend.domain.matching.repository.MatchRunRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -36,6 +37,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -79,6 +81,10 @@ class DiningMatchServiceTest {
     private DiningTableMemberRepository diningTableMemberRepository;
     @Mock
     private MatchRunRepository matchRunRepository;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private MatchResolutionService matchResolutionService;
 
     @InjectMocks
     private DiningMatchService diningMatchService;
@@ -143,7 +149,7 @@ class DiningMatchServiceTest {
     }
 
     @Test
-    @DisplayName("마지막 희망 회차에서 못 앉으면 ALTERNATIVE_OFFERED, 앉은 사람은 CONFIRM_PENDING + PROPOSED 테이블")
+    @DisplayName("마지막 희망 회차에서 못 앉으면 ALTERNATIVE_OFFERED + 해결 선택 제안, 앉은 사람은 CONFIRM_PENDING + PROPOSED 테이블")
     void runMatch_lastWish_alternativeOffered() {
         givenRun(false);
         LocalDateTime before = LocalDateTime.now();
@@ -166,6 +172,7 @@ class DiningMatchServiceTest {
         then(matchRunRepository).should().save(run.capture());
         assertThat(run.getValue().getUnassignedReasons())
                 .containsExactly(new MatchRun.Unassigned(new UUID(0, 4), UnassignedReason.NOT_ENOUGH_PEOPLE));
+        then(matchResolutionService).should().offerResolution(applications.get(4), List.of(session.getId()));
     }
 
     @Test
@@ -177,6 +184,9 @@ class DiningMatchServiceTest {
         diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
 
         assertThat(applications.get(4).getMatchStatus()).isEqualTo(MatchStatus.REALLOCATING);
+        ArgumentCaptor<DiningReallocatingEvent> event = ArgumentCaptor.forClass(DiningReallocatingEvent.class);
+        then(eventPublisher).should().publishEvent(event.capture());
+        assertThat(event.getValue().getApplicationId()).isEqualTo(new UUID(0, 4));
         ArgumentCaptor<MatchRun> run = ArgumentCaptor.forClass(MatchRun.class);
         then(matchRunRepository).should().save(run.capture());
         assertThat(run.getValue().getUnassignedReasons())

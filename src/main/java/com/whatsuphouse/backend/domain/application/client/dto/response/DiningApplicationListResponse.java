@@ -52,8 +52,12 @@ public class DiningApplicationListResponse {
         @Schema(description = "배정 테이블 요약(활성 PROPOSED|CONFIRMED 테이블). 배정 전이면 null")
         private TableInfo table;
 
+        @Schema(description = "응답을 기다리는 매칭 실패 해결 선택 ID(GET /api/dining/resolutions/{id}). 없으면 null",
+                example = "3fa85f64-5717-4562-b3fc-2c963f66afa6", nullable = true)
+        private UUID resolutionId;
+
         public static Item of(Application application, List<GatheringSession> candidateSessions,
-                              TicketDeductionStatus ticketStatus, DiningTable table) {
+                              TicketDeductionStatus ticketStatus, DiningTable table, UUID resolutionId) {
             GatheringSession assigned = application.getSession();
             return Item.builder()
                     .id(application.getId())
@@ -67,6 +71,7 @@ public class DiningApplicationListResponse {
                     .matchStatus(application.getMatchStatus())
                     .ticketStatus(ticketStatus)
                     .table(table != null ? TableInfo.from(table) : null)
+                    .resolutionId(resolutionId)
                     .build();
         }
     }

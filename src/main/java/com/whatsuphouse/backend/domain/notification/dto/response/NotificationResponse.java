@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.whatsuphouse.backend.domain.notification.entity.Notification;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationLink;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -19,6 +20,8 @@ public class NotificationResponse {
     private String title;
     private String content;
     private NotificationLink link;
+    @Schema(description = "link 대상 ID(DINING_TABLE이면 테이블 ID). 대상이 없는 링크는 null")
+    private UUID linkId;
     @JsonProperty("isRead")
     private boolean isRead;
     private LocalDateTime createdAt;
@@ -30,6 +33,7 @@ public class NotificationResponse {
                 .title(notification.getTitle())
                 .content(notification.getContent())
                 .link(notification.getLink())
+                .linkId(notification.getLinkId())
                 .isRead(notification.isRead())
                 .createdAt(notification.getCreatedAt())
                 .build();

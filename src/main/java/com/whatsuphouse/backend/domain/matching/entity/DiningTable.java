@@ -14,6 +14,8 @@ import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -92,6 +94,13 @@ public class DiningTable extends BaseEntity {
     @Column(nullable = false)
     private boolean locked = false;
 
+    // 24시간 전 리마인드·시작 시각 대화 콘텐츠를 보낸 시각. 테이블마다 1회만 보내는 표시. (KAN-349)
+    @Column(name = "reminder_sent_at")
+    private LocalDateTime reminderSentAt;
+
+    @Column(name = "contents_posted_at")
+    private LocalDateTime contentsPostedAt;
+
     @Builder
     public DiningTable(GatheringSession session, UUID matchRunId, LocalDate eventDate, String region, int groupSize,
                        String algorithmVersion, BigDecimal groupScore, ScoreDetail scoreDetail,
@@ -141,5 +150,47 @@ public class DiningTable extends BaseEntity {
     public void updateRestaurant(String restaurantName, String restaurantAddress) {
         this.restaurantName = restaurantName;
         this.restaurantAddress = restaurantAddress;
+    }
+
+    // 수동 조정한 테이블은 재실행해도 해체하지 않는다.
+    public void lock() {
+        this.locked = true;
+    }
+
+    /** 조정 이력 1건을 reallocation_log에 덧붙인다. by는 조작한 관리자(시스템 재조정이면 null). (KAN-347) */
+    public void recordReallocation(String action, UUID by, String reason, List<UUID> memberIds) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("at", LocalDateTime.now().toString());
+        entry.put("action", action);
+        entry.put("by", by != null ? by.toString() : null);
+        entry.put("reason", reason);
+        entry.put("memberIds", memberIds.stream().map(UUID::toString).toList());
+        List<Map<String, Object>> log = reallocationLog != null ? new ArrayList<>(reallocationLog) : new ArrayList<>();
+        log.add(entry);
+        this.reallocationLog = log;
+    }
+
+    // 관리자 즉시 확정: 유예를 끝내고 확정 파이프라인이 바로 집어 가게 한다. (KAN-346)
+    public void changeConfirmAt(LocalDateTime confirmAt) {
+        this.confirmAt = confirmAt;
+    }
+
+    public void linkChatRoom(UUID chatRoomId) {
+        this.chatRoomId = chatRoomId;
+    }
+
+    // 회차 종료 처리(KAN-349). 확정 테이블만 완료로 넘긴다.
+    public void done() {
+        if (status == DiningTableStatus.CONFIRMED) {
+            this.status = DiningTableStatus.DONE;
+        }
+    }
+
+    /** 표시용 지역. 테이블 값이 없으면 회차 장소 이름, 둘 다 없으면 null. */
+    public String getDisplayRegion() {
+        if (region != null && !region.isBlank()) {
+            return region;
+        }
+        return session.getLocation() != null ? session.getLocation().getName() : null;
     }
 }

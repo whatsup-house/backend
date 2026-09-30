@@ -87,6 +87,10 @@ public class GatheringSession extends BaseEntity {
     @Column(name = "max_age_gap")
     private Integer maxAgeGap;
 
+    // 우연한 식탁 회차 종료 처리(노쇼 후보·테이블 완료·피드백 요청)를 한 시각. 회차마다 1회. (KAN-349)
+    @Column(name = "closing_processed_at")
+    private LocalDateTime closingProcessedAt;
+
     @Builder
     public GatheringSession(Gathering gathering, LocalDate eventDate, LocalTime startTime, LocalTime endTime,
                             Location location, int maxAttendees, Integer priceOverride,
@@ -108,6 +112,10 @@ public class GatheringSession extends BaseEntity {
 
     public void changeStatus(GatheringSessionStatus status) {
         this.status = status;
+    }
+
+    public void markClosingProcessed(LocalDateTime at) {
+        this.closingProcessedAt = at;
     }
 
     public void update(Location location, LocalDate eventDate, LocalTime startTime, LocalTime endTime,
@@ -163,6 +171,16 @@ public class GatheringSession extends BaseEntity {
     /** 회차 시작 시각. 시작 시간이 없으면 행사일 0시. (KAN-342 취소 기한 기준) */
     public LocalDateTime getStartAt() {
         return eventDate.atTime(startTime != null ? startTime : LocalTime.MIDNIGHT);
+    }
+
+    /** 회차 종료 시각. 종료 시간이 없으면 시작 + 3시간, 종료 시간이 시작보다 이르면 자정을 넘긴 다음 날. (KAN-349 노쇼 처리 기준) */
+    public LocalDateTime getEndAt() {
+        LocalDateTime startAt = getStartAt();
+        if (endTime == null) {
+            return startAt.plusHours(3);
+        }
+        LocalDateTime endAt = eventDate.atTime(endTime);
+        return endAt.isAfter(startAt) ? endAt : endAt.plusDays(1);
     }
 
     /** 종류·회차 API(KAN-338)용 유효 상태. eventDate가 지난 OPEN 회차는 DONE. */

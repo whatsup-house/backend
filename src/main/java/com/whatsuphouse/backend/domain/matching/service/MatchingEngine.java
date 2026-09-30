@@ -85,10 +85,17 @@ public class MatchingEngine {
                         MatchingWeights weights, List<CustomField> customFields) {
     }
 
-    /** 회원 ID 기준 관계. blocked는 같은 테이블 금지(하드), metBefore는 이전 같은 테이블(페널티). 한 방향만 있어도 양방향으로 본다. */
-    public record Relations(Map<UUID, Set<UUID>> blocked, Map<UUID, Set<UUID>> metBefore) {
+    /**
+     * 회원 ID 기준 관계. blocked는 같은 테이블 금지(하드), metBefore는 이전 같은 테이블(페널티),
+     * again은 다시 만나고 싶다고 한 쌍(metBefore 페널티 면제). 한 방향만 있어도 양방향으로 본다.
+     */
+    public record Relations(Map<UUID, Set<UUID>> blocked, Map<UUID, Set<UUID>> metBefore, Map<UUID, Set<UUID>> again) {
+        public Relations(Map<UUID, Set<UUID>> blocked, Map<UUID, Set<UUID>> metBefore) {
+            this(blocked, metBefore, Map.of());
+        }
+
         public static Relations none() {
-            return new Relations(Map.of(), Map.of());
+            return new Relations(Map.of(), Map.of(), Map.of());
         }
     }
 
@@ -112,6 +119,23 @@ public class MatchingEngine {
     /** 이미 정해진 멤버 구성의 그룹 점수(수동 조정 후 재계산용). */
     public Score score(List<Applicant> members, Rules rules, Relations relations) {
         return new Run(members, rules, relations).score(IntStream.range(0, members.size()).boxed().toList());
+    }
+
+    /** 하드 조건(설계 4.3) 항목. 수동 조정·재조정 재검증의 위반 사유로 노출된다. */
+    public enum HardRule {
+        TABLE_SIZE,
+        AGE_GAP,
+        BLOCKED_PAIR
+    }
+
+    /** 이미 정해진 멤버 구성의 하드 조건 위반. 비어 있으면 통과. (수동 조정·재조정 재검증용, KAN-347) */
+    public List<HardRule> violations(List<Applicant> members, Rules rules, Relations relations) {
+        return new Run(members, rules, relations).violations(IntStream.range(0, members.size()).boxed().toList());
+    }
+
+    /** 이미 정해진 멤버 구성이 하드 조건(인원 [min, max], 나이 차, 제외 관계)을 지키는지. 확정 직전 최종 검증용. (KAN-346) */
+    public boolean satisfiesHardConditions(List<Applicant> members, Rules rules, Relations relations) {
+        return violations(members, rules, relations).isEmpty();
     }
 
     static Double mbtiCompatibility(String a, String b) {
@@ -149,7 +173,7 @@ public class MatchingEngine {
                     Applicant b = people.get(j);
                     pair[i][j] = pair[j][i] = pairScore(a, b);
                     blocked[i][j] = blocked[j][i] = related(relations.blocked(), a, b);
-                    met[i][j] = met[j][i] = related(relations.metBefore(), a, b);
+                    met[i][j] = met[j][i] = related(relations.metBefore(), a, b) && !related(relations.again(), a, b);
                 }
             }
         }
@@ -398,6 +422,22 @@ public class MatchingEngine {
                 }
             }
             return ageGap(group) <= rules.maxAgeGap();
+        }
+
+        List<HardRule> violations(List<Integer> group) {
+            List<HardRule> result = new ArrayList<>();
+            if (group.size() < rules.tableSizeMin() || group.size() > rules.tableSizeMax()) {
+                result.add(HardRule.TABLE_SIZE);
+            }
+            if (ageGap(group) > rules.maxAgeGap()) {
+                result.add(HardRule.AGE_GAP);
+            }
+            boolean blockedPair = IntStream.range(0, group.size()).anyMatch(i ->
+                    IntStream.range(i + 1, group.size()).anyMatch(j -> blocked[group.get(i)][group.get(j)]));
+            if (blockedPair) {
+                result.add(HardRule.BLOCKED_PAIR);
+            }
+            return result;
         }
 
         private boolean isValid(List<Integer> group) {
