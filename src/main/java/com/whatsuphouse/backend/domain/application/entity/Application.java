@@ -132,6 +132,10 @@ public class Application extends BaseEntity {
         this.rejectionReason = reason;
     }
 
+    public void changeMatchStatus(MatchStatus matchStatus) {
+        this.matchStatus = matchStatus;
+    }
+
     public void attend() {
         this.status = ApplicationStatus.ATTENDED;
     }

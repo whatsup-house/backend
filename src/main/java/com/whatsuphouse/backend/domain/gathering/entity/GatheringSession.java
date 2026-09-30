@@ -121,6 +121,31 @@ public class GatheringSession extends BaseEntity {
         this.applyDeadlineAt = applyDeadlineAt;
     }
 
+    /**
+     * 우연한 식탁 매칭 설정. NULL인 값은 매칭 규칙 기본값을 쓴다. 우연한 식탁이 아닌 회차에 값이 오면 400.
+     * 최소·최대 인원이 둘 다 있으면 최소 ≤ 최대.
+     */
+    public void changeMatchingRules(LocalDateTime matchRunAt, Integer autoConfirmGraceMinutes, Integer tableSizeMin,
+                                    Integer tableSizeMax, BigDecimal minGroupScore, Integer maxAgeGap) {
+        boolean hasValue = matchRunAt != null || autoConfirmGraceMinutes != null || tableSizeMin != null
+                || tableSizeMax != null || minGroupScore != null || maxAgeGap != null;
+        if (gathering.getGatheringType() != GatheringType.RANDOM_TABLE) {
+            if (hasValue) {
+                throw new CustomException(ErrorCode.NOT_RANDOM_TABLE_SESSION);
+            }
+            return;
+        }
+        if (tableSizeMin != null && tableSizeMax != null && tableSizeMin > tableSizeMax) {
+            throw new CustomException(ErrorCode.INVALID_TABLE_SIZE_RANGE);
+        }
+        this.matchRunAt = matchRunAt;
+        this.autoConfirmGraceMinutes = autoConfirmGraceMinutes;
+        this.tableSizeMin = tableSizeMin;
+        this.tableSizeMax = tableSizeMax;
+        this.minGroupScore = minGroupScore;
+        this.maxAgeGap = maxAgeGap;
+    }
+
     public Integer getEffectivePrice() {
         return priceOverride != null ? priceOverride : gathering.getBasePrice();
     }

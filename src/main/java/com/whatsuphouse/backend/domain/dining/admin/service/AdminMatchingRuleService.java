@@ -20,8 +20,13 @@ public class AdminMatchingRuleService {
     private final MatchingRuleSettingRepository matchingRuleSettingRepository;
 
     public MatchingRuleResponse getMatchingRules() {
-        return MatchingRuleResponse.from(matchingRuleSettingRepository.findById(MatchingRuleSetting.SINGLETON_ID)
-                .orElseGet(MatchingRuleSetting::defaults));
+        return MatchingRuleResponse.from(findMatchingRuleSetting());
+    }
+
+    /** 매칭 엔진이 쓰는 규칙 기본값 엔티티. 행이 없으면 기본값. */
+    public MatchingRuleSetting findMatchingRuleSetting() {
+        return matchingRuleSettingRepository.findById(MatchingRuleSetting.SINGLETON_ID)
+                .orElseGet(MatchingRuleSetting::defaults);
     }
 
     @Transactional

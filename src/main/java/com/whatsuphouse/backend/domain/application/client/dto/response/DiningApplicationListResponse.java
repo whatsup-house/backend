@@ -4,8 +4,8 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
-import com.whatsuphouse.backend.domain.matching.entity.MatchingGroup;
-import com.whatsuphouse.backend.domain.matching.enums.MatchingGroupStatus;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
+import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -49,11 +49,11 @@ public class DiningApplicationListResponse {
         @Schema(description = "이용권 차감 상태. 차감 기록이 없으면(결제 대기 등) null", example = "DEDUCTED")
         private TicketDeductionStatus ticketStatus;
 
-        @Schema(description = "배정 테이블 요약. 배정 전이면 null")
+        @Schema(description = "배정 테이블 요약(활성 PROPOSED|CONFIRMED 테이블). 배정 전이면 null")
         private TableInfo table;
 
         public static Item of(Application application, List<GatheringSession> candidateSessions,
-                              TicketDeductionStatus ticketStatus, MatchingGroup group) {
+                              TicketDeductionStatus ticketStatus, DiningTable table) {
             GatheringSession assigned = application.getSession();
             return Item.builder()
                     .id(application.getId())
@@ -66,7 +66,7 @@ public class DiningApplicationListResponse {
                     .status(application.getStatus())
                     .matchStatus(application.getMatchStatus())
                     .ticketStatus(ticketStatus)
-                    .table(group != null ? TableInfo.from(group) : null)
+                    .table(table != null ? TableInfo.from(table) : null)
                     .build();
         }
     }
@@ -107,24 +107,24 @@ public class DiningApplicationListResponse {
         }
     }
 
-    /** 테이블 요약. 지금은 matching_groups 기준이며 KAN-345에서 dining_tables(PROPOSED|CONFIRMED|DONE|DISSOLVED)로 바뀐다. */
+    /** 테이블 요약 (dining_tables 기준). */
     @Getter
     @Builder
     public static class TableInfo {
         @Schema(description = "테이블 ID", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
         private UUID id;
 
-        @Schema(description = "테이블 상태", example = "CONFIRMED")
-        private MatchingGroupStatus status;
+        @Schema(description = "테이블 상태 (PROPOSED: 확정 유예 중, CONFIRMED: 확정)", example = "CONFIRMED")
+        private DiningTableStatus status;
 
-        @Schema(description = "자동 확정 예정 시각. 확정 유예 창은 KAN-345에서 생기므로 지금은 항상 null", example = "2026-10-08T21:00:00")
+        @Schema(description = "자동 확정 예정 시각(확정 유예 창 끝). 유예 없이 만든 테이블이면 null", example = "2026-10-08T21:00:00")
         private LocalDateTime confirmAt;
 
-        static TableInfo from(MatchingGroup group) {
+        static TableInfo from(DiningTable table) {
             return TableInfo.builder()
-                    .id(group.getId())
-                    .status(group.getStatus())
-                    .confirmAt(null)
+                    .id(table.getId())
+                    .status(table.getStatus())
+                    .confirmAt(table.getConfirmAt())
                     .build();
         }
     }

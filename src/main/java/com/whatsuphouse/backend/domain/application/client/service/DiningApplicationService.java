@@ -13,7 +13,7 @@ import com.whatsuphouse.backend.domain.form.client.service.FormService;
 import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.matching.entity.MatchingGroup;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
@@ -68,14 +68,13 @@ public class DiningApplicationService {
         List<UUID> ids = applications.stream().map(Application::getId).toList();
         Map<UUID, List<GatheringSession>> candidates = findCandidateSessions(ids);
         Map<UUID, TicketDeductionStatus> ticketStatuses = ticketService.findDeductionStatuses(ids);
-        // 테이블 요약은 현재 matching_groups 기준이다. KAN-345에서 dining_tables로 바뀐다.
-        Map<UUID, MatchingGroup> groups = matchingService.findGroupsByApplicationIds(ids);
+        Map<UUID, DiningTable> tables = matchingService.findTablesByApplicationIds(ids);
         return DiningApplicationListResponse.builder()
                 .applications(applications.stream()
                         .map(a -> DiningApplicationListResponse.Item.of(a,
                                 candidates.getOrDefault(a.getId(), List.of()),
                                 ticketStatuses.get(a.getId()),
-                                groups.get(a.getId())))
+                                tables.get(a.getId())))
                         .toList())
                 .build();
     }

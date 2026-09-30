@@ -155,6 +155,16 @@ public class GatheringService {
         return session;
     }
 
+    /** 우연한 식탁 회차를 행 잠금으로 가져온다. 같은 회차의 매칭 실행을 직렬화한다. (KAN-345) */
+    public GatheringSession lockRandomTableSession(UUID sessionId) {
+        GatheringSession session = gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)
+                .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND));
+        if (session.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE) {
+            throw new CustomException(ErrorCode.NOT_RANDOM_TABLE_SESSION);
+        }
+        return session;
+    }
+
     /** 오늘 이후(오늘 포함) 취소되지 않은 해당 타입 회차, 날짜·시작 시간 순. (KAN-348 운영 대시보드) */
     public List<GatheringSession> listUpcomingSessions(GatheringType type) {
         return gatheringSessionRepository.findByEventDateGreaterThanEqualAndDeletedAtIsNull(LocalDate.now()).stream()

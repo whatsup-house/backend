@@ -31,7 +31,7 @@ public class ExceptionCase {
     @Column(nullable = false, length = 20)
     private ExceptionCaseType type;
 
-    // 세 참조 모두 FK 없음. table_id는 지금은 matching_groups.id, 매칭 엔진 v2(KAN-345) 이후 dining_tables.id.
+    // 세 참조 모두 FK 없음. table_id는 dining_tables.id(V9 전 matching_groups.id와 같은 값).
     @Column(name = "session_id")
     private UUID sessionId;
 

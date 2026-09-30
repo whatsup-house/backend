@@ -10,7 +10,7 @@ import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.matching.enums.MatchingGroupStatus;
+import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +23,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,8 +84,10 @@ class AdminDiningServiceTest {
         given(gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE)).willReturn(List.of(first, second));
         given(adminApplicationService.listSessionApplications(first.getId())).willReturn(List.of(shared, unpaid));
         given(adminApplicationService.listSessionApplications(second.getId())).willReturn(List.of(shared, rejected));
-        given(matchingService.countGroupsBySessionIds(List.of(first.getId(), second.getId())))
-                .willReturn(Map.of(first.getId(), Map.of(MatchingGroupStatus.PENDING, 2L, MatchingGroupStatus.CONFIRMED, 1L)));
+        given(matchingService.countTablesBySessionIds(List.of(first.getId(), second.getId())))
+                .willReturn(Map.of(first.getId(), Map.of(DiningTableStatus.PROPOSED, 2L, DiningTableStatus.CONFIRMED, 1L)));
+        given(matchingService.findSessionIdsWithMatchRun(List.of(first.getId(), second.getId())))
+                .willReturn(Set.of(first.getId()));
         given(exceptionCaseRepository.countBySessionIdsAndStatus(any(), eq(ExceptionCaseStatus.OPEN)))
                 .willReturn(List.of(new ExceptionCaseRepository.SessionCountProjection() {
                     public UUID getSessionId() { return second.getId(); }

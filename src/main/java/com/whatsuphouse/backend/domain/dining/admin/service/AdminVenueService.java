@@ -10,7 +10,7 @@ import com.whatsuphouse.backend.domain.dining.entity.Venue;
 import com.whatsuphouse.backend.domain.dining.repository.SessionVenueRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
-import com.whatsuphouse.backend.domain.matching.entity.MatchingGroup;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -113,7 +113,7 @@ public class AdminVenueService {
     }
 
     /**
-     * 테이블(현재는 매칭 그룹)에 식당을 배정한다. 식당은 활성이고 테이블 회차의 식당 풀에 있어야 하며,
+     * 테이블(dining_tables)에 식당을 배정한다. 식당은 활성이고 테이블 회차의 식당 풀에 있어야 하며,
      * 새 식당의 used_tables를 1 올리고(가득 차면 409) 이전 식당의 used_tables를 1 내린다.
      */
     @Transactional
@@ -122,8 +122,7 @@ public class AdminVenueService {
         if (!venue.isActive()) {
             throw new CustomException(ErrorCode.VENUE_INACTIVE);
         }
-        // TODO(KAN-345): matching_groups 대신 dining_tables에 배정한다.
-        MatchingGroup table = matchingService.findGroup(tableId);
+        DiningTable table = matchingService.findTable(tableId);
         UUID sessionId = table.getSession().getId();
         UUID previousVenueId = table.getVenueId();
         if (!venueId.equals(previousVenueId)) {

@@ -15,7 +15,7 @@ import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
-import com.whatsuphouse.backend.domain.matching.enums.MatchingGroupStatus;
+import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.CsvWriter;
@@ -63,8 +63,8 @@ public class AdminDiningService {
     public DiningDashboardResponse getDashboard() {
         List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE);
         List<UUID> sessionIds = sessions.stream().map(GatheringSession::getId).toList();
-        // TODO(KAN-345): 테이블 집계를 matching_groups(PENDING/CONFIRMED)에서 dining_tables(PROPOSED/CONFIRMED)로 바꾼다.
-        Map<UUID, Map<MatchingGroupStatus, Long>> tableCounts = matchingService.countGroupsBySessionIds(sessionIds);
+        Map<UUID, Map<DiningTableStatus, Long>> tableCounts = matchingService.countTablesBySessionIds(sessionIds);
+        Set<UUID> matchRunSessionIds = matchingService.findSessionIdsWithMatchRun(sessionIds);
         Map<UUID, Long> openExceptions = sessionIds.isEmpty() ? Map.of()
                 : exceptionCaseRepository.countBySessionIdsAndStatus(sessionIds, ExceptionCaseStatus.OPEN).stream()
                 .collect(Collectors.toMap(ExceptionCaseRepository.SessionCountProjection::getSessionId,
@@ -78,11 +78,10 @@ public class AdminDiningService {
             List<Application> applications = adminApplicationService.listSessionApplications(session.getId());
             applications.forEach(application -> distinctApplications.putIfAbsent(application.getId(), application));
 
-            Map<MatchingGroupStatus, Long> tables = tableCounts.getOrDefault(session.getId(), Map.of());
-            long tableCount = tables.getOrDefault(MatchingGroupStatus.PENDING, 0L)
-                    + tables.getOrDefault(MatchingGroupStatus.CONFIRMED, 0L);
-            // TODO(KAN-345): MatchRun 기록으로 실행 완료를 판단한다. 지금은 그룹이 하나라도 있으면 실행된 것으로 본다.
-            boolean isMatchRunDone = !tables.isEmpty();
+            Map<DiningTableStatus, Long> tables = tableCounts.getOrDefault(session.getId(), Map.of());
+            long tableCount = tables.getOrDefault(DiningTableStatus.PROPOSED, 0L)
+                    + tables.getOrDefault(DiningTableStatus.CONFIRMED, 0L);
+            boolean isMatchRunDone = matchRunSessionIds.contains(session.getId());
             cards.add(DiningDashboardResponse.SessionCard.of(session, applications.stream().filter(this::isPaid).count(),
                     tableCount, isMatchRunDone, openExceptions.getOrDefault(session.getId(), 0L)));
         }
@@ -91,8 +90,8 @@ public class AdminDiningService {
                 .upcomingSessionCount(sessions.size())
                 .waitingApplicantCount(distinctApplications.values().stream().filter(this::isWaitingForMatch).count())
                 .paidApplicantCount(distinctApplications.values().stream().filter(this::isPaid).count())
-                .proposedTableCount(sumTables(tableCounts, MatchingGroupStatus.PENDING))
-                .confirmedTableCount(sumTables(tableCounts, MatchingGroupStatus.CONFIRMED))
+                .proposedTableCount(sumTables(tableCounts, DiningTableStatus.PROPOSED))
+                .confirmedTableCount(sumTables(tableCounts, DiningTableStatus.CONFIRMED))
                 .openExceptionCount(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN))
                 .sessions(cards)
                 .build();
@@ -143,10 +142,9 @@ public class AdminDiningService {
         return CsvWriter.write(APPLICANT_CSV_HEADER, rows);
     }
 
-    /** 테이블 결과 CSV. 멤버 1명당 1행, 멤버가 없는 테이블은 테이블 정보만 1행. */
+    /** 테이블(dining_tables, 해체 제외) 결과 CSV. 멤버 1명당 1행, 멤버가 없는 테이블은 테이블 정보만 1행. */
     public byte[] exportTablesCsv(UUID sessionId) {
         gatheringService.findRandomTableSession(sessionId);
-        // TODO(KAN-345): matching_groups 대신 dining_tables 기준으로 바꾼다.
         List<MatchingResultResponse.GroupView> tables = matchingService.getMatchingResult(sessionId).getGroups();
         Map<UUID, String> venueNames = venueRepository.findAllById(tables.stream()
                         .map(MatchingResultResponse.GroupView::getVenueId).filter(Objects::nonNull).distinct().toList())
@@ -184,7 +182,7 @@ public class AdminDiningService {
                 && !CLOSED_APPLICATION_STATUSES.contains(application.getStatus());
     }
 
-    private static long sumTables(Map<UUID, Map<MatchingGroupStatus, Long>> tableCounts, MatchingGroupStatus status) {
+    private static long sumTables(Map<UUID, Map<DiningTableStatus, Long>> tableCounts, DiningTableStatus status) {
         return tableCounts.values().stream().mapToLong(counts -> counts.getOrDefault(status, 0L)).sum();
     }
 

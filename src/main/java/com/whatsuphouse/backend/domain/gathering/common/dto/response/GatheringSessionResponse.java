@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -47,6 +48,26 @@ public class GatheringSessionResponse {
     @Schema(description = "정원을 차지한 인원(승인 + 출석)", example = "3")
     private long confirmedCount;
 
+    // ── 우연한 식탁 회차 전용 매칭 설정. 그 외 타입과 미지정 값은 null(매칭 규칙 기본값 사용). ──
+
+    @Schema(description = "매칭 실행 예정 시각", example = "2026-10-08T21:00:00")
+    private LocalDateTime matchRunAt;
+
+    @Schema(description = "자동 확정 유예(분)", example = "120")
+    private Integer autoConfirmGraceMinutes;
+
+    @Schema(description = "테이블 최소 인원", example = "4")
+    private Integer tableSizeMin;
+
+    @Schema(description = "테이블 최대 인원", example = "6")
+    private Integer tableSizeMax;
+
+    @Schema(description = "그룹 최소 점수", example = "0.35")
+    private BigDecimal minGroupScore;
+
+    @Schema(description = "테이블 내 최대 나이 차(출생연도 기준)", example = "8")
+    private Integer maxAgeGap;
+
     public static GatheringSessionResponse from(GatheringSession session, long confirmedCount) {
         Location location = session.getLocation();
         return GatheringSessionResponse.builder()
@@ -60,6 +81,12 @@ public class GatheringSessionResponse {
                 .applyDeadlineAt(session.getApplyDeadlineAt())
                 .status(session.getEffectiveSessionStatus())
                 .confirmedCount(confirmedCount)
+                .matchRunAt(session.getMatchRunAt())
+                .autoConfirmGraceMinutes(session.getAutoConfirmGraceMinutes())
+                .tableSizeMin(session.getTableSizeMin())
+                .tableSizeMax(session.getTableSizeMax())
+                .minGroupScore(session.getMinGroupScore())
+                .maxAgeGap(session.getMaxAgeGap())
                 .build();
     }
 

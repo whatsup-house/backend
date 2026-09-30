@@ -8,6 +8,7 @@ import com.whatsuphouse.backend.domain.application.admin.dto.response.Applicatio
 import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.AnswerView;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
@@ -267,6 +268,11 @@ public class AdminApplicationService {
                         .put(answer.getQuestion().getQuestionKey(),
                                 answer.getValue() != null ? answer.getValue().get("value") : null));
         return result;
+    }
+
+    /** 신청별 답변(질문 fetch). 매칭 엔진이 reserved_key·매칭 설정으로 분류해 쓴다. */
+    public List<ApplicationAnswer> findAnswers(Collection<UUID> applicationIds) {
+        return applicationIds.isEmpty() ? List.of() : applicationAnswerRepository.findByApplicationIds(List.copyOf(applicationIds));
     }
 
     /** 신청별 희망 회차, 1순위부터. */

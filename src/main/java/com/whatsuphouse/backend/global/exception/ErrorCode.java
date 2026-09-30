@@ -62,6 +62,7 @@ public enum ErrorCode {
     MATCHING_GROUP_NOT_FOUND("존재하지 않는 매칭 그룹입니다.", HttpStatus.NOT_FOUND),
     MATCHING_MEMBER_NOT_FOUND("존재하지 않는 매칭 멤버입니다.", HttpStatus.NOT_FOUND),
     MATCHING_ALREADY_ASSIGNED("이미 다른 그룹에 배정된 신청입니다.", HttpStatus.BAD_REQUEST),
+    SESSION_NOT_MATCHABLE("취소되었거나 종료된 회차는 매칭할 수 없습니다.", HttpStatus.CONFLICT),
 
     // Dining (우연한 식탁 운영자 어드민)
     NOT_RANDOM_TABLE_SESSION("우연한 식탁 회차가 아닙니다.", HttpStatus.BAD_REQUEST),

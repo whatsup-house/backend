@@ -3,7 +3,6 @@ package com.whatsuphouse.backend.domain.matching.controller;
 import com.whatsuphouse.backend.domain.matching.dto.request.MatchingRunRequest;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
-import com.whatsuphouse.backend.domain.matching.service.MatchingEngine;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,13 +22,13 @@ public class MatchingController {
 
     private final MatchingService matchingService;
 
-    @Operation(summary = "자동매칭 실행", description = "CONFIRMED 신청을 대상으로 추천 그룹(PENDING)을 생성합니다. groupSize로 그룹당 인원 수를 지정할 수 있고 미지정 시 기본 4명입니다.")
+    @Operation(summary = "자동매칭 실행", description = "rule-v2 엔진으로 매칭을 실행해 제안 테이블(PROPOSED)을 만듭니다(재실행 시 잠기지 않은 제안 테이블은 해체). groupSize로 테이블 인원을 고정할 수 있고 미지정 시 4명입니다. 신규 API는 POST /api/admin/dining/sessions/{id}/match-runs.")
     @PostMapping
     public ResponseEntity<ApiResult<MatchingRunResponse>> run(
             @PathVariable UUID gatheringId,
             @RequestBody(required = false) @Valid MatchingRunRequest request) {
         int groupSize = (request != null && request.getGroupSize() != null)
-                ? request.getGroupSize() : MatchingEngine.DEFAULT_GROUP_SIZE;
+                ? request.getGroupSize() : MatchingService.DEFAULT_GROUP_SIZE;
         return ResponseEntity.ok(ApiResult.success("자동매칭이 완료되었습니다.",
                 matchingService.runMatching(gatheringId, groupSize)));
     }
