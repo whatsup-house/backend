@@ -210,7 +210,8 @@ public class ChatResponseAssembler {
         return user.isWithdrawn() ? null : user.getNickname();
     }
 
-    private String roomName(ChatRoom room, Map<UUID, User> users, boolean viewerIsAdmin) {
+    // 문의방이면 users에 문의 사용자가 있어야 한다. 웹 푸시 제목(ChatPushService)도 이 규칙을 쓴다.
+    public String roomName(ChatRoom room, Map<UUID, User> users, boolean viewerIsAdmin) {
         if (!room.isInquiry()) {
             return room.getName();
         }

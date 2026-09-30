@@ -66,4 +66,21 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 채팅 웹 푸시 발송 전용 스레드풀. (KAN-335)
+     * 푸시 서비스 응답을 구독당 최대 10초 기다리므로 링크 미리보기와 분리한다.
+     * 포화 시 작업을 버린다(푸시는 best-effort, 메시지는 방 목록·배지로 여전히 보인다).
+     */
+    @Bean(name = "chatPushExecutor")
+    public TaskExecutor chatPushExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("chat-push-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

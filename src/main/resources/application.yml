@@ -79,3 +79,9 @@ app:
 # 생성: openssl rand -base64 32 / 키를 바꾸면 기존 메시지는 복호화되지 않는다(키 로테이션 미지원).
 chat:
   encryption-key: ${CHAT_ENCRYPTION_KEY}
+  # 웹 푸시 VAPID(KAN-335). 셋 중 하나라도 비면 웹 푸시 비활성(구독 API 503, 발송 스킵) — local은 미설정이 기본.
+  # 생성: npx web-push generate-vapid-keys (base64url) / subject: mailto:운영메일 또는 https URL
+  push:
+    vapid-public-key: ${VAPID_PUBLIC_KEY:}
+    vapid-private-key: ${VAPID_PRIVATE_KEY:}
+    vapid-subject: ${VAPID_SUBJECT:}

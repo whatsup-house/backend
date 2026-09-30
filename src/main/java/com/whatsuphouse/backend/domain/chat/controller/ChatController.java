@@ -3,11 +3,15 @@ package com.whatsuphouse.backend.domain.chat.controller;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageSendRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageUpdateRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatReportCreateRequest;
+import com.whatsuphouse.backend.domain.chat.dto.request.PushSubscriptionCreateRequest;
+import com.whatsuphouse.backend.domain.chat.dto.request.PushSubscriptionDeleteRequest;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatImageUploadResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatMessageResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomSummaryResponse;
+import com.whatsuphouse.backend.domain.chat.dto.response.PushPublicKeyResponse;
+import com.whatsuphouse.backend.domain.chat.service.ChatPushService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -16,6 +20,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -41,6 +46,7 @@ import java.util.UUID;
 public class ChatController {
 
     private final ChatService chatService;
+    private final ChatPushService chatPushService;
 
     @Operation(summary = "내 방 목록", description = "마지막 메시지·안읽은 수 포함, 숨긴 방 제외. 최근 활동순.")
     @GetMapping("/rooms")
@@ -160,5 +166,31 @@ public class ChatController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(ApiResult.success(chatService.uploadImage(file, principal.getUserId())));
+    }
+
+    @Operation(summary = "웹 푸시 공개키", description = "VAPID 공개키. PushManager.subscribe의 applicationServerKey로 쓴다. VAPID 미설정이면 503.")
+    @GetMapping("/push-subscriptions/public-key")
+    public ResponseEntity<ApiResult<PushPublicKeyResponse>> getPushPublicKey() {
+        return ResponseEntity.ok(ApiResult.success(chatPushService.getPublicKey()));
+    }
+
+    @Operation(summary = "웹 푸시 구독 등록", description = "PushSubscription.toJSON() 그대로. 같은 endpoint 재등록은 갱신. VAPID 미설정이면 503.")
+    @PostMapping("/push-subscriptions")
+    public ResponseEntity<ApiResult<Void>> registerPushSubscription(
+            @Valid @RequestBody PushSubscriptionCreateRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        chatPushService.registerSubscription(principal.getUserId(), request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResult.success(null));
+    }
+
+    @Operation(summary = "웹 푸시 구독 해제", description = "본인 구독만. 없어도 204. VAPID 미설정이면 503.")
+    @DeleteMapping("/push-subscriptions")
+    public ResponseEntity<Void> deletePushSubscription(
+            @Valid @RequestBody PushSubscriptionDeleteRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        chatPushService.deleteSubscription(principal.getUserId(), request.getEndpoint());
+        return ResponseEntity.noContent().build();
     }
 }
