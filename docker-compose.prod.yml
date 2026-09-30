@@ -4,6 +4,8 @@ services:
     container_name: whatsup-app
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Seoul
+      DINING_SYSTEM_ADMIN_ID: ${DINING_SYSTEM_ADMIN_ID:-}
       DB_URL: ${DB_URL}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
