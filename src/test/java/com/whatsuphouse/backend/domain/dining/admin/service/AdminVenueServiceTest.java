@@ -10,7 +10,7 @@ import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.matching.entity.MatchingGroup;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -54,7 +54,7 @@ class AdminVenueServiceTest {
     private AdminVenueService adminVenueService;
 
     private UUID sessionId;
-    private MatchingGroup table;
+    private DiningTable table;
 
     @BeforeEach
     void setUp() {
@@ -63,7 +63,7 @@ class AdminVenueServiceTest {
                 .gathering(gathering).eventDate(LocalDate.now().plusDays(7)).maxAttendees(12).build();
         sessionId = UUID.randomUUID();
         ReflectionTestUtils.setField(session, "id", sessionId);
-        table = MatchingGroup.builder().session(session).eventDate(session.getEventDate()).groupSize(4).build();
+        table = DiningTable.builder().session(session).eventDate(session.getEventDate()).groupSize(4).build();
         ReflectionTestUtils.setField(table, "id", UUID.randomUUID());
     }
 
@@ -166,7 +166,7 @@ class AdminVenueServiceTest {
     void assignTableVenue_full_throws() {
         Venue venue = venue(true);
         given(venueRepository.findByIdAndDeletedAtIsNull(venue.getId())).willReturn(Optional.of(venue));
-        given(matchingService.findGroup(table.getId())).willReturn(table);
+        given(matchingService.findTable(table.getId())).willReturn(table);
         given(sessionVenueRepository.findBySessionIdAndVenueIdForUpdate(sessionId, venue.getId()))
                 .willReturn(Optional.of(sessionVenue(venue, 1, 1)));
 
@@ -181,7 +181,7 @@ class AdminVenueServiceTest {
     void assignTableVenue_notInSession_throws() {
         Venue venue = venue(true);
         given(venueRepository.findByIdAndDeletedAtIsNull(venue.getId())).willReturn(Optional.of(venue));
-        given(matchingService.findGroup(table.getId())).willReturn(table);
+        given(matchingService.findTable(table.getId())).willReturn(table);
         given(sessionVenueRepository.findBySessionIdAndVenueIdForUpdate(sessionId, venue.getId()))
                 .willReturn(Optional.empty());
 
@@ -199,7 +199,7 @@ class AdminVenueServiceTest {
         SessionVenue targetUsage = sessionVenue(target, 2, 0);
         table.assignVenue(previous.getId());
         given(venueRepository.findByIdAndDeletedAtIsNull(target.getId())).willReturn(Optional.of(target));
-        given(matchingService.findGroup(table.getId())).willReturn(table);
+        given(matchingService.findTable(table.getId())).willReturn(table);
         given(sessionVenueRepository.findBySessionIdAndVenueIdForUpdate(sessionId, target.getId()))
                 .willReturn(Optional.of(targetUsage));
         given(sessionVenueRepository.findBySessionIdAndVenueIdForUpdate(sessionId, previous.getId()))

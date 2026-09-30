@@ -1,6 +1,6 @@
 package com.whatsuphouse.backend.domain.matching.dto.response;
 
-import com.whatsuphouse.backend.domain.matching.enums.MatchingGroupStatus;
+import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -22,7 +22,7 @@ public class MatchingResultResponse {
     public static class GroupView {
         private UUID groupId;
         private LocalDate eventDate;
-        private MatchingGroupStatus status;
+        private DiningTableStatus status;
         private BigDecimal groupScore;
         private int groupSize;
         private String restaurantName;

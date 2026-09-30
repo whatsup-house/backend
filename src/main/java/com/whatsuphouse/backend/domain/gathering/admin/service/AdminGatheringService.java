@@ -180,21 +180,33 @@ public class AdminGatheringService {
         validateSchedule(request.getEventDate());
         Location location = findLocation(request.getLocationId());
         LocalDateTime deadline = request.getApplyDeadlineAt();
+        LocalDateTime matchRunAt = request.getMatchRunAt();
         List<GatheringSession> sessions = IntStream.range(0, countWeeks(request))
-                .mapToObj(week -> GatheringSession.builder()
-                        .gathering(gathering)
-                        .location(location)
-                        .eventDate(request.getEventDate().plusWeeks(week))
-                        .startTime(request.getStartTime())
-                        .endTime(request.getEndTime())
-                        .maxAttendees(request.getMaxAttendees())
-                        .priceOverride(request.getPriceOverride())
-                        .applyDeadlineAt(deadline != null ? deadline.plusWeeks(week) : null)
-                        .build())
+                .mapToObj(week -> {
+                    GatheringSession session = GatheringSession.builder()
+                            .gathering(gathering)
+                            .location(location)
+                            .eventDate(request.getEventDate().plusWeeks(week))
+                            .startTime(request.getStartTime())
+                            .endTime(request.getEndTime())
+                            .maxAttendees(request.getMaxAttendees())
+                            .priceOverride(request.getPriceOverride())
+                            .applyDeadlineAt(deadline != null ? deadline.plusWeeks(week) : null)
+                            .build();
+                    changeMatchingRules(session, request, matchRunAt != null ? matchRunAt.plusWeeks(week) : null);
+                    return session;
+                })
                 .toList();
         return gatheringSessionRepository.saveAll(sessions).stream()
                 .map(session -> GatheringSessionResponse.from(session, 0))
                 .toList();
+    }
+
+    // 우연한 식탁 매칭 설정. 우연한 식탁이 아닌 회차에 값이 오면 400. (KAN-345)
+    private static void changeMatchingRules(GatheringSession session, GatheringSessionRequest request,
+                                            LocalDateTime matchRunAt) {
+        session.changeMatchingRules(matchRunAt, request.getAutoConfirmGraceMinutes(), request.getTableSizeMin(),
+                request.getTableSizeMax(), request.getMinGroupScore(), request.getMaxAgeGap());
     }
 
     // 만들 회차 수. 반복이 없으면 1. until은 기준 회차 날짜부터 1년 이내여야 한다(오입력으로 회차가 대량 생성되는 것을 막는다).
@@ -217,6 +229,7 @@ public class AdminGatheringService {
         Location location = findLocation(request.getLocationId());
         session.update(location, request.getEventDate(), request.getStartTime(), request.getEndTime(),
                 request.getPriceOverride(), request.getMaxAttendees(), request.getApplyDeadlineAt());
+        changeMatchingRules(session, request, request.getMatchRunAt());
         return gatheringService.toSessionResponses(List.of(session)).get(0);
     }
 

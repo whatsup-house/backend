@@ -18,6 +18,10 @@ import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleSer
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminVenueService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableListResponse;
+import com.whatsuphouse.backend.domain.matching.dto.response.MatchRunResponse;
+import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.service.DiningMatchService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,7 +49,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "우연한 식탁 운영 (관리자)", description = "운영 대시보드, 회차 신청자·CSV, 예외함, 매칭 규칙, 식당 풀 API")
+@Tag(name = "우연한 식탁 운영 (관리자)", description = "운영 대시보드, 회차 신청자·CSV, 매칭 실행·테이블, 예외함, 매칭 규칙, 식당 풀 API")
 @RestController
 @RequestMapping("/api/admin/dining")
 @RequiredArgsConstructor
@@ -57,6 +61,7 @@ public class AdminDiningController {
     private final AdminExceptionCaseService adminExceptionCaseService;
     private final AdminMatchingRuleService adminMatchingRuleService;
     private final AdminVenueService adminVenueService;
+    private final DiningMatchService diningMatchService;
 
     // ── 대시보드·신청자 ────────────────────────────────────────────────────────
 
@@ -80,10 +85,29 @@ public class AdminDiningController {
         return csv("applicants-" + id + ".csv", adminDiningService.exportApplicantsCsv(id));
     }
 
-    @Operation(summary = "테이블 결과 CSV", description = "회차의 테이블(매칭 그룹)·멤버 CSV(UTF-8 BOM). 멤버 1명당 1행")
+    @Operation(summary = "테이블 결과 CSV", description = "회차의 테이블(해체 제외)·멤버 CSV(UTF-8 BOM). 멤버 1명당 1행")
     @GetMapping("/sessions/{id}/tables.csv")
     public ResponseEntity<byte[]> exportTablesCsv(@Parameter(description = "회차 ID") @PathVariable UUID id) {
         return csv("tables-" + id + ".csv", adminDiningService.exportTablesCsv(id));
+    }
+
+    // ── 매칭 ──────────────────────────────────────────────────────────────────
+
+    @Operation(summary = "매칭 실행", description = "회차 매칭(rule-v2)을 수동 실행한다. 마감 전에도 가능. 재실행 시 잠기지 않은 제안(PROPOSED) "
+            + "테이블만 해체하고 확정·잠긴 테이블은 유지한다. 우연한 식탁 회차가 아니면 400, 취소·종료 회차는 409, 회차가 없으면 404.")
+    @PostMapping("/sessions/{id}/match-runs")
+    public ResponseEntity<ApiResult<MatchRunResponse>> runMatch(
+            @Parameter(description = "회차 ID") @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(ApiResult.success(
+                diningMatchService.runMatch(id, MatchRunTrigger.MANUAL, principal.getUserId(), null)));
+    }
+
+    @Operation(summary = "회차 테이블", description = "해체되지 않은 테이블(점수 내역·멤버), 최신 실행의 미배정(사유), 최신 실행 집계")
+    @GetMapping("/sessions/{id}/tables")
+    public ResponseEntity<ApiResult<DiningTableListResponse>> getTables(
+            @Parameter(description = "회차 ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(diningMatchService.getTables(id)));
     }
 
     // ── 예외함 ────────────────────────────────────────────────────────────────
@@ -163,7 +187,7 @@ public class AdminDiningController {
     @Operation(summary = "테이블 식당 배정", description = "회차 식당 풀에 있는 활성 식당만. 수용 테이블이 가득 차면 409.")
     @PutMapping("/tables/{id}/venue")
     public ResponseEntity<ApiResult<TableVenueResponse>> assignTableVenue(
-            @Parameter(description = "테이블 ID(현재는 매칭 그룹 ID)") @PathVariable UUID id,
+            @Parameter(description = "테이블 ID") @PathVariable UUID id,
             @Valid @RequestBody TableVenueRequest request) {
         return ResponseEntity.ok(ApiResult.success(adminVenueService.assignTableVenue(id, request.getVenueId())));
     }
