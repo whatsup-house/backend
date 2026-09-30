@@ -1,6 +1,5 @@
 package com.whatsuphouse.backend.domain.matching.service;
 
-import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
@@ -11,7 +10,6 @@ import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultRespo
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
-import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
@@ -33,7 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** 관리자 v1 매칭 API(/api/admin/gatherings/{id}/matching, /api/admin/matching). 수동 조정 재설계는 KAN-347. */
+/** 관리자 v1 매칭 API(/api/admin/gatherings/{id}/matching, /api/admin/matching). 멤버 이동·강제 배정은 DiningTableService가 맡는다(KAN-347). */
 @Service
 @RequiredArgsConstructor
 public class MatchingService {
@@ -133,50 +131,13 @@ public class MatchingService {
     }
 
     @Transactional
-    public void moveMember(UUID memberId, UUID targetGroupId) {
-        DiningTableMember member = diningTableMemberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
-        DiningTable oldTable = member.getTable();
-        DiningTable target = findTable(targetGroupId);
-
-        member.moveTo(target, diningTableMemberRepository.countByTable_Id(targetGroupId) + 1);
-        diningTableMemberRepository.flush();
-        oldTable.updateGroupSize(diningTableMemberRepository.countByTable_Id(oldTable.getId()));
-        target.updateGroupSize(diningTableMemberRepository.countByTable_Id(targetGroupId));
-        diningMatchService.rescoreTable(oldTable);
-        diningMatchService.rescoreTable(target);
-    }
-
-    @Transactional
     public void excludeMember(UUID memberId) {
-        DiningTableMember member = diningTableMemberRepository.findById(memberId)
+        DiningTableMember member = diningTableMemberRepository.findByIdAndRemovedAtIsNull(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
         DiningTable table = member.getTable();
         diningTableMemberRepository.delete(member);
         diningTableMemberRepository.flush();
-        table.updateGroupSize(diningTableMemberRepository.countByTable_Id(table.getId()));
-        diningMatchService.rescoreTable(table);
-    }
-
-    @Transactional
-    public void assignMember(UUID groupId, UUID applicationId) {
-        DiningTable table = findTable(groupId);
-        // 해체된 테이블의 멤버 행은 이력이므로 활성 테이블 배정만 막는다.
-        if (diningTableMemberRepository.existsByApplication_IdAndTable_StatusIn(applicationId, ACTIVE_TABLE_STATUSES)) {
-            throw new CustomException(ErrorCode.MATCHING_ALREADY_ASSIGNED);
-        }
-        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
-                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-
-        diningTableMemberRepository.save(DiningTableMember.builder()
-                .application(application)
-                .table(table)
-                .seatOrder(diningTableMemberRepository.countByTable_Id(groupId) + 1)
-                .assignReason(AssignReason.MANUAL)
-                .isManual(true)
-                .build());
-        diningTableMemberRepository.flush();
-        table.updateGroupSize(diningTableMemberRepository.countByTable_Id(groupId));
+        table.updateGroupSize(diningTableMemberRepository.countByTable_IdAndRemovedAtIsNull(table.getId()));
         diningMatchService.rescoreTable(table);
     }
 

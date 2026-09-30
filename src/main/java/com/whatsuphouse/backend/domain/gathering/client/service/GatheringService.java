@@ -166,6 +166,13 @@ public class GatheringService {
         return session;
     }
 
+    /** 종류의 삭제되지 않은 회차 전부(장소 포함). 매칭 실패 신청의 대체 회차 후보용. (KAN-347) */
+    public List<GatheringSession> listSessionsByGathering(UUID gatheringId) {
+        return gatheringSessionRepository.findByGathering_IdInAndDeletedAtIsNull(List.of(gatheringId)).stream()
+                .sorted(SESSION_ORDER)
+                .toList();
+    }
+
     /** 매칭 시각이 된 모집 중 우연한 식탁 회차를 잠가 마감(CLOSED)하고 ID를 돌려준다. (KAN-346 매칭 스케줄러) */
     @Transactional
     public List<UUID> closeDueRandomTableSessions(LocalDateTime now) {

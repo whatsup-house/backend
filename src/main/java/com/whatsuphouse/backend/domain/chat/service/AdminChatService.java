@@ -114,10 +114,35 @@ public class AdminChatService {
         accessPolicy.checkManageGroup(room, isAdmin);
         ChatMember member = chatMemberRepository.findByRoomIdAndUserId(roomId, userId).orElse(null);
         accessPolicy.checkMember(member);
+        kick(room, member, userId);
+    }
+
+    /**
+     * 우연한 식탁 테이블 멤버 변경(재조정·수동 조정)을 테이블 채팅방에 반영한다. 시스템 호출이라 관리자 검사는 없다. (KAN-347)
+     * 호출한 흐름(참가자 취소 등)을 막지 않도록 방이 없거나 단체방이 아니면 건너뛰고,
+     * 탈퇴 회원은 들이지 않으며 이미 나간 회원은 내보내지 않는다.
+     */
+    public void syncTableMembers(UUID roomId, Collection<UUID> joinUserIds, Collection<UUID> leaveUserIds) {
+        ChatRoom room = chatRoomRepository.findByIdAndDeletedAtIsNull(roomId).orElse(null);
+        if (room == null || room.getType() != ChatRoomType.GROUP) {
+            return;
+        }
+        Map<UUID, User> users = userService.findUsersByIds(joinUserIds);
+        joinMembers(room, joinUserIds.stream()
+                .filter(userId -> users.get(userId) != null && !users.get(userId).isWithdrawn())
+                .toList());
+        for (UUID userId : leaveUserIds) {
+            chatMemberRepository.findByRoomIdAndUserId(roomId, userId)
+                    .filter(ChatMember::isActive)
+                    .ifPresent(member -> kick(room, member, userId));
+        }
+    }
+
+    private void kick(ChatRoom room, ChatMember member, UUID userId) {
         member.leave();
         User user = userService.findUsersByIds(List.of(userId)).get(userId);
         createSystemMessage(room, ChatSystemKind.KICKED, Arrays.asList(assembler.displayNickname(user, room, true)));
-        eventPublisher.publishEvent(new ChatMemberChangedEvent(roomId, List.of(userId)));
+        eventPublisher.publishEvent(new ChatMemberChangedEvent(room.getId(), List.of(userId)));
     }
 
     public void changeNotice(UUID roomId, UUID adminId, boolean isAdmin, ChatNoticeUpdateRequest request) {

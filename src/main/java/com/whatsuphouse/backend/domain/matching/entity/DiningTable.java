@@ -14,6 +14,8 @@ import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -141,6 +143,24 @@ public class DiningTable extends BaseEntity {
     public void updateRestaurant(String restaurantName, String restaurantAddress) {
         this.restaurantName = restaurantName;
         this.restaurantAddress = restaurantAddress;
+    }
+
+    // 수동 조정한 테이블은 재실행해도 해체하지 않는다.
+    public void lock() {
+        this.locked = true;
+    }
+
+    /** 조정 이력 1건을 reallocation_log에 덧붙인다. by는 조작한 관리자(시스템 재조정이면 null). (KAN-347) */
+    public void recordReallocation(String action, UUID by, String reason, List<UUID> memberIds) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("at", LocalDateTime.now().toString());
+        entry.put("action", action);
+        entry.put("by", by != null ? by.toString() : null);
+        entry.put("reason", reason);
+        entry.put("memberIds", memberIds.stream().map(UUID::toString).toList());
+        List<Map<String, Object>> log = reallocationLog != null ? new ArrayList<>(reallocationLog) : new ArrayList<>();
+        log.add(entry);
+        this.reallocationLog = log;
     }
 
     // 관리자 즉시 확정: 유예를 끝내고 확정 파이프라인이 바로 집어 가게 한다. (KAN-346)

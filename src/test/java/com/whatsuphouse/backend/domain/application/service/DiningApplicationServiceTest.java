@@ -16,6 +16,9 @@ import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
+import com.whatsuphouse.backend.domain.matching.service.DiningTableService;
+import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
@@ -67,6 +70,12 @@ class DiningApplicationServiceTest {
     private MatchingService matchingService;
 
     @Mock
+    private DiningTableService diningTableService;
+
+    @Mock
+    private MatchResolutionService matchResolutionService;
+
+    @Mock
     private FormService formService;
 
     @Mock
@@ -113,6 +122,21 @@ class DiningApplicationServiceTest {
         then(eventPublisher).should().publishEvent(any(ApplicationCancelledEvent.class));
     }
 
+    @Test
+    @DisplayName("테이블에 앉아 있던 신청을 취소하면 그 테이블을 재조정한다")
+    void cancel_seated_rebalancesTable() {
+        GatheringSession session = sessionOn(3);
+        Application application = confirmedApplication(session);
+        DiningTable table = DiningTable.builder().session(session).eventDate(session.getEventDate()).groupSize(4)
+                .algorithmVersion("rule-v2").build();
+        ReflectionTestUtils.setField(table, "id", UUID.randomUUID());
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        given(matchingService.findTablesByApplicationIds(List.of(applicationId))).willReturn(Map.of(applicationId, table));
+
+        diningApplicationService.cancelApplication(applicationId, userId);
+
+        then(diningTableService).should().rebalance(table.getId());
+    }
     @Test
     @DisplayName("배정 회차 시작 2일 이내면 CANCEL_WINDOW_CLOSED")
     void cancel_assignedSessionWithinWindow_throws() {

@@ -63,6 +63,17 @@ public enum ErrorCode {
     MATCHING_MEMBER_NOT_FOUND("존재하지 않는 매칭 멤버입니다.", HttpStatus.NOT_FOUND),
     MATCHING_ALREADY_ASSIGNED("이미 다른 그룹에 배정된 신청입니다.", HttpStatus.BAD_REQUEST),
     SESSION_NOT_MATCHABLE("취소되었거나 종료된 회차는 매칭할 수 없습니다.", HttpStatus.CONFLICT),
+    // 테이블 수동 조정·재조정 (KAN-347)
+    TABLE_NOT_ADJUSTABLE("제안·확정 상태의 테이블만 조정할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    TABLE_SESSION_MISMATCH("같은 회차의 서로 다른 테이블끼리만 조정할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    TABLE_ADJUST_REASON_REQUIRED("확정된 테이블을 조정하려면 사유가 필요합니다.", HttpStatus.BAD_REQUEST),
+    TABLE_RULE_VIOLATION("조정 결과가 테이블 규칙(인원·나이 차·제외 관계)을 어깁니다.", HttpStatus.BAD_REQUEST),
+    APPLICATION_NOT_ASSIGNABLE("이 회차의 결제 완료 신청만 배정할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    // 매칭 해결 선택 (KAN-347)
+    RESOLUTION_NOT_FOUND("존재하지 않는 해결 선택입니다.", HttpStatus.NOT_FOUND),
+    RESOLUTION_ALREADY_HANDLED("이미 처리된 해결 선택입니다.", HttpStatus.CONFLICT),
+    RESOLUTION_SESSION_REQUIRED("회차 이동은 옮길 회차를 골라야 합니다.", HttpStatus.BAD_REQUEST),
+    RESOLUTION_SESSION_NOT_OFFERED("제안된 회차 중 아직 모집 중인 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
 
     // Dining (우연한 식탁 운영자 어드민)
     NOT_RANDOM_TABLE_SESSION("우연한 식탁 회차가 아닙니다.", HttpStatus.BAD_REQUEST),
@@ -130,6 +141,7 @@ public enum ErrorCode {
     TICKET_PURCHASE_NOT_ALLOWED("우연한 식탁 참여 승인 후 이용권을 구매할 수 있습니다.", HttpStatus.FORBIDDEN),
     INVALID_TICKET_ADJUSTMENT("유효하지 않은 이용권 횟수 조정입니다.", HttpStatus.BAD_REQUEST),
     TICKET_PRODUCT_NOT_FOUND("존재하지 않는 이용권 상품입니다.", HttpStatus.NOT_FOUND),
+    INVALID_REFUND_TRANSITION("환불을 진행할 수 없는 이용권 차감 기록입니다.", HttpStatus.CONFLICT),
 
     // Rate Limit
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
