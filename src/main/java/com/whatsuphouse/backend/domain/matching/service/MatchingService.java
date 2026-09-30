@@ -226,15 +226,16 @@ public class MatchingService {
     }
 
     /**
-     * 신청별 배정 그룹. 배정되지 않은 신청은 결과에 없다. 우연한 식탁 내 신청 조회의 테이블 요약용. (KAN-342)
-     * KAN-345에서 matching_groups가 dining_tables로 바뀌면 DiningTable을 돌려주도록 바뀐다.
+     * 신청별 활성(PROPOSED|CONFIRMED) 테이블. 활성 테이블에 앉지 않은 신청은 결과에 없다. 우연한 식탁 내 신청 조회의 테이블 요약용. (KAN-342)
      */
     @Transactional(readOnly = true)
-    public Map<UUID, MatchingGroup> findGroupsByApplicationIds(Collection<UUID> applicationIds) {
+    public Map<UUID, DiningTable> findTablesByApplicationIds(Collection<UUID> applicationIds) {
         if (applicationIds.isEmpty()) {
             return Map.of();
         }
-        return matchingMemberRepository.findByApplicationIdsWithGroup(applicationIds).stream()
-                .collect(Collectors.toMap(member -> member.getApplication().getId(), MatchingMember::getGroup));
+        // 활성 테이블은 신청당 1개를 서비스가 보장하지만 DB 제약은 없어서, 겹치면 먼저 온 행을 쓴다.
+        return diningTableMemberRepository.findByApplicationIdsWithTable(applicationIds, ACTIVE_TABLE_STATUSES).stream()
+                .collect(Collectors.toMap(member -> member.getApplication().getId(), DiningTableMember::getTable,
+                        (first, second) -> first));
     }
 }

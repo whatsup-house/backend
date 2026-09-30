@@ -39,6 +39,16 @@ public interface DiningTableMemberRepository extends JpaRepository<DiningTableMe
             """)
     List<DiningTableMember> findByTableIdsWithApplication(@Param("tableIds") Collection<UUID> tableIds);
 
+    // 신청들이 앉은 상태가 statuses인 테이블(보통 활성 PROPOSED|CONFIRMED)과 그 멤버 행. 우연한 식탁 내 신청 조회용. (KAN-342)
+    @Query("""
+            select m from DiningTableMember m
+            join fetch m.table t
+            where m.application.id in :applicationIds
+              and t.status in :statuses and t.deletedAt is null
+            """)
+    List<DiningTableMember> findByApplicationIdsWithTable(@Param("applicationIds") Collection<UUID> applicationIds,
+                                                          @Param("statuses") Collection<DiningTableStatus> statuses);
+
     // 이 신청들 중 상태가 statuses인 테이블(보통 활성 PROPOSED|CONFIRMED)에 앉아 있는 신청 ID
     @Query("""
             select distinct m.application.id from DiningTableMember m
