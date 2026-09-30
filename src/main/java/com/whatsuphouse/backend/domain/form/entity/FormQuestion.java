@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.form.entity;
 
 import com.whatsuphouse.backend.domain.form.enums.MatchingStrategy;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.global.common.BaseEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -70,12 +71,18 @@ public class FormQuestion extends BaseEntity {
     @Column(name = "matching_weight", precision = 3, scale = 2)
     private BigDecimal matchingWeight;
 
+    // 우연한 식탁 표준 질문 키. 있으면 삭제·키/타입 변경 불가, 라벨·선택지만 수정. (KAN-341)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reserved_key", length = 30)
+    private ReservedQuestionKey reservedKey;
+
     @Builder
     public FormQuestion(Form form, String questionKey, QuestionType type, String label,
                         String placeholder, boolean required, int displayOrder,
                         Map<String, Object> options, Map<String, Object> validation,
                         boolean isMatchingField, boolean isSystemReserved,
-                        MatchingStrategy matchingStrategy, BigDecimal matchingWeight) {
+                        MatchingStrategy matchingStrategy, BigDecimal matchingWeight,
+                        ReservedQuestionKey reservedKey) {
         this.form = form;
         this.questionKey = questionKey;
         this.type = type;
@@ -89,6 +96,20 @@ public class FormQuestion extends BaseEntity {
         this.isSystemReserved = isSystemReserved;
         this.matchingStrategy = matchingStrategy;
         this.matchingWeight = matchingWeight;
+        this.reservedKey = reservedKey;
+    }
+
+    // 표준 질문을 다른 폼(RANDOM_TABLE 종류 폼)으로 복사한다.
+    public FormQuestion copyTo(Form target, int displayOrder) {
+        return new FormQuestion(target, questionKey, type, label, placeholder, required, displayOrder,
+                options, validation, isMatchingField, isSystemReserved, matchingStrategy, matchingWeight, reservedKey);
+    }
+
+    // 표준 질문 수정: 라벨·선택지와 순서만 바꾼다.
+    public void updateContent(String label, Map<String, Object> options, int displayOrder) {
+        this.label = label;
+        this.options = options;
+        this.displayOrder = displayOrder;
     }
 
     public void update(String questionKey, QuestionType type, String label, String placeholder,

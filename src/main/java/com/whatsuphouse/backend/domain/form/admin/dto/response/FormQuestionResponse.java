@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.form.admin.dto.response;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.MatchingStrategy;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -27,6 +28,8 @@ public class FormQuestionResponse {
     private boolean systemReserved;
     private MatchingStrategy matchingStrategy;
     private BigDecimal matchingWeight;
+    // 우연한 식탁 표준 질문 키(enum 이름). 일반 질문은 null. (KAN-341)
+    private ReservedQuestionKey reservedKey;
 
     public static FormQuestionResponse from(FormQuestion question) {
         return FormQuestionResponse.builder()
@@ -43,6 +46,7 @@ public class FormQuestionResponse {
                 .systemReserved(question.isSystemReserved())
                 .matchingStrategy(question.getMatchingStrategy())
                 .matchingWeight(question.getMatchingWeight())
+                .reservedKey(question.getReservedKey())
                 .build();
     }
 }

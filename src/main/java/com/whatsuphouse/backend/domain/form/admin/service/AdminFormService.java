@@ -76,11 +76,22 @@ public class AdminFormService {
 
     @Transactional
     public FormQuestionResponse updateQuestion(UUID questionId, FormQuestionUpdateRequest request) {
-        validate(request.getType(), request.getOptions(), request.isMatchingField(), request.getMatchingStrategy());
-
         FormQuestion question = formQuestionRepository.findById(questionId)
                 .filter(q -> q.getDeletedAt() == null)
                 .orElseThrow(() -> new CustomException(ErrorCode.QUESTION_NOT_FOUND));
+
+        // 우연한 식탁 표준 질문은 매칭이 키·타입에 의존하므로 라벨·선택지(와 순서)만 바꾼다.
+        // 나머지 값(필수 여부·매칭 설정 등)은 요청과 무관하게 유지한다. (KAN-341)
+        if (question.getReservedKey() != null) {
+            if (question.getType() != request.getType() || !question.getQuestionKey().equals(request.getQuestionKey())) {
+                throw new CustomException(ErrorCode.RESERVED_QUESTION_LOCKED);
+            }
+            validate(question.getType(), request.getOptions(), false, null);
+            question.updateContent(request.getLabel(), request.getOptions(), request.getDisplayOrder());
+            return FormQuestionResponse.from(question);
+        }
+
+        validate(request.getType(), request.getOptions(), request.isMatchingField(), request.getMatchingStrategy());
 
         // 시스템 예약 질문(이름/연락처)은 question_key를 바꿀 수 없다 (라벨/순서 등은 허용)
         if (question.isSystemReserved() && !question.getQuestionKey().equals(request.getQuestionKey())) {
@@ -112,6 +123,9 @@ public class AdminFormService {
         // 시스템 예약 질문(이름/연락처)은 삭제할 수 없다
         if (question.isSystemReserved()) {
             throw new CustomException(ErrorCode.RESERVED_QUESTION_READONLY);
+        }
+        if (question.getReservedKey() != null) {
+            throw new CustomException(ErrorCode.RESERVED_QUESTION_LOCKED);
         }
         question.softDelete();
     }
