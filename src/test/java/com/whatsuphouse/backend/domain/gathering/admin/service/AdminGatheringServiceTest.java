@@ -338,6 +338,44 @@ class AdminGatheringServiceTest {
     }
 
     @Test
+    @DisplayName("상세 사진 — temp 경로만 move()하고 공개 URL은 그대로, 요청 순서대로 저장")
+    void createGathering_withImageUrls_movesOnlyTempPathsKeepingOrder() {
+        // given
+        String tempPath = "temp/gathering/detail-1.jpg";
+        String movedUrl = "https://storage.example.com/gathering/detail-1.jpg";
+        String publicUrl = "https://example.com/detail-2.jpg";
+        given(storageService.move(tempPath, "gathering")).willReturn(movedUrl);
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        GatheringCreateRequest request = GatheringCreateRequest.builder()
+                .title("재즈 게더링").imageUrls(List.of(tempPath, publicUrl)).build();
+
+        // when
+        GatheringDetailResponse response = adminGatheringService.createGathering(request);
+
+        // then
+        assertThat(response.getImageUrls()).containsExactly(movedUrl, publicUrl);
+        then(storageService).should().move(tempPath, "gathering");
+        then(storageService).should(never()).move(eq(publicUrl), any());
+    }
+
+    @Test
+    @DisplayName("상세 사진 수정 — 생략(null)이면 기존 유지, 빈 배열이면 모두 삭제")
+    void updateGathering_imageUrls_nullKeepsEmptyClears() {
+        // given
+        Gathering withImages = Gathering.builder()
+                .title("재즈 게더링").imageUrls(List.of("https://example.com/detail-1.jpg")).build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(withImages));
+
+        // when & then
+        adminGatheringService.updateGathering(gatheringId, buildUpdateRequest(null));
+        assertThat(withImages.getImageUrls()).containsExactly("https://example.com/detail-1.jpg");
+
+        adminGatheringService.updateGathering(gatheringId,
+                GatheringUpdateRequest.builder().title("재즈 게더링").imageUrls(List.of()).build());
+        assertThat(withImages.getImageUrls()).isEmpty();
+    }
+
+    @Test
     @DisplayName("종류 수정은 종류 ID만 받는다 — 없는 종류면 GATHERING_NOT_FOUND")
     void updateGathering_gatheringNotFound_throwsException() {
         // given
