@@ -52,6 +52,11 @@ public class Gathering extends BaseEntity {
     @Column(name = "thumbnail_url", length = 500)
     private String thumbnailUrl;
 
+    // 상세 슬라이더용 사진(썸네일 다음에 노출). 배열 순서 = 노출 순서. (KAN-371)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "image_urls", nullable = false, columnDefinition = "jsonb")
+    private List<String> imageUrls = List.of();
+
     @Column(name = "is_curated", nullable = false)
     private boolean isCurated = false;
 
@@ -60,13 +65,15 @@ public class Gathering extends BaseEntity {
 
     @Builder
     public Gathering(String title, String description, Integer basePrice, String thumbnailUrl,
-                     GatheringType gatheringType, List<String> howToRun, List<String> tags) {
+                     GatheringType gatheringType, List<String> howToRun, List<String> tags,
+                     List<String> imageUrls) {
         this.title = title;
         this.description = description;
         this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
         this.tags = tags != null ? List.copyOf(tags) : List.of();
         this.basePrice = basePrice;
         this.thumbnailUrl = thumbnailUrl;
+        this.imageUrls = imageUrls != null ? List.copyOf(imageUrls) : List.of();
         this.gatheringType = gatheringType != null ? gatheringType : GatheringType.REGULAR;
     }
 
@@ -78,13 +85,14 @@ public class Gathering extends BaseEntity {
         this.curatedRank = rank;
     }
 
-    public void update(String title, String description, String thumbnailUrl,
+    public void update(String title, String description, String thumbnailUrl, List<String> imageUrls,
                        List<String> howToRun, List<String> tags, Integer basePrice) {
         this.title = title;
         this.description = description;
         this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
         this.tags = tags != null ? List.copyOf(tags) : List.of();
         this.thumbnailUrl = thumbnailUrl;
+        this.imageUrls = imageUrls != null ? List.copyOf(imageUrls) : List.of();
         this.basePrice = basePrice;
     }
 }
