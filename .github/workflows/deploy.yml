@@ -106,6 +106,7 @@ jobs:
             "VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}" \
             "VAPID_PRIVATE_KEY=${{ secrets.VAPID_PRIVATE_KEY }}" \
             "VAPID_SUBJECT=${{ secrets.VAPID_SUBJECT }}" \
+            "DINING_SYSTEM_ADMIN_ID=${{ secrets.DINING_SYSTEM_ADMIN_ID }}" \
             | ssh ec2-user@${{ secrets.EC2_HOST }} "cat > ~/whatsup/.env"
 
       - name: Copy docker-compose
