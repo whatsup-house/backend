@@ -56,6 +56,7 @@ public enum ErrorCode {
     INVALID_QUESTION("해당 폼에 속하지 않는 질문입니다.", HttpStatus.BAD_REQUEST),
     INVALID_MBTI("유효하지 않은 MBTI 값입니다.", HttpStatus.BAD_REQUEST),
     INVALID_JOB("유효하지 않은 직업 코드입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_BIRTH_YEAR("출생연도는 1900년부터 올해까지의 연도(예: 1995)로 입력해 주세요.", HttpStatus.BAD_REQUEST),
 
     // Matching
     MATCHING_NOT_ALLOWED("우연한 식탁(RANDOM_TABLE) 게더링만 자동매칭할 수 있습니다.", HttpStatus.BAD_REQUEST),

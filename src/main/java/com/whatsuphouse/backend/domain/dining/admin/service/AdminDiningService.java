@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.dining.admin.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
@@ -11,6 +12,8 @@ import com.whatsuphouse.backend.domain.dining.entity.Venue;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
+import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
@@ -24,8 +27,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Year;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,11 +46,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminDiningService {
 
-    // TODO(KAN-341): 표준 폼 reserved_key(BIRTH_YEAR/GENDER/MBTI) 도입 후 question_key 대신 reserved_key로 읽는다.
-    private static final String AGE_QUESTION_KEY = "age";
+    // 성별·MBTI는 질문 키로 읽는다(표준 질문 GENDER·MBTI의 질문 키와 같다). 나이는 표준 질문 출생연도(BIRTH_YEAR)로 계산한다. (KAN-388)
     private static final String GENDER_QUESTION_KEY = "gender";
     private static final String MBTI_QUESTION_KEY = "mbti";
-    private static final Set<String> PROFILE_QUESTION_KEYS = Set.of(AGE_QUESTION_KEY, GENDER_QUESTION_KEY, MBTI_QUESTION_KEY);
+    private static final Set<String> PROFILE_QUESTION_KEYS = Set.of(GENDER_QUESTION_KEY, MBTI_QUESTION_KEY);
+    private static final int MIN_BIRTH_YEAR = 1900;
 
     private static final Set<MatchStatus> WAITING_MATCH_STATUSES = Set.of(MatchStatus.WAITING, MatchStatus.REALLOCATING);
     private static final Set<ApplicationStatus> CLOSED_APPLICATION_STATUSES =
@@ -104,8 +109,18 @@ public class AdminDiningService {
         gatheringService.findRandomTableSession(sessionId);
         List<Application> applications = adminApplicationService.listSessionApplications(sessionId);
         List<UUID> applicationIds = applications.stream().map(Application::getId).toList();
-        Map<UUID, Map<String, Object>> answers =
-                adminApplicationService.findAnswerValues(applicationIds, PROFILE_QUESTION_KEYS);
+        Map<UUID, Map<String, Object>> answers = new HashMap<>();
+        Map<UUID, Object> birthYears = new HashMap<>();
+        for (ApplicationAnswer answer : adminApplicationService.findAnswers(applicationIds)) {
+            UUID applicationId = answer.getApplication().getId();
+            FormQuestion question = answer.getQuestion();
+            Object value = answer.getValue() != null ? answer.getValue().get("value") : null;
+            if (question.getReservedKey() == ReservedQuestionKey.BIRTH_YEAR) {
+                birthYears.put(applicationId, value);
+            } else if (PROFILE_QUESTION_KEYS.contains(question.getQuestionKey())) {
+                answers.computeIfAbsent(applicationId, id -> new HashMap<>()).put(question.getQuestionKey(), value);
+            }
+        }
         Map<UUID, List<ApplicationCandidateSession>> candidates =
                 adminApplicationService.findCandidateSessions(applicationIds);
         Map<UUID, Long> participation = adminApplicationService.countRandomTableAttendance(applications.stream()
@@ -116,8 +131,9 @@ public class AdminDiningService {
                 .map(application -> {
                     Map<String, Object> answer = answers.getOrDefault(application.getId(), Map.of());
                     UUID userId = application.getUser() != null ? application.getUser().getId() : null;
+                    Integer age = age(birthYears.get(application.getId()), application.getUser());
                     return DiningApplicantResponse.of(application,
-                            text(answer.get(AGE_QUESTION_KEY)),
+                            age != null ? age.toString() : null,
                             text(answer.get(GENDER_QUESTION_KEY)),
                             text(answer.get(MBTI_QUESTION_KEY)),
                             candidates.getOrDefault(application.getId(), List.of()),
@@ -212,5 +228,35 @@ public class AdminDiningService {
 
     private static String text(Object value) {
         return value != null ? value.toString() : null;
+    }
+
+    // 출생연도 답으로 계산한 나이. 답이 없거나 연도로 읽을 수 없으면 회원 나이(User.getCurrentAge, 만 나이).
+    // 회원 생년월일의 연도와 같으면 생일까지 반영한 회원 만 나이를 쓴다.
+    // ponytail: 그 밖엔 생일을 몰라 올해 생일이 지난 것으로 본다(만 나이보다 최대 1살 많음). 정확히 하려면 생년월일 질문으로.
+    private static Integer age(Object birthYearAnswer, User user) {
+        Integer memberAge = user != null ? user.getCurrentAge() : null;
+        Integer birthYear = parseYear(birthYearAnswer);
+        int thisYear = Year.now().getValue();
+        if (birthYear == null || birthYear < MIN_BIRTH_YEAR || birthYear > thisYear) {
+            return memberAge;
+        }
+        if (user != null && user.getBirthDate() != null && user.getBirthDate().getYear() == birthYear) {
+            return memberAge;
+        }
+        return thisYear - birthYear;
+    }
+
+    private static Integer parseYear(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.toString().trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }
