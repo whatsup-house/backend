@@ -385,7 +385,7 @@ class ReviewServiceTest {
         given(reviewImageRepository.findByReviewIdInAndDeletedAtIsNullOrderByDisplayOrderAsc(List.of(review.getId())))
                 .willReturn(List.of());
 
-        ReviewPageResponse response = reviewService.getReviews(ReviewSort.LATEST, 0, 10);
+        ReviewPageResponse response = reviewService.getReviews(null, ReviewSort.LATEST, 0, 10);
 
         assertThat(response.getContent()).hasSize(1);
         assertThat(response.getContent().get(0).getReviewContent()).isEqualTo("전체 최신 리뷰입니다.");
@@ -402,10 +402,42 @@ class ReviewServiceTest {
         given(reviewImageRepository.findByReviewIdInAndDeletedAtIsNullOrderByDisplayOrderAsc(List.of(review.getId())))
                 .willReturn(List.of());
 
-        ReviewPageResponse response = reviewService.getReviews(ReviewSort.LIKES, 0, 10);
+        ReviewPageResponse response = reviewService.getReviews(null, ReviewSort.LIKES, 0, 10);
 
         assertThat(response.getContent()).hasSize(1);
         assertThat(response.getContent().get(0).getReviewContent()).isEqualTo("전체 추천순 리뷰입니다.");
+    }
+
+    @Test
+    @DisplayName("전체 리뷰 목록에 gatheringId를 지정하면 해당 게더링 리뷰 그룹만 조회")
+    void getReviews_withGatheringId_filtersByReviewGroup() {
+        UUID gatheringId = gathering.getId();
+        Review review = buildReview(UUID.randomUUID(), "필터된 리뷰입니다.");
+
+        given(gatheringService.findGathering(gatheringId)).willReturn(gathering);
+        given(reviewRepository.findByGatheringReviewGroupAndDeletedAtIsNull(
+                eq(gathering.getTitle()), eq(gathering.getGatheringType()), any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of(review)));
+        given(reviewImageRepository.findByReviewIdInAndDeletedAtIsNullOrderByDisplayOrderAsc(List.of(review.getId())))
+                .willReturn(List.of());
+
+        ReviewPageResponse response = reviewService.getReviews(gatheringId, ReviewSort.LATEST, 0, 10);
+
+        assertThat(response.getContent()).hasSize(1);
+        assertThat(response.getContent().get(0).getReviewContent()).isEqualTo("필터된 리뷰입니다.");
+        verify(reviewRepository, never()).findByDeletedAtIsNull(any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("전체 리뷰 목록에 존재하지 않는 gatheringId를 지정하면 예외 발생")
+    void getReviews_withUnknownGatheringId_throwsException() {
+        UUID gatheringId = UUID.randomUUID();
+        given(gatheringService.findGathering(gatheringId)).willThrow(new CustomException(ErrorCode.GATHERING_NOT_FOUND));
+
+        assertThatThrownBy(() -> reviewService.getReviews(gatheringId, ReviewSort.LATEST, 0, 10))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_NOT_FOUND);
+        verify(reviewRepository, never()).findByDeletedAtIsNull(any(Pageable.class));
     }
 
     @Test
