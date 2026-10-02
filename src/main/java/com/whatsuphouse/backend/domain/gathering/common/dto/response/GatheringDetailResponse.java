@@ -32,6 +32,10 @@ public class GatheringDetailResponse {
     @Schema(description = "썸네일 URL", example = "https://cdn.example.com/gathering/thumb.jpg")
     private String thumbnailUrl;
 
+    @Schema(description = "상세 사진 URL 목록 (순서 = 노출 순서, 없으면 []). 상세 슬라이더는 썸네일 + 이 목록",
+            example = "[\"https://cdn.example.com/gathering/detail-1.jpg\"]")
+    private List<String> imageUrls;
+
     @Schema(description = "REGULAR(일반) / RANDOM_TABLE(우연한 식탁)", example = "REGULAR")
     private GatheringType gatheringType;
 
@@ -50,6 +54,7 @@ public class GatheringDetailResponse {
                 .howToRun(gathering.getHowToRun())
                 .tags(gathering.getTags())
                 .thumbnailUrl(gathering.getThumbnailUrl())
+                .imageUrls(gathering.getImageUrls())
                 .gatheringType(gathering.getGatheringType())
                 .basePrice(gathering.getBasePrice())
                 .sessions(sessions)

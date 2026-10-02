@@ -139,6 +139,7 @@ public class AdminGatheringService {
                 .tags(request.getTags())
                 .basePrice(request.getBasePrice())
                 .thumbnailUrl(thumbnailUrl)
+                .imageUrls(resolveImageUrls(request.getImageUrls(), List.of()))
                 .gatheringType(request.getGatheringType())
                 .build());
         // 신청폼 + 시스템 예약 질문(이름/연락처) 자동 생성
@@ -153,7 +154,8 @@ public class AdminGatheringService {
     public GatheringDetailResponse updateGathering(UUID id, GatheringUpdateRequest request) {
         Gathering gathering = findGathering(id);
         String thumbnailUrl = resolveThumbnailUrl(request.getThumbnailUrl(), gathering.getThumbnailUrl());
-        gathering.update(request.getTitle(), request.getDescription(), thumbnailUrl,
+        List<String> imageUrls = resolveImageUrls(request.getImageUrls(), gathering.getImageUrls());
+        gathering.update(request.getTitle(), request.getDescription(), thumbnailUrl, imageUrls,
                 request.getHowToRun(), request.getTags(), request.getBasePrice());
         // 변경된 ko 원문 재번역 (원문 미변경 필드는 해시 비교로 자동 스킵) (KAN-267)
         publishTranslation(gathering);
@@ -285,6 +287,14 @@ public class AdminGatheringService {
             return storageService.move(requestedThumbnailUrl, "gathering");
         }
         return requestedThumbnailUrl;
+    }
+
+    // 상세 사진 목록. 생략(null)=기존 유지, 빈 배열=모두 삭제. 항목마다 썸네일과 같은 규칙(temp/만 move). (KAN-371)
+    private List<String> resolveImageUrls(List<String> requestedImageUrls, List<String> currentImageUrls) {
+        if (requestedImageUrls == null) {
+            return currentImageUrls;
+        }
+        return requestedImageUrls.stream().map(url -> resolveThumbnailUrl(url, null)).toList();
     }
 
     // 게더링의 번역 대상 ko 필드(title/description)를 자동 번역 이벤트로 발행한다. (KAN-267)

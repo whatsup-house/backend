@@ -156,9 +156,23 @@ public class ReviewService {
         return toReviewPageResponse(reviewPage, pageable);
     }
 
-    public ReviewPageResponse getReviews(ReviewSort sort, int page, int size) {
+    // gatheringId가 있으면 게더링 상세 후기와 같은 리뷰 그룹(제목+유형)만 조회한다. (KAN-374)
+    // photoOnly면 PHOTO 타입만 조회한다. PHOTO는 이미지 1장 이상일 때만 붙으므로 이미지 조인이 필요 없다. (KAN-375)
+    public ReviewPageResponse getReviews(UUID gatheringId, boolean photoOnly, ReviewSort sort, int page, int size) {
+        if (gatheringId != null && !photoOnly) {
+            return getGatheringReviews(gatheringId, sort, page, size);
+        }
         Pageable pageable = PageRequest.of(page, size, toSort(sort));
-        Page<Review> reviewPage = reviewRepository.findByDeletedAtIsNull(pageable);
+        Page<Review> reviewPage;
+        if (gatheringId != null) {
+            Gathering gathering = gatheringService.findGathering(gatheringId);
+            reviewPage = reviewRepository.findByGatheringReviewGroupAndReviewTypeAndDeletedAtIsNull(
+                    gathering.getTitle(), gathering.getGatheringType(), ReviewType.PHOTO, pageable);
+        } else if (photoOnly) {
+            reviewPage = reviewRepository.findByReviewTypeAndDeletedAtIsNull(ReviewType.PHOTO, pageable);
+        } else {
+            reviewPage = reviewRepository.findByDeletedAtIsNull(pageable);
+        }
         return toReviewPageResponse(reviewPage, pageable);
     }
 

@@ -10,6 +10,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -65,6 +66,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .badRequest()
                 .body(ApiResult.fail("VALIDATION_ERROR", message));
+    }
+
+    // 쿼리/경로 파라미터 타입 변환 실패(photoOnly=abc 등). 없으면 아래 Exception 핸들러가 500으로 바꾼다. (KAN-375)
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResult<Void>> handleTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        log.warn("[TypeMismatchException] {} = {}", e.getName(), e.getValue());
+        return ResponseEntity
+                .badRequest()
+                .body(ApiResult.fail("INVALID_REQUEST_PARAMETER", "요청 파라미터가 올바르지 않습니다."));
     }
 
     @ExceptionHandler(Exception.class)

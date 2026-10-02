@@ -72,17 +72,22 @@ public class ReviewController {
                 reviewService.deleteReview(reviewId, principal.getUserId())));
     }
 
-    @Operation(summary = "전체 리뷰 목록 조회", description = "전체 리뷰를 최신순 또는 추천순으로 조회합니다.")
+    @Operation(summary = "전체 리뷰 목록 조회", description = "전체 리뷰를 최신순 또는 추천순으로 조회합니다. gatheringId를 지정하면 해당 게더링 종류의 리뷰만, photoOnly=true면 포토 리뷰만 조회합니다.")
     @GetMapping("/api/reviews")
     public ResponseEntity<ApiResult<ReviewPageResponse>> getReviews(
             @Parameter(description = "정렬 기준", example = "LIKES")
             @RequestParam(defaultValue = "LIKES") ReviewSort sort,
+            @Parameter(description = "게더링 ID (지정 시 해당 게더링 종류의 리뷰만 조회)")
+            @RequestParam(required = false) UUID gatheringId,
+            @Parameter(description = "포토 리뷰만 조회 여부", example = "false")
+            @RequestParam(defaultValue = "false") boolean photoOnly,
             @Parameter(description = "페이지 번호 (0부터 시작)", example = "0")
             @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "페이지 크기", example = "10")
             @RequestParam(defaultValue = "10") int size
     ) {
-        return ResponseEntity.ok(ApiResult.success(reviewService.getReviews(sort, page, size)));
+        return ResponseEntity.ok(ApiResult.success(
+                reviewService.getReviews(gatheringId, photoOnly, sort, page, size)));
     }
 
     @Operation(summary = "내 리뷰 목록 조회", description = "로그인한 회원이 작성한 리뷰를 최신순 또는 추천순으로 조회합니다.")
