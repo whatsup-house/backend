@@ -15,6 +15,7 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationCandida
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.auth.event.GuestEmailVerificationConsumedEvent;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.form.enums.SystemQuestionKey;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
@@ -45,6 +46,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Year;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,6 +78,8 @@ public class ApplicationService {
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int MIN_BIRTH_YEAR = 1900;
+    private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
     private static final java.util.regex.Pattern EMAIL_PATTERN =
             java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
@@ -279,6 +284,14 @@ public class ApplicationService {
             }
         }
 
+        // 출생연도는 1900~올해(한국 시간) 정수 연도만 받는다. 라벨이 '나이'라 옛 클라이언트가 나이(29)를 보내는 걸 막는다. (KAN-388)
+        for (AnswerItem answer : answers) {
+            if (questionMap.get(answer.getQuestionId()).getReservedKey() == ReservedQuestionKey.BIRTH_YEAR
+                    && !isValidBirthYear(answer.getValue())) {
+                throw new CustomException(ErrorCode.INVALID_BIRTH_YEAR);
+            }
+        }
+
         for (FormQuestion q : questions) {
             if (skipReservedRequired && q.isSystemReserved()) {
                 continue;
@@ -287,6 +300,21 @@ public class ApplicationService {
                 throw new CustomException(ErrorCode.REQUIRED_ANSWER_MISSING);
             }
         }
+    }
+
+    // 매칭 엔진의 출생연도 읽기(DiningMatchService.year: 숫자 또는 숫자 문자열)와 같은 규칙. 소수는 정수 연도가 아니라 거부한다.
+    private static boolean isValidBirthYear(Object value) {
+        Integer year = null;
+        if (value instanceof Number number) {
+            year = number.doubleValue() == number.intValue() ? number.intValue() : null;
+        } else if (value instanceof String text) {
+            try {
+                year = Integer.parseInt(text.trim());
+            } catch (NumberFormatException ignored) {
+                // 숫자 문자열이 아니면 거부
+            }
+        }
+        return year != null && year >= MIN_BIRTH_YEAR && year <= Year.now(KOREA).getValue();
     }
 
     private Map<String, Object> buildAnswersByKey(List<AnswerItem> answers, Map<UUID, FormQuestion> questionMap) {

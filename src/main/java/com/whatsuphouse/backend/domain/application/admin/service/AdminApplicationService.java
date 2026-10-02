@@ -34,7 +34,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -255,20 +254,6 @@ public class AdminApplicationService {
     /** 회차 신청자: 이 회차에 배정됐거나, 배정 전이고 이 회차를 희망 회차로 고른 활성 신청. 최신 신청 우선. */
     public List<Application> listSessionApplications(UUID sessionId) {
         return applicationRepository.findApplications(sessionId, null);
-    }
-
-    /** 신청별 답변 값(question_key → value). questionKeys에 든 질문만 담는다. */
-    public Map<UUID, Map<String, Object>> findAnswerValues(Collection<UUID> applicationIds, Collection<String> questionKeys) {
-        if (applicationIds.isEmpty()) {
-            return Map.of();
-        }
-        Map<UUID, Map<String, Object>> result = new HashMap<>();
-        applicationAnswerRepository.findByApplicationIds(List.copyOf(applicationIds)).stream()
-                .filter(answer -> questionKeys.contains(answer.getQuestion().getQuestionKey()))
-                .forEach(answer -> result.computeIfAbsent(answer.getApplication().getId(), id -> new HashMap<>())
-                        .put(answer.getQuestion().getQuestionKey(),
-                                answer.getValue() != null ? answer.getValue().get("value") : null));
-        return result;
     }
 
     /** 신청별 답변(질문 fetch). 매칭 엔진이 reserved_key·매칭 설정으로 분류해 쓴다. */

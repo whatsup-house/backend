@@ -2,10 +2,15 @@ package com.whatsuphouse.backend.domain.dining.admin.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningApplicantResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningDashboardResponse;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
+import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
+import com.whatsuphouse.backend.domain.form.enums.QuestionType;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
@@ -13,6 +18,7 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.service.MatchExclusionProvider;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
+import com.whatsuphouse.backend.domain.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.Year;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -66,9 +73,13 @@ class AdminDiningServiceTest {
     }
 
     private Application application() {
+        return application(null);
+    }
+
+    private Application application(User user) {
         Application application = Application.builder()
                 .bookingNumber("WH261001-" + UUID.randomUUID().toString().substring(0, 6))
-                .gathering(gathering).name("홍길동").phone("01012345678").build();
+                .gathering(gathering).user(user).name("홍길동").phone("01012345678").build();
         ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
         return application;
     }
@@ -120,5 +131,46 @@ class AdminDiningServiceTest {
         assertThat(secondCard.getTableCount()).isZero();
         assertThat(secondCard.getIsMatchRunDone()).isFalse();
         assertThat(secondCard.getOpenExceptionCount()).isEqualTo(3);
+    }
+
+    private User member(Integer age, LocalDate birthDate) {
+        User user = User.builder().email(UUID.randomUUID() + "@test.com").name("회원").age(age).birthDate(birthDate).build();
+        ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
+        return user;
+    }
+
+    private ApplicationAnswer answer(Application application, String questionKey, ReservedQuestionKey reservedKey, Object value) {
+        FormQuestion question = FormQuestion.builder()
+                .questionKey(questionKey).type(QuestionType.NUMBER).label(questionKey).reservedKey(reservedKey).build();
+        return ApplicationAnswer.builder().application(application).question(question).value(Map.of("value", value)).build();
+    }
+
+    @Test
+    @DisplayName("신청자 표 나이는 출생연도(BIRTH_YEAR) 답으로 계산하고, 없거나 잘못된 값이면 회원 나이로 대신한다")
+    void listApplicants_ageFromBirthYear() {
+        GatheringSession session = session(3);
+        int thisYear = Year.now().getValue();
+        Application fromYear = application(member(20, null));                              // 출생연도 1995 → 올해 - 1995
+        User sameYearMember = member(null, LocalDate.of(1995, 12, 31));
+        Application sameYear = application(sameYearMember);                                // 회원 생년월일과 같은 연도 → 회원 만 나이
+        Application noAnswer = application(member(33, null));                              // 출생연도 답 없음(옛 '나이' 답만) → 회원 나이
+        Application badAnswer = application(member(41, null));                             // 연도로 못 읽는 값 → 회원 나이
+
+        given(adminApplicationService.listSessionApplications(session.getId()))
+                .willReturn(List.of(fromYear, sameYear, noAnswer, badAnswer));
+        given(adminApplicationService.findAnswers(List.of(fromYear.getId(), sameYear.getId(), noAnswer.getId(), badAnswer.getId())))
+                .willReturn(List.of(
+                        answer(fromYear, "birth_year", ReservedQuestionKey.BIRTH_YEAR, 1995),
+                        answer(sameYear, "birth_year", ReservedQuestionKey.BIRTH_YEAR, "1995"),
+                        answer(noAnswer, "age", null, 25),
+                        answer(badAnswer, "birth_year", ReservedQuestionKey.BIRTH_YEAR, "95년생")));
+
+        List<DiningApplicantResponse> applicants = adminDiningService.listApplicants(session.getId());
+
+        assertThat(applicants).extracting(DiningApplicantResponse::getAge).containsExactly(
+                String.valueOf(thisYear - 1995),
+                String.valueOf(sameYearMember.getCurrentAge()),
+                "33",
+                "41");
     }
 }

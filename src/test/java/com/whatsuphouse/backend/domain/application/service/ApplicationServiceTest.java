@@ -18,6 +18,7 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationReposit
 import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
 import com.whatsuphouse.backend.domain.form.repository.FormRepository;
@@ -49,6 +50,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Year;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -707,5 +710,56 @@ class ApplicationServiceTest {
 
     private void setAnswers(ApplicationRequest req, List<AnswerItem> answers) {
         ReflectionTestUtils.setField(req, "answers", answers);
+    }
+
+    // ── 출생연도 검증 (KAN-388) ────────────────────────────────────────────────
+
+    private FormQuestion birthYearQuestion() {
+        FormQuestion question = question("birth_year", true);
+        ReflectionTestUtils.setField(question, "type", QuestionType.NUMBER);
+        ReflectionTestUtils.setField(question, "reservedKey", ReservedQuestionKey.BIRTH_YEAR);
+        return question;
+    }
+
+    private void givenOpenSessionWithQuestions(List<FormQuestion> questions) {
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
+        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(questions);
+    }
+
+    @Test
+    @DisplayName("출생연도 답이 1900~올해(한국 시간) 정수 연도가 아니면(나이·소수·문자·빈 값·미래 연도) INVALID_BIRTH_YEAR")
+    void apply_invalidBirthYear_throwsException() {
+        FormQuestion birthYear = birthYearQuestion();
+        givenOpenSessionWithQuestions(List.of(birthYear));
+        int nextYear = Year.now(ZoneId.of("Asia/Seoul")).getValue() + 1;
+
+        for (Object value : List.of(29, "29", 1995.5, "1995년", " ", 1899, nextYear)) {
+            setAnswers(request, List.of(answerItem(birthYear.getId(), value)));
+            assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
+                    .as("value=%s", value)
+                    .isInstanceOf(CustomException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_BIRTH_YEAR);
+        }
+        then(applicationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("출생연도는 숫자와 숫자 문자열(매칭 엔진이 읽는 형태) 모두 받는다")
+    void apply_validBirthYear_numberOrNumericString_succeeds() {
+        FormQuestion birthYear = birthYearQuestion();
+        givenOpenSessionWithQuestions(List.of(birthYear));
+        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        int thisYear = Year.now(ZoneId.of("Asia/Seoul")).getValue();
+
+        for (Object value : List.of(1995, 1995.0, " 1995 ", 1900, String.valueOf(thisYear))) {
+            setAnswers(request, List.of(answerItem(birthYear.getId(), value)));
+            assertThat(applicationService.apply(sessionId, request, userId).getStatus())
+                    .as("value=%s", value)
+                    .isEqualTo(ApplicationStatus.PENDING);
+        }
     }
 }

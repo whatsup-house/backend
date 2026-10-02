@@ -26,7 +26,7 @@ public class DiningApplicantResponse {
     @Schema(description = "이름", example = "홍길동")
     private String name;
 
-    @Schema(description = "나이(신청 답변 원문)", example = "29", nullable = true)
+    @Schema(description = "나이(출생연도 답으로 계산, 없으면 회원 나이)", example = "29", nullable = true)
     private String age;
 
     @Schema(description = "성별(신청 답변 원문)", example = "FEMALE", nullable = true)
