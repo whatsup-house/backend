@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.review.repository;
 
 import com.whatsuphouse.backend.domain.review.entity.Review;
+import com.whatsuphouse.backend.domain.review.enums.ReviewType;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -32,7 +33,22 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     Page<Review> findByGatheringReviewGroupAndDeletedAtIsNull(
             String title, GatheringType gatheringType, Pageable pageable);
 
+    @Query("""
+            select r from Review r
+            where r.deletedAt is null
+              and r.reviewType = :reviewType
+              and r.gathering.title = :title
+              and (
+                    (r.gathering.gatheringType is null and :gatheringType is null)
+                    or r.gathering.gatheringType = :gatheringType
+                  )
+            """)
+    Page<Review> findByGatheringReviewGroupAndReviewTypeAndDeletedAtIsNull(
+            String title, GatheringType gatheringType, ReviewType reviewType, Pageable pageable);
+
     Page<Review> findByDeletedAtIsNull(Pageable pageable);
+
+    Page<Review> findByReviewTypeAndDeletedAtIsNull(ReviewType reviewType, Pageable pageable);
 
     Page<Review> findByUserIdAndDeletedAtIsNull(UUID userId, Pageable pageable);
 

@@ -42,6 +42,16 @@ class ReviewOpenApiTest {
         assertThat(response.getBody()).contains("sort");
         assertThat(response.getBody()).contains("page");
         assertThat(response.getBody()).contains("size");
+        assertThat(response.getBody()).contains("photoOnly");
+    }
+
+    @Test
+    @DisplayName("전체 리뷰 목록 조회에 잘못된 photoOnly 값을 주면 400을 반환한다")
+    void reviewListApi_invalidPhotoOnly_returnsBadRequest() {
+        ResponseEntity<String> response = restTemplate.getForEntity("/api/reviews?photoOnly=abc", String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).contains("INVALID_REQUEST_PARAMETER");
     }
 
     @Test
