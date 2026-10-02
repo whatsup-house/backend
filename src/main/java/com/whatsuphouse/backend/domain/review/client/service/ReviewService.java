@@ -156,7 +156,11 @@ public class ReviewService {
         return toReviewPageResponse(reviewPage, pageable);
     }
 
-    public ReviewPageResponse getReviews(ReviewSort sort, int page, int size) {
+    // gatheringId가 있으면 게더링 상세 후기와 같은 리뷰 그룹(제목+유형)만 조회한다. (KAN-374)
+    public ReviewPageResponse getReviews(UUID gatheringId, ReviewSort sort, int page, int size) {
+        if (gatheringId != null) {
+            return getGatheringReviews(gatheringId, sort, page, size);
+        }
         Pageable pageable = PageRequest.of(page, size, toSort(sort));
         Page<Review> reviewPage = reviewRepository.findByDeletedAtIsNull(pageable);
         return toReviewPageResponse(reviewPage, pageable);
