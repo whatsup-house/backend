@@ -376,6 +376,80 @@ class AdminGatheringServiceTest {
     }
 
     @Test
+    @DisplayName("계좌 정보 — 생성 시 은행·계좌번호·예금주가 저장되고 상세 응답에 내려간다")
+    void createGathering_withAccount_savesAccountFields() {
+        // given
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        GatheringCreateRequest request = GatheringCreateRequest.builder()
+                .title("재즈 게더링").accountBank("카카오뱅크").accountNumber("3333-01-1234567")
+                .accountHolder("와썹하우스").build();
+
+        // when
+        GatheringDetailResponse response = adminGatheringService.createGathering(request);
+
+        // then
+        assertThat(response.getAccountBank()).isEqualTo("카카오뱅크");
+        assertThat(response.getAccountNumber()).isEqualTo("3333-01-1234567");
+        assertThat(response.getAccountHolder()).isEqualTo("와썹하우스");
+    }
+
+    @Test
+    @DisplayName("계좌 정보 — 빈 문자열·공백으로 생성하면 null로 저장")
+    void createGathering_withBlankAccount_savesNull() {
+        // given
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        GatheringCreateRequest request = GatheringCreateRequest.builder()
+                .title("재즈 게더링").accountBank("").accountNumber("   ").accountHolder(null).build();
+
+        // when
+        GatheringDetailResponse response = adminGatheringService.createGathering(request);
+
+        // then
+        assertThat(response.getAccountBank()).isNull();
+        assertThat(response.getAccountNumber()).isNull();
+        assertThat(response.getAccountHolder()).isNull();
+    }
+
+    @Test
+    @DisplayName("계좌 정보 수정 — 요청 값으로 덮어쓰고, 빈 문자열이면 null로 지운다")
+    void updateGathering_account_overwritesAndBlankClears() {
+        // given
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+
+        // when & then
+        adminGatheringService.updateGathering(gatheringId, GatheringUpdateRequest.builder()
+                .title("재즈 게더링").accountBank("국민은행").accountNumber("123-456-789")
+                .accountHolder("홍길동").build());
+        assertThat(gathering.getAccountBank()).isEqualTo("국민은행");
+        assertThat(gathering.getAccountNumber()).isEqualTo("123-456-789");
+        assertThat(gathering.getAccountHolder()).isEqualTo("홍길동");
+
+        adminGatheringService.updateGathering(gatheringId, GatheringUpdateRequest.builder()
+                .title("재즈 게더링").accountBank("").accountNumber(" ").accountHolder("").build());
+        assertThat(gathering.getAccountBank()).isNull();
+        assertThat(gathering.getAccountNumber()).isNull();
+        assertThat(gathering.getAccountHolder()).isNull();
+    }
+
+    @Test
+    @DisplayName("계좌 정보 — 앞뒤 공백은 잘라서 저장")
+    void createGathering_withPaddedAccount_trims() {
+        // given
+        given(gatheringRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        GatheringCreateRequest request = GatheringCreateRequest.builder()
+                .title("재즈 게더링").accountBank("  카카오뱅크  ").accountNumber(" 3333-01-1234567 ")
+                .accountHolder("\t와썹하우스\n").build();
+
+        // when
+        GatheringDetailResponse response = adminGatheringService.createGathering(request);
+
+        // then
+        assertThat(response.getAccountBank()).isEqualTo("카카오뱅크");
+        assertThat(response.getAccountNumber()).isEqualTo("3333-01-1234567");
+        assertThat(response.getAccountHolder()).isEqualTo("와썹하우스");
+    }
+
+    @Test
     @DisplayName("종류 수정은 종류 ID만 받는다 — 없는 종류면 GATHERING_NOT_FOUND")
     void updateGathering_gatheringNotFound_throwsException() {
         // given

@@ -42,6 +42,15 @@ public class GatheringDetailResponse {
     @Schema(description = "기본 가격. 회차 가격 오버라이드가 없을 때 쓴다", example = "15000")
     private Integer basePrice;
 
+    @Schema(description = "입금 은행 (없으면 null)", example = "카카오뱅크")
+    private String accountBank;
+
+    @Schema(description = "입금 계좌번호 (없으면 null)", example = "3333-01-1234567")
+    private String accountNumber;
+
+    @Schema(description = "예금주 (없으면 null)", example = "와썹하우스")
+    private String accountHolder;
+
     @Schema(description = "회차 목록 (날짜·시작 시간 순)")
     private List<GatheringSessionResponse> sessions;
 
@@ -57,6 +66,9 @@ public class GatheringDetailResponse {
                 .imageUrls(gathering.getImageUrls())
                 .gatheringType(gathering.getGatheringType())
                 .basePrice(gathering.getBasePrice())
+                .accountBank(gathering.getAccountBank())
+                .accountNumber(gathering.getAccountNumber())
+                .accountHolder(gathering.getAccountHolder())
                 .sessions(sessions)
                 .build();
     }
