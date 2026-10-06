@@ -186,6 +186,17 @@ public class DiningAttendanceService {
                         AttendanceRepository.MemberStatusProjection::getStatus));
     }
 
+    /** 회원별 우연한 식탁 참가 횟수(참석 ATTENDED 건수). 참석이 없는 회원은 결과에 없다. (KAN-392) */
+    @Transactional(readOnly = true)
+    public Map<UUID, Long> countAttendedByUserIds(Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return attendanceRepository.countByUserIdsAndStatus(userIds, AttendanceStatus.ATTENDED).stream()
+                .collect(Collectors.toMap(AttendanceRepository.UserCountProjection::getUserId,
+                        AttendanceRepository.UserCountProjection::getCount));
+    }
+
     // ── 회차 종료 처리 ───────────────────────────────────────────────────────
 
     /**

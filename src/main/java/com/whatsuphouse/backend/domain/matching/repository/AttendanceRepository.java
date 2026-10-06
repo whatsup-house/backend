@@ -23,6 +23,11 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
         AttendanceStatus getStatus();
     }
 
+    interface UserCountProjection {
+        UUID getUserId();
+        Long getCount();
+    }
+
     interface AttendeeLocationProjection {
         UUID getUserId();
         UUID getLocationId();
@@ -42,4 +47,18 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
             """)
     List<AttendeeLocationProjection> findAttendeeLocationsSince(@Param("status") AttendanceStatus status,
                                                                @Param("since") LocalDate since);
+
+    // 회원별 status 참석 건수(우연한 식탁 참가 횟수). 참석이 없는 회원은 결과에 없다. (KAN-392)
+    // 테이블에서 제거된 멤버(removed_at)도 제외하지 않는다: 제거는 신청 취소·운영 조정으로 회차 전에 일어나고
+    // 운영 조정은 참석 행을 지우므로(releaseSeat), ATTENDED가 기록된 뒤 제거되는 경우는 사실상 없다.
+    // 삭제(soft delete)된 신청의 참석은 세지 않는다 — 이전 applications 기준 집계와 같은 범위.
+    @Query("""
+            select u.id as userId, count(a) as count
+            from Attendance a, DiningTableMember m join m.application ap join ap.user u
+            where a.tableMemberId = m.id and a.status = :status and u.id in :userIds
+              and ap.deletedAt is null
+            group by u.id
+            """)
+    List<UserCountProjection> countByUserIdsAndStatus(@Param("userIds") Collection<UUID> userIds,
+                                                      @Param("status") AttendanceStatus status);
 }

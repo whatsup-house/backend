@@ -83,6 +83,10 @@ dining:
   system-admin-id: ${DINING_SYSTEM_ADMIN_ID:}
   resolution-respond-hours: 48
 
+# 피드 영상 URL 허용 접두사 (KAN-380). 비어 있으면 https URL 이면 허용한다.
+feed:
+  video-base-url: ${R2_PUBLIC_BASE_URL:}
+
 # 채팅 본문 AES-256-GCM 키(base64 32바이트). 운영 필수 — 없으면 기동 실패가 의도된 동작.
 # 생성: openssl rand -base64 32 / 키를 바꾸면 기존 메시지는 복호화되지 않는다(키 로테이션 미지원).
 chat:

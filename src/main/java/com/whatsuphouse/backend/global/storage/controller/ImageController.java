@@ -26,7 +26,7 @@ public class ImageController {
     public ResponseEntity<ApiResult<ImageUploadResponse>> upload(
             @Parameter(description = "업로드할 이미지 파일 (jpg, jpeg, png, webp)")
             @RequestParam("file") MultipartFile file,
-            @Parameter(description = "저장 폴더 (carousel, gathering, review, avatar)")
+            @Parameter(description = "저장 폴더 (carousel, gathering, review, avatar, feed)")
             @RequestParam("folder") String folder
     ) {
         String tempPath = storageService.upload(file, folder);

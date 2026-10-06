@@ -55,7 +55,8 @@ public class SecurityConfig {
         "/api/home/reviews",
         "/api/reviews",
         "/api/reviews/locate",
-        "/api/jobs"
+        "/api/jobs",
+        "/api/feed"
     };
 
     @Bean

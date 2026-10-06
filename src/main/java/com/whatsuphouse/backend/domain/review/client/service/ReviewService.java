@@ -217,6 +217,11 @@ public class ReviewService {
                 .toList();
     }
 
+    // 공개 피드용 포토후기 keyset 조회. (at, id) 보다 오래된 것을 최신순으로 limit 개. (KAN-380)
+    public List<Review> listPhotoReviewsBefore(LocalDateTime at, UUID id, int limit) {
+        return reviewRepository.findByReviewTypeBefore(ReviewType.PHOTO, at, id, PageRequest.of(0, limit));
+    }
+
     private ReviewPageResponse toReviewPageResponse(Page<Review> reviewPage, Pageable pageable) {
         Map<UUID, List<ReviewImage>> imageMap = findImageMap(reviewPage.getContent());
 
@@ -334,7 +339,8 @@ public class ReviewService {
                 && left.getGatheringType() == right.getGatheringType();
     }
 
-    private Map<UUID, List<ReviewImage>> findImageMap(List<Review> reviews) {
+    // 후기 ID → 이미지(display_order 순). 한 번의 IN 조회. 피드 병합에서도 쓴다. (KAN-380)
+    public Map<UUID, List<ReviewImage>> findImageMap(List<Review> reviews) {
         List<UUID> reviewIds = reviews.stream()
                 .map(Review::getId)
                 .toList();

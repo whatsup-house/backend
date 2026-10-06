@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,6 +58,18 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     List<Review> findAllByIdInAndDeletedAtIsNull(List<UUID> reviewIds);
 
     List<Review> findByIsHomeFeaturedTrueAndDeletedAtIsNullOrderByHomeDisplayOrderAscCreatedAtDesc();
+
+    // 공개 피드 keyset: (createdAt, id) 가 커서보다 앞선(더 오래된) 후기. 게더링은 fetch join. (KAN-380)
+    @Query("""
+            select r from Review r
+            join fetch r.gathering
+            where r.deletedAt is null
+              and r.reviewType = :reviewType
+              and (r.createdAt < :at or (r.createdAt = :at and r.id < :id))
+            order by r.createdAt desc, r.id desc
+            """)
+    List<Review> findByReviewTypeBefore(@Param("reviewType") ReviewType reviewType, @Param("at") LocalDateTime at,
+                                        @Param("id") UUID id, Pageable pageable);
 
     // 리뷰 페이지 위치(locate) 계산용 — 대상 리뷰보다 정렬상 앞서는 리뷰 수를 센다.
     // LATEST(createdAt desc): 더 최신인 리뷰 수

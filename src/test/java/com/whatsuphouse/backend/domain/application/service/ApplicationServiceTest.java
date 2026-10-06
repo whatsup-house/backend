@@ -20,20 +20,16 @@ import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
 import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
-import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
-import com.whatsuphouse.backend.domain.form.repository.FormRepository;
+import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
-import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
-import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
-import com.whatsuphouse.backend.domain.user.repository.UserRepository;
+import com.whatsuphouse.backend.domain.user.service.UserService;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -81,19 +77,16 @@ class ApplicationServiceTest {
     private ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
 
     @Mock
-    private GatheringSessionRepository gatheringSessionRepository;
+    private GatheringSessionService gatheringSessionService;
 
     @Mock
-    private UserRepository userRepository;
+    private UserService userService;
 
     @Mock
     private AuthService authService;
 
     @Mock
-    private FormRepository formRepository;
-
-    @Mock
-    private FormQuestionRepository formQuestionRepository;
+    private FormProvisionService formProvisionService;
 
     @Mock
     private ApplicationAnswerRepository applicationAnswerRepository;
@@ -103,9 +96,6 @@ class ApplicationServiceTest {
 
     @Mock
     private TicketService ticketService;
-
-    @Mock
-    private TicketTransactionRepository ticketTransactionRepository;
 
     @Mock
     private ApplicationLookupTokenService applicationLookupTokenService;
@@ -154,12 +144,11 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("회원 정상 신청")
     void apply_member_success() {
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
-                .willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -180,11 +169,10 @@ class ApplicationServiceTest {
         GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 4);
         ReflectionTestUtils.setField(randomTable, "gatheringType", GatheringType.RANDOM_TABLE);
 
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
-                .willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         user.approveRandomTable();
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(true);
@@ -207,10 +195,10 @@ class ApplicationServiceTest {
         GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 4);
         user.approveRandomTable();
 
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(false);
         ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
@@ -232,10 +220,10 @@ class ApplicationServiceTest {
         GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 4);
         user.approveRandomTable();
 
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -253,10 +241,10 @@ class ApplicationServiceTest {
         GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 4);
         user.rejectRandomTable();
 
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
 
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
@@ -273,11 +261,10 @@ class ApplicationServiceTest {
                 answerItem(phoneQuestion.getId(), "01098765432"),
                 answerItem(emailQuestion.getId(), "g@test.com")));
 
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
-                .willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any()))
                 .willReturn(List.of(phoneQuestion, emailQuestion));
         given(applicationRepository.existsBySession_IdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(authService.isGuestEmailVerified("g@test.com")).willReturn(true);
@@ -299,10 +286,10 @@ class ApplicationServiceTest {
         setAnswers(request, List.of(
                 answerItem(phoneQuestion.getId(), "01098765432"),
                 answerItem(emailQuestion.getId(), "g@test.com")));
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any()))
                 .willReturn(List.of(phoneQuestion, emailQuestion));
         given(applicationRepository.existsBySession_IdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(authService.isGuestEmailVerified("g@test.com")).willReturn(false);
@@ -315,7 +302,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("게더링이 존재하지 않으면 예외 발생")
     void apply_gatheringNotFound_throwsException() {
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.empty());
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
                 .isInstanceOf(CustomException.class)
@@ -326,7 +313,7 @@ class ApplicationServiceTest {
     @DisplayName("모집 중이 아닌 게더링에 신청하면 예외 발생")
     void apply_gatheringNotOpen_throwsException() {
         session.changeStatus(GatheringSessionStatus.CLOSED);
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
 
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
                 .isInstanceOf(CustomException.class)
@@ -338,7 +325,7 @@ class ApplicationServiceTest {
     void apply_pastGathering_throwsException() {
         Gathering pastGathering = Gathering.builder().title("지난 게더링").build();
         GatheringSession pastGatheringSession = sessionOf(pastGathering, LocalDate.now().minusDays(1), 10);
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(pastGatheringSession));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(pastGatheringSession));
 
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
                 .isInstanceOf(CustomException.class)
@@ -348,7 +335,7 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("정원이 초과된 게더링에 신청하면 예외 발생")
     void apply_gatheringFull_throwsException() {
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any()))
                 .willReturn(session.getMaxAttendees());
 
@@ -360,12 +347,11 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("회원이 이미 신청한 게더링에 재신청하면 예외 발생")
     void apply_memberAlreadyApplied_throwsException() {
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
-                .willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(true);
 
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
@@ -376,11 +362,10 @@ class ApplicationServiceTest {
     @Test
     @DisplayName("비회원 신청 시 전화번호가 없으면 예외 발생")
     void apply_guestPhoneMissing_throwsException() {
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
-                .willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
 
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, null))
                 .isInstanceOf(CustomException.class)
@@ -393,11 +378,10 @@ class ApplicationServiceTest {
         FormQuestion phoneQuestion = question("phone", false);
         setAnswers(request, List.of(answerItem(phoneQuestion.getId(), "01098765432")));
 
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId))
-                .willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any()))
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any()))
                 .willReturn(List.of(phoneQuestion));
         given(applicationRepository.existsBySession_IdAndPhoneAndDeletedAtIsNull(any(), any())).willReturn(true);
 
@@ -413,8 +397,8 @@ class ApplicationServiceTest {
     void applyWithCandidates_regularWithTwoSessions_throwsException() {
         // given
         GatheringSession other = otherSessionOf(gathering);
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(other.getId())).willReturn(Optional.of(other));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(other.getId())).willReturn(Optional.of(other));
 
         // when & then
         assertThatThrownBy(() -> applicationService.apply(createRequest(sessionId, other.getId()), userId))
@@ -429,11 +413,11 @@ class ApplicationServiceTest {
         Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
         GatheringSession first = sessionOf(randomTable, LocalDate.now().plusDays(7), 6);
         GatheringSession second = otherSessionOf(randomTable);
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(first.getId())).willReturn(Optional.of(first));
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(second.getId())).willReturn(Optional.of(second));
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(gatheringSessionService.findSessionForUpdate(first.getId())).willReturn(Optional.of(first));
+        given(gatheringSessionService.findSessionForUpdate(second.getId())).willReturn(Optional.of(second));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(
                 List.of(second.getId(), first.getId()), userId)).willReturn(false);
         ArgumentCaptor<Application> savedApplication = ArgumentCaptor.forClass(Application.class);
@@ -464,10 +448,10 @@ class ApplicationServiceTest {
         // given
         Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
         GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 6);
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(List.of());
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(
                 List.of(sessionId), userId)).willReturn(true);
 
@@ -482,7 +466,7 @@ class ApplicationServiceTest {
     void applyWithCandidates_deadlinePassed_throwsException() {
         // given
         ReflectionTestUtils.setField(session, "applyDeadlineAt", LocalDateTime.now().minusMinutes(1));
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
 
         // when & then
         assertThatThrownBy(() -> applicationService.apply(createRequest(sessionId), userId))
@@ -497,7 +481,7 @@ class ApplicationServiceTest {
         Gathering otherKind = Gathering.builder().title("다른 모임").build();
         ReflectionTestUtils.setField(otherKind, "id", UUID.randomUUID());
         GatheringSession foreign = otherSessionOf(otherKind);
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(foreign.getId())).willReturn(Optional.of(foreign));
+        given(gatheringSessionService.findSessionForUpdate(foreign.getId())).willReturn(Optional.of(foreign));
 
         // when & then
         assertThatThrownBy(() -> applicationService.apply(createRequest(foreign.getId()), userId))
@@ -585,13 +569,10 @@ class ApplicationServiceTest {
         GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 4);
         Application application = buildApplication(ApplicationStatus.CONFIRMED, user, randomTableSession);
         ReflectionTestUtils.setField(application, "id", applicationId);
-        TicketTransaction transaction = org.mockito.Mockito.mock(TicketTransaction.class);
 
         given(applicationRepository.findByPhoneAndBookingNumberAndDeletedAtIsNull("01012345678", "WH260428-ABC123"))
                 .willReturn(Optional.of(application));
-        given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(
-                applicationId, TicketTransactionType.USE)).willReturn(Optional.of(transaction));
-        given(transaction.getBalanceAfter()).willReturn(3);
+        given(ticketService.findBalanceAfterUse(applicationId)).willReturn(Optional.of(3));
 
         ApplicationCheckResponse response = applicationService.checkApplication("01012345678", "WH260428-ABC123");
 
@@ -722,10 +703,10 @@ class ApplicationServiceTest {
     }
 
     private void givenOpenSessionWithQuestions(List<FormQuestion> questions) {
-        given(gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
-        given(formRepository.findByGathering_IdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(activeForm()));
-        given(formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(any())).willReturn(questions);
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(questions);
     }
 
     @Test
@@ -750,7 +731,7 @@ class ApplicationServiceTest {
     void apply_validBirthYear_numberOrNumericString_succeeds() {
         FormQuestion birthYear = birthYearQuestion();
         givenOpenSessionWithQuestions(List.of(birthYear));
-        given(userRepository.findByIdAndDeletedAtIsNull(userId)).willReturn(Optional.of(user));
+        given(userService.findUser(userId)).willReturn(user);
         given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
         int thisYear = Year.now(ZoneId.of("Asia/Seoul")).getValue();

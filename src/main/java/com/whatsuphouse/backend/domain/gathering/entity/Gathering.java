@@ -63,10 +63,21 @@ public class Gathering extends BaseEntity {
     @Column(name = "curated_rank", nullable = false)
     private int curatedRank = 0;
 
+    // 입금 계좌 정보 (선택). (KAN-390)
+    @Column(name = "account_bank", length = 50)
+    private String accountBank;
+
+    @Column(name = "account_number", length = 50)
+    private String accountNumber;
+
+    @Column(name = "account_holder", length = 50)
+    private String accountHolder;
+
     @Builder
     public Gathering(String title, String description, Integer basePrice, String thumbnailUrl,
                      GatheringType gatheringType, List<String> howToRun, List<String> tags,
-                     List<String> imageUrls) {
+                     List<String> imageUrls, String accountBank, String accountNumber,
+                     String accountHolder) {
         this.title = title;
         this.description = description;
         this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
@@ -75,6 +86,9 @@ public class Gathering extends BaseEntity {
         this.thumbnailUrl = thumbnailUrl;
         this.imageUrls = imageUrls != null ? List.copyOf(imageUrls) : List.of();
         this.gatheringType = gatheringType != null ? gatheringType : GatheringType.REGULAR;
+        this.accountBank = accountBank;
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
     }
 
     public void updateCuration(boolean isCurated) {
@@ -86,7 +100,8 @@ public class Gathering extends BaseEntity {
     }
 
     public void update(String title, String description, String thumbnailUrl, List<String> imageUrls,
-                       List<String> howToRun, List<String> tags, Integer basePrice) {
+                       List<String> howToRun, List<String> tags, Integer basePrice,
+                       String accountBank, String accountNumber, String accountHolder) {
         this.title = title;
         this.description = description;
         this.howToRun = howToRun != null ? List.copyOf(howToRun) : List.of();
@@ -94,5 +109,8 @@ public class Gathering extends BaseEntity {
         this.thumbnailUrl = thumbnailUrl;
         this.imageUrls = imageUrls != null ? List.copyOf(imageUrls) : List.of();
         this.basePrice = basePrice;
+        this.accountBank = accountBank;
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
     }
 }

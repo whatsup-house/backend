@@ -140,6 +140,11 @@ public enum ErrorCode {
     GATHERING_ID_REQUIRED("GATHERING 타입은 gatheringId가 필수입니다.", HttpStatus.BAD_REQUEST),
     SLIDE_CONTENT_REQUIRED("STORY 타입은 content가 필수입니다.", HttpStatus.BAD_REQUEST),
 
+    // Feed (KAN-380)
+    FEED_POST_NOT_FOUND("존재하지 않는 피드 게시물입니다.", HttpStatus.NOT_FOUND),
+    INVALID_FEED_VIDEO_URL("허용되지 않는 영상 URL입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_FEED_CURSOR("유효하지 않은 피드 커서입니다.", HttpStatus.BAD_REQUEST),
+
     // Image
     INVALID_IMAGE_FORMAT("허용되지 않는 이미지 형식입니다.", HttpStatus.BAD_REQUEST),
     INVALID_UPLOAD_FOLDER("허용되지 않는 업로드 폴더입니다.", HttpStatus.BAD_REQUEST),
