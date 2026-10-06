@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -90,5 +91,39 @@ class FormProvisionServiceTest {
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.STANDARD_QUESTIONS_MISSING);
         then(formQuestionRepository).should(never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("신청용 폼 조회 — 종류 폼이 있으면 그대로 돌려주고 새로 만들지 않는다 (KAN-393)")
+    void findOrCreateForm_existing_returnsWithoutCreate() {
+        // given
+        Form existing = Form.builder().gatheringType(GatheringType.RANDOM_TABLE).build();
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(randomTable.getId())).willReturn(Optional.of(existing));
+
+        // when
+        Form form = formProvisionService.findOrCreateForm(randomTable);
+
+        // then
+        assertThat(form).isSameAs(existing);
+        then(formRepository).should(never()).save(any());
+        then(formQuestionRepository).should(never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("신청용 폼 조회 — 종류 폼이 없으면 기본 폼을 만든다 (KAN-393)")
+    void findOrCreateForm_missing_createsDefaultForm() {
+        // given
+        given(formRepository.findByGathering_IdAndDeletedAtIsNull(randomTable.getId())).willReturn(Optional.empty());
+        given(formRepository.save(any(Form.class))).willAnswer(inv -> inv.getArgument(0));
+        given(formQuestionRepository.findTemplateReservedQuestions(GatheringType.RANDOM_TABLE))
+                .willReturn(template(ReservedQuestionKey.values()));
+
+        // when
+        Form form = formProvisionService.findOrCreateForm(randomTable);
+
+        // then
+        assertThat(form).isNotNull();
+        then(formRepository).should().save(any(Form.class));
+        then(formQuestionRepository).should().saveAll(any());
     }
 }

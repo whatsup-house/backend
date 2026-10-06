@@ -168,6 +168,14 @@ public class TicketService {
         return true;
     }
 
+    // 신청에 기록된 마지막 USE 거래 직후 잔여 수. 신청 조회 응답용. (KAN-393)
+    @Transactional(readOnly = true)
+    public Optional<Integer> findBalanceAfterUse(UUID applicationId) {
+        return ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
+                .map(TicketTransaction::getBalanceAfter);
+    }
+
     /**
      * 신청에 기록된 USE 거래를 기준으로 1회 복구한다. 동일 신청 중복 복구는 무시한다.
      * 이미 환불(REFUND_*) 절차에 들어간 차감은 돈으로 돌려주므로 이용권까지 복구하지 않는다. (KAN-347)

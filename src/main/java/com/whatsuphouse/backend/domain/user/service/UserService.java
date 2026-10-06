@@ -114,6 +114,11 @@ public class UserService {
         findActiveUser(userId).restrictRandomTable();
     }
 
+    // 타 도메인이 UserRepository를 직접 주입하지 않도록 여는 조회. 호출자 트랜잭션에 참여한다. (KAN-393)
+    public User findUser(UUID id) {
+        return findActiveUser(id);
+    }
+
     private User findActiveUser(UUID userId) {
         return userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
