@@ -59,6 +59,18 @@ public class FormProvisionService {
         return form;
     }
 
+    /** 신청용: 종류 폼을 찾고, 없으면(시드/레거시) 기본 폼을 만든다. (KAN-206, KAN-393) */
+    @Transactional
+    public Form findOrCreateForm(Gathering gathering) {
+        return formRepository.findByGathering_IdAndDeletedAtIsNull(gathering.getId())
+                .orElseGet(() -> createDefaultForm(gathering));
+    }
+
+    /** 폼의 질문(표시 순). (KAN-393) */
+    public List<FormQuestion> findQuestions(Form form) {
+        return formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form);
+    }
+
     // RANDOM_TABLE 종류에 연결되는 폼은 표준 질문 7개를 모두 가져야 한다. 템플릿이 빠져 있으면 폼 생성(=종류 생성)을 막는다.
     private void validateStandardQuestions(List<FormQuestion> questions) {
         EnumSet<ReservedQuestionKey> present = questions.stream()

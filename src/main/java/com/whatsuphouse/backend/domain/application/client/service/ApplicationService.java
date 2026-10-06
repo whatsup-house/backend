@@ -21,21 +21,17 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
-import com.whatsuphouse.backend.domain.form.repository.FormQuestionRepository;
-import com.whatsuphouse.backend.domain.form.repository.FormRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
-import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
-import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
-import com.whatsuphouse.backend.domain.user.repository.UserRepository;
+import com.whatsuphouse.backend.domain.user.service.UserService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -64,15 +60,13 @@ public class ApplicationService {
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
-    private final GatheringSessionRepository gatheringSessionRepository;
-    private final UserRepository userRepository;
-    private final FormRepository formRepository;
-    private final FormQuestionRepository formQuestionRepository;
+    // 타 도메인은 Repository 대신 Service로 접근한다. (KAN-393)
+    private final GatheringSessionService gatheringSessionService;
+    private final UserService userService;
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final FormProvisionService formProvisionService;
     private final TicketService ticketService;
-    private final TicketTransactionRepository ticketTransactionRepository;
     private final AuthService authService;
     private final ApplicationLookupTokenService applicationLookupTokenService;
 
@@ -93,7 +87,7 @@ public class ApplicationService {
         // 정원 체크~신청 저장 구간의 동시 신청 race를 막기 위해 회차 행을 잠근다. 교착을 피하려 ID 순으로 잠근다.
         Map<UUID, GatheringSession> locked = new HashMap<>();
         candidateIds.stream().sorted().forEach(id -> {
-            GatheringSession session = gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(id)
+            GatheringSession session = gatheringSessionService.findSessionForUpdate(id)
                     .filter(s -> s.getGathering().getDeletedAt() == null)
                     .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND));
             // 다른 종류의 회차가 섞이면 잘못된 요청이다. (KAN-342)
@@ -117,7 +111,7 @@ public class ApplicationService {
     }
 
     private GatheringSession lockSession(UUID sessionId) {
-        return gatheringSessionRepository.findByIdAndDeletedAtIsNullForUpdate(sessionId)
+        return gatheringSessionService.findSessionForUpdate(sessionId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GATHERING_NOT_FOUND));
     }
 
@@ -154,12 +148,9 @@ public class ApplicationService {
         }
 
         // 폼은 종류 단위다. 폼이 없는 게더링(시드/레거시)도 신청 가능하도록 기본 폼을 프로비저닝한다. (KAN-206)
-        Form form = formRepository
-                .findByGathering_IdAndDeletedAtIsNull(gathering.getId())
-                .orElseGet(() -> formProvisionService.createDefaultForm(gathering));
+        Form form = formProvisionService.findOrCreateForm(gathering);
 
-        List<FormQuestion> questions = formQuestionRepository
-                .findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form);
+        List<FormQuestion> questions = formProvisionService.findQuestions(form);
 
         Map<UUID, FormQuestion> questionMap = questions.stream()
                 .collect(Collectors.toMap(FormQuestion::getId, q -> q));
@@ -172,8 +163,7 @@ public class ApplicationService {
 
         User user = null;
         if (userId != null) {
-            user = userRepository.findByIdAndDeletedAtIsNull(userId)
-                    .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+            user = userService.findUser(userId);
             // 우연한 식탁은 고른 희망 회차 중 하나라도 이미 신청했으면 중복이다.
             boolean alreadyApplied = session != null
                     ? applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(session.getId(), userId)
@@ -392,11 +382,7 @@ public class ApplicationService {
         if (application.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE) {
             return null;
         }
-        return ticketTransactionRepository
-                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(
-                        application.getId(), TicketTransactionType.USE)
-                .map(transaction -> transaction.getBalanceAfter())
-                .orElse(null);
+        return ticketService.findBalanceAfterUse(application.getId()).orElse(null);
     }
 
     private List<AnswerView> loadAnswers(UUID applicationId) {
