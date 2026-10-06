@@ -19,6 +19,7 @@ import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultResponse;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.MatchExclusionProvider;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -64,6 +65,7 @@ public class AdminDiningService {
     private final GatheringService gatheringService;
     private final AdminApplicationService adminApplicationService;
     private final MatchingService matchingService;
+    private final DiningAttendanceService diningAttendanceService;
     private final ExceptionCaseRepository exceptionCaseRepository;
     private final VenueRepository venueRepository;
     private final MatchExclusionProvider matchExclusionProvider;
@@ -123,7 +125,7 @@ public class AdminDiningService {
         }
         Map<UUID, List<ApplicationCandidateSession>> candidates =
                 adminApplicationService.findCandidateSessions(applicationIds);
-        Map<UUID, Long> participation = adminApplicationService.countRandomTableAttendance(applications.stream()
+        Map<UUID, Long> participation = diningAttendanceService.countAttendedByUserIds(applications.stream()
                 .map(Application::getUser).filter(Objects::nonNull).map(User::getId).distinct().toList());
         Set<UUID> excludedUserIds = findUsersWithExcludedRelation(applications);
 
