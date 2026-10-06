@@ -16,6 +16,7 @@ import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.MatchExclusionProvider;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -50,6 +51,9 @@ class AdminDiningServiceTest {
 
     @Mock
     private MatchingService matchingService;
+
+    @Mock
+    private DiningAttendanceService diningAttendanceService;
 
     @Mock
     private ExceptionCaseRepository exceptionCaseRepository;
@@ -164,6 +168,9 @@ class AdminDiningServiceTest {
                         answer(sameYear, "birth_year", ReservedQuestionKey.BIRTH_YEAR, "1995"),
                         answer(noAnswer, "age", null, 25),
                         answer(badAnswer, "birth_year", ReservedQuestionKey.BIRTH_YEAR, "95년생")));
+        // 참가 횟수는 참석(ATTENDED) 집계에서 읽고, 집계에 없는 회원은 0. (KAN-392)
+        given(diningAttendanceService.countAttendedByUserIds(any()))
+                .willReturn(Map.of(fromYear.getUser().getId(), 2L));
 
         List<DiningApplicantResponse> applicants = adminDiningService.listApplicants(session.getId());
 
@@ -172,5 +179,6 @@ class AdminDiningServiceTest {
                 String.valueOf(sameYearMember.getCurrentAge()),
                 "33",
                 "41");
+        assertThat(applicants).extracting(DiningApplicantResponse::getParticipationCount).containsExactly(2L, 0L, 0L, 0L);
     }
 }

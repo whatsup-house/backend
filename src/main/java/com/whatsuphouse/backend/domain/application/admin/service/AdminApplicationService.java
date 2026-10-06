@@ -283,18 +283,6 @@ public class AdminApplicationService {
         application.transfer();
     }
 
-    /** 회원별 우연한 식탁 참가(출석 처리된 신청) 횟수. 참가가 없으면 결과에 없다. */
-    public Map<UUID, Long> countRandomTableAttendance(Collection<UUID> userIds) {
-        if (userIds.isEmpty()) {
-            return Map.of();
-        }
-        // TODO(KAN-345 이후): 참석 기록이 attendances(ATTENDED)로 옮겨가면 그 기준으로 센다.
-        return applicationRepository.countByUserIdsAndStatusAndType(
-                        userIds, ApplicationStatus.ATTENDED, GatheringType.RANDOM_TABLE).stream()
-                .collect(Collectors.toMap(ApplicationRepository.UserCountProjection::getUserId,
-                        ApplicationRepository.UserCountProjection::getCount));
-    }
-
     /** 신청한 회원 ID. 취소된 신청도 찾는다(신고 조치 대상은 취소 여부와 무관). 비회원 신청이면 비어 있다. */
     public Optional<UUID> findApplicantUserId(UUID applicationId) {
         Application application = applicationRepository.findById(applicationId)
