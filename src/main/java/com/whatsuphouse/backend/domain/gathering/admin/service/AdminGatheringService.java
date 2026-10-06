@@ -141,6 +141,9 @@ public class AdminGatheringService {
                 .thumbnailUrl(thumbnailUrl)
                 .imageUrls(resolveImageUrls(request.getImageUrls(), List.of()))
                 .gatheringType(request.getGatheringType())
+                .accountBank(blankToNull(request.getAccountBank()))
+                .accountNumber(blankToNull(request.getAccountNumber()))
+                .accountHolder(blankToNull(request.getAccountHolder()))
                 .build());
         // 신청폼 + 시스템 예약 질문(이름/연락처) 자동 생성
         formProvisionService.createDefaultForm(gathering);
@@ -156,7 +159,9 @@ public class AdminGatheringService {
         String thumbnailUrl = resolveThumbnailUrl(request.getThumbnailUrl(), gathering.getThumbnailUrl());
         List<String> imageUrls = resolveImageUrls(request.getImageUrls(), gathering.getImageUrls());
         gathering.update(request.getTitle(), request.getDescription(), thumbnailUrl, imageUrls,
-                request.getHowToRun(), request.getTags(), request.getBasePrice());
+                request.getHowToRun(), request.getTags(), request.getBasePrice(),
+                blankToNull(request.getAccountBank()), blankToNull(request.getAccountNumber()),
+                blankToNull(request.getAccountHolder()));
         // 변경된 ko 원문 재번역 (원문 미변경 필드는 해시 비교로 자동 스킵) (KAN-267)
         publishTranslation(gathering);
         return gatheringService.getGathering(id);
@@ -295,6 +300,11 @@ public class AdminGatheringService {
             return currentImageUrls;
         }
         return requestedImageUrls.stream().map(url -> resolveThumbnailUrl(url, null)).toList();
+    }
+
+    // 계좌 필드: 빈 문자열·공백은 null, 나머지는 앞뒤 공백 제거. (KAN-390)
+    private static String blankToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     // 게더링의 번역 대상 ko 필드(title/description)를 자동 번역 이벤트로 발행한다. (KAN-267)

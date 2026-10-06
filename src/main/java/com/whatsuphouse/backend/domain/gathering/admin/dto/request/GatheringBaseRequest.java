@@ -41,4 +41,17 @@ public abstract class GatheringBaseRequest {
             description = "상세 사진 목록 (선택, 최대 10장). temp/ 경로는 저장 시 정식 경로로 옮긴다. 생략=기존 유지, 빈 배열=모두 삭제")
     @Size(max = 10)
     private List<@NotBlank @Size(max = 500) String> imageUrls;
+
+    // 입금 계좌 (선택). 빈 문자열·공백은 null로 저장. 수정 시 요청 값으로 덮어쓴다. (KAN-390)
+    @Schema(description = "입금 은행 (선택)", example = "카카오뱅크")
+    @Size(max = 50)
+    private String accountBank;
+
+    @Schema(description = "입금 계좌번호 (선택)", example = "3333-01-1234567")
+    @Size(max = 50)
+    private String accountNumber;
+
+    @Schema(description = "예금주 (선택)", example = "와썹하우스")
+    @Size(max = 50)
+    private String accountHolder;
 }
