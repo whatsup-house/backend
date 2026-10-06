@@ -26,7 +26,7 @@ public class SupabaseStorageService implements StorageService {
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
     // 업로드 가능한 folder는 화이트리스트로만 허용한다. (경로 조작 방지)
-    private static final Set<String> ALLOWED_FOLDERS = Set.of("carousel", "gathering", "review", "avatar");
+    private static final Set<String> ALLOWED_FOLDERS = Set.of("carousel", "gathering", "review", "avatar", "feed");
     private static final MediaType WEBP_MEDIA_TYPE = MediaType.parseMediaType("image/webp");
     private static final String AUTHORIZATION = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";

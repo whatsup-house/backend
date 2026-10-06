@@ -32,7 +32,7 @@ public class StorageCleanupScheduler {
     private final StorageService storageService;
     private final RestClient restClient = RestClient.create();
 
-    private static final List<String> TEMP_FOLDERS = List.of("carousel", "gathering", "review", "avatar");
+    private static final List<String> TEMP_FOLDERS = List.of("carousel", "gathering", "review", "avatar", "feed");
     private static final long TEMP_FILE_TTL_HOURS = 24;
 
     @Scheduled(cron = "0 0 * * * *")
