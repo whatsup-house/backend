@@ -87,6 +87,14 @@ dining:
 feed:
   video-base-url: ${R2_PUBLIC_BASE_URL:}
 
+# 피드 영상 저장소 Cloudflare R2 (KAN-379). 하나라도 비면 영상 업로드 URL 발급 API만 503(서버는 정상 기동).
+r2:
+  account-id: ${R2_ACCOUNT_ID:}
+  access-key-id: ${R2_ACCESS_KEY_ID:}
+  secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+  bucket: ${R2_BUCKET:}
+  public-base-url: ${R2_PUBLIC_BASE_URL:}
+
 # 채팅 본문 AES-256-GCM 키(base64 32바이트). 운영 필수 — 없으면 기동 실패가 의도된 동작.
 # 생성: openssl rand -base64 32 / 키를 바꾸면 기존 메시지는 복호화되지 않는다(키 로테이션 미지원).
 chat:

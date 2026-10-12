@@ -3,8 +3,10 @@ package com.whatsuphouse.backend.domain.feed.admin.service;
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedMediaRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedPostCreateRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedPostVisibilityRequest;
+import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedVideoUploadUrlRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.response.AdminFeedPostPageResponse;
 import com.whatsuphouse.backend.domain.feed.admin.dto.response.AdminFeedPostResponse;
+import com.whatsuphouse.backend.domain.feed.admin.dto.response.FeedVideoUploadUrlResponse;
 import com.whatsuphouse.backend.domain.feed.entity.FeedMedia;
 import com.whatsuphouse.backend.domain.feed.entity.FeedPost;
 import com.whatsuphouse.backend.domain.feed.enums.FeedMediaType;
@@ -13,6 +15,8 @@ import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
+import com.whatsuphouse.backend.global.storage.dto.PresignedUpload;
+import com.whatsuphouse.backend.global.storage.service.R2StorageService;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,10 +41,15 @@ public class AdminFeedService {
     private static final String TEMP_PATH_PREFIX = "temp/";
     private static final String FEED_FOLDER = "feed";
     private static final String HTTPS_PREFIX = "https://";
+    private static final String VIDEO_CONTENT_TYPE = "video/mp4";
+    private static final long MAX_VIDEO_BYTES = 50L * 1024 * 1024;
+    private static final Duration VIDEO_UPLOAD_URL_TTL = Duration.ofMinutes(10);
+    private static final String VIDEO_KEY_FORMAT = "feed/videos/%s.mp4";
 
     private final FeedPostRepository feedPostRepository;
     private final GatheringService gatheringService;
     private final StorageService storageService;
+    private final R2StorageService r2StorageService;
 
     // 비어 있으면(R2 연동 전) https URL 이기만 하면 허용한다. (KAN-379)
     @Value("${feed.video-base-url:}")
@@ -89,6 +99,22 @@ public class AdminFeedService {
     @Transactional
     public void deleteFeedPost(UUID id) {
         findFeedPost(id).delete();
+    }
+
+    // 영상은 BE를 거치지 않고 브라우저가 R2로 직접 PUT 한다. 형식·크기는 서명에 포함돼 R2가 강제한다. (KAN-379)
+    public FeedVideoUploadUrlResponse createVideoUploadUrl(FeedVideoUploadUrlRequest request) {
+        if (!VIDEO_CONTENT_TYPE.equals(request.getContentType())) {
+            throw new CustomException(ErrorCode.INVALID_FEED_VIDEO_CONTENT_TYPE);
+        }
+        if (request.getSize() <= 0 || request.getSize() > MAX_VIDEO_BYTES) {
+            throw new CustomException(ErrorCode.INVALID_FEED_VIDEO_SIZE);
+        }
+        if (!r2StorageService.isEnabled()) {
+            throw new CustomException(ErrorCode.FEED_VIDEO_UPLOAD_DISABLED);
+        }
+        PresignedUpload upload = r2StorageService.presignPut(VIDEO_KEY_FORMAT.formatted(UUID.randomUUID()),
+                VIDEO_CONTENT_TYPE, request.getSize(), VIDEO_UPLOAD_URL_TTL);
+        return new FeedVideoUploadUrlResponse(upload.getUploadUrl(), upload.getPublicUrl(), upload.getExpiresAt());
     }
 
     private FeedPost findFeedPost(UUID id) {

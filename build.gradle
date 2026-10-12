@@ -75,6 +75,13 @@ dependencies {
 	implementation 'nl.martijndwars:web-push:5.1.1'
 	implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
 
+	// 피드 영상 저장소 Cloudflare R2 (S3 호환) presigned PUT URL 발급 (KAN-379).
+	// presign 은 로컬 서명 계산만 하므로 비동기 HTTP 클라이언트(netty)는 제외한다.
+	implementation platform('software.amazon.awssdk:bom:2.55.0')
+	implementation('software.amazon.awssdk:s3') {
+		exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+	}
+
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
