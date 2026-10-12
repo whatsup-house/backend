@@ -2,8 +2,10 @@ package com.whatsuphouse.backend.domain.feed.admin.controller;
 
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedPostCreateRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedPostVisibilityRequest;
+import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedVideoUploadUrlRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.response.AdminFeedPostPageResponse;
 import com.whatsuphouse.backend.domain.feed.admin.dto.response.AdminFeedPostResponse;
+import com.whatsuphouse.backend.domain.feed.admin.dto.response.FeedVideoUploadUrlResponse;
 import com.whatsuphouse.backend.domain.feed.admin.service.AdminFeedService;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -72,5 +74,16 @@ public class AdminFeedController {
     public ResponseEntity<ApiResult<Void>> deleteFeedPost(@PathVariable UUID feedPostId) {
         adminFeedService.deleteFeedPost(feedPostId);
         return ResponseEntity.ok(ApiResult.success("피드 게시물이 삭제되었습니다.", null));
+    }
+
+    @Operation(summary = "피드 영상 업로드 URL 발급",
+            description = "R2 presigned PUT URL(10분 유효)을 발급합니다. 브라우저에서 uploadUrl로 Content-Type: video/mp4, "
+                    + "요청한 size와 같은 크기로 PUT 한 뒤 videoUrl을 media.url 로 등록하세요. "
+                    + "video/mp4·50MB 이하만 허용, R2 미설정 시 503. 관리자 권한이 필요합니다.")
+    @PostMapping("/video-upload-url")
+    public ResponseEntity<ApiResult<FeedVideoUploadUrlResponse>> createVideoUploadUrl(
+            @Valid @RequestBody FeedVideoUploadUrlRequest request
+    ) {
+        return ResponseEntity.ok(ApiResult.success(adminFeedService.createVideoUploadUrl(request)));
     }
 }
