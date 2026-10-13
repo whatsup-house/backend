@@ -144,6 +144,9 @@ public enum ErrorCode {
     FEED_POST_NOT_FOUND("존재하지 않는 피드 게시물입니다.", HttpStatus.NOT_FOUND),
     INVALID_FEED_VIDEO_URL("허용되지 않는 영상 URL입니다.", HttpStatus.BAD_REQUEST),
     INVALID_FEED_CURSOR("유효하지 않은 피드 커서입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_FEED_VIDEO_CONTENT_TYPE("영상은 video/mp4 형식만 업로드할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    INVALID_FEED_VIDEO_SIZE("영상은 50MB 이하만 업로드할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    FEED_VIDEO_UPLOAD_DISABLED("영상 업로드를 사용할 수 없습니다.", HttpStatus.SERVICE_UNAVAILABLE),
 
     // Image
     INVALID_IMAGE_FORMAT("허용되지 않는 이미지 형식입니다.", HttpStatus.BAD_REQUEST),

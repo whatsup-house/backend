@@ -3,7 +3,9 @@ package com.whatsuphouse.backend.domain.feed.admin.service;
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedMediaRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedPostCreateRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedPostVisibilityRequest;
+import com.whatsuphouse.backend.domain.feed.admin.dto.request.FeedVideoUploadUrlRequest;
 import com.whatsuphouse.backend.domain.feed.admin.dto.response.AdminFeedPostResponse;
+import com.whatsuphouse.backend.domain.feed.admin.dto.response.FeedVideoUploadUrlResponse;
 import com.whatsuphouse.backend.domain.feed.entity.FeedMedia;
 import com.whatsuphouse.backend.domain.feed.entity.FeedPost;
 import com.whatsuphouse.backend.domain.feed.enums.FeedMediaType;
@@ -12,6 +14,7 @@ import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
+import com.whatsuphouse.backend.global.storage.service.R2StorageService;
 import com.whatsuphouse.backend.global.storage.service.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +25,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -48,6 +53,9 @@ class AdminFeedServiceTest {
 
     @Mock
     private StorageService storageService;
+
+    @Mock
+    private R2StorageService r2StorageService;
 
     @InjectMocks
     private AdminFeedService adminFeedService;
@@ -217,6 +225,71 @@ class AdminFeedServiceTest {
                 request(null, null, video("https://media.whatsup.house.evil.com/v.mp4", null))))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_FEED_VIDEO_URL);
+    }
+
+    @Test
+    @DisplayName("영상 업로드 URL: video/mp4 가 아니면 400")
+    void createVideoUploadUrl_notMp4_throws() {
+        // when & then
+        assertThatThrownBy(() -> adminFeedService.createVideoUploadUrl(videoUpload("video/quicktime", 1024L)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_FEED_VIDEO_CONTENT_TYPE);
+        then(r2StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("영상 업로드 URL: 크기가 0 이하이거나 50MB 초과면 400")
+    void createVideoUploadUrl_invalidSize_throws() {
+        // when & then
+        for (long size : new long[]{0L, -1L, 50L * 1024 * 1024 + 1}) {
+            assertThatThrownBy(() -> adminFeedService.createVideoUploadUrl(videoUpload("video/mp4", size)))
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.INVALID_FEED_VIDEO_SIZE);
+        }
+        then(r2StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("영상 업로드 URL: R2 설정이 없으면 503")
+    void createVideoUploadUrl_r2Disabled_throws() {
+        // given
+        AdminFeedService service = serviceWithR2(new R2StorageService("", "", "", "", ""));
+
+        // when & then
+        assertThatThrownBy(() -> service.createVideoUploadUrl(videoUpload("video/mp4", 1024L)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.FEED_VIDEO_UPLOAD_DISABLED);
+    }
+
+    @Test
+    @DisplayName("영상 업로드 URL: feed/videos/{uuid}.mp4 키, 공개 URL, 10분 만료")
+    void createVideoUploadUrl_success() {
+        // given
+        AdminFeedService service = serviceWithR2(new R2StorageService(
+                "test-account", "test-key", "test-secret", "whatsup-media", "https://media.whatsup.house/"));
+        Instant before = Instant.now();
+
+        // when
+        FeedVideoUploadUrlResponse response = service.createVideoUploadUrl(videoUpload("video/mp4", 50L * 1024 * 1024));
+
+        // then
+        String uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+        assertThat(response.getVideoUrl()).matches("https://media\\.whatsup\\.house/feed/videos/" + uuid + "\\.mp4");
+        String key = response.getVideoUrl().substring("https://media.whatsup.house/".length());
+        assertThat(response.getUploadUrl())
+                .startsWith("https://test-account.r2.cloudflarestorage.com/whatsup-media/" + key + "?")
+                .contains("X-Amz-Expires=600");
+        assertThat(response.getExpiresAt())
+                .isBetween(before.plus(Duration.ofMinutes(10)).minusSeconds(1),
+                        Instant.now().plus(Duration.ofMinutes(10)).plusSeconds(1));
+    }
+
+    private AdminFeedService serviceWithR2(R2StorageService r2) {
+        return new AdminFeedService(feedPostRepository, gatheringService, storageService, r2);
+    }
+
+    private FeedVideoUploadUrlRequest videoUpload(String contentType, long size) {
+        return FeedVideoUploadUrlRequest.builder().contentType(contentType).size(size).build();
     }
 
     private FeedPostCreateRequest request(UUID gatheringId, Boolean visible, FeedMediaRequest... media) {

@@ -22,8 +22,8 @@ public class FeedPostCreateRequest {
 
     @Valid
     @NotNull
-    @Size(min = 1, max = 10)
-    @Schema(description = "미디어 목록 (1~10개, 배열 순서 = 노출 순서)")
+    @Size(min = 1, max = 20)
+    @Schema(description = "미디어 목록 (1~20개, 배열 순서 = 노출 순서)")
     private List<@NotNull FeedMediaRequest> media;
 
     @Size(max = 2000)
