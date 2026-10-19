@@ -329,4 +329,26 @@ class ApplicationRepositoryTest {
                 .phone(phoneValue)
                 .build());
     }
+
+    @Test
+    @DisplayName("입금 대사 후보 조회는 입금 전·미삭제·PENDING/CONFIRMED 일반 모임 신청만 돌려준다")
+    void findUnpaidRegularApplications_filtersPaidCancelledAndRandomTable() {
+        Application unpaid = saveApplication("WH-U1", session, null, "01011111111");
+        Application paid = saveApplication("WH-U2", session, null, "01022222222");
+        paid.confirmPayment();
+        Application cancelled = saveApplication("WH-U3", session, null, "01033333333");
+        cancelled.cancel();
+        Application rejected = saveApplication("WH-U4", session, null, "01044444444");
+        rejected.reject("사유");
+        Gathering randomTable = gatheringRepository.save(Gathering.builder()
+                .title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
+        saveUnassigned("WH-U5", randomTable, saveSession(randomTable, LocalDate.now().plusDays(7)));
+        em.flush();
+        em.clear();
+
+        List<Application> result = applicationRepository.findUnpaidRegularApplications(
+                GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED));
+
+        assertThat(result).extracting(Application::getBookingNumber).containsExactly("WH-U1");
+    }
 }

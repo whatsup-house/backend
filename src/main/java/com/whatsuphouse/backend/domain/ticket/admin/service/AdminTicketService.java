@@ -14,17 +14,12 @@ import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketProductRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
-import com.whatsuphouse.backend.domain.application.entity.Application;
-import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
-import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
-import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.UUID;
@@ -37,8 +32,7 @@ public class AdminTicketService {
     private final TicketPassRepository ticketPassRepository;
     private final TicketProductRepository ticketProductRepository;
     private final TicketTransactionRepository ticketTransactionRepository;
-    private final ApplicationRepository applicationRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final TicketService ticketService;
 
     @Transactional(readOnly = true)
     public List<TicketProductResponse> listProducts() {
@@ -84,7 +78,7 @@ public class AdminTicketService {
     public List<AdminPendingDepositResponse> listPendingDeposits() {
         return ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING)
                 .stream()
-                .map(pass -> AdminPendingDepositResponse.from(pass, resolvePaymentPendingApplication(pass)))
+                .map(pass -> AdminPendingDepositResponse.from(pass, ticketService.resolvePaymentPendingApplication(pass)))
                 .toList();
     }
 
@@ -95,46 +89,8 @@ public class AdminTicketService {
     }
 
     /** 입금 확인 → 이용권 활성화(잔여 충전). PENDING이 아니면 TICKET_ALREADY_PROCESSED. */
-    public AdminTicketPassResponse confirm(UUID passId) {
-        TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNull(passId)
-                .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
-        Application paymentPending = resolvePaymentPendingApplication(pass);
-        // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 정원을 세지 않는다. (KAN-338)
-        if (paymentPending != null && paymentPending.getSession() != null) {
-            int occupied = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
-                    paymentPending.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING);
-            if (occupied >= paymentPending.getSession().getMaxAttendees()) {
-                throw new CustomException(ErrorCode.GATHERING_FULL);
-            }
-        }
-        pass.activate();
-        ticketTransactionRepository.save(TicketTransaction.of(
-                pass, null, TicketTransactionType.ISSUE, pass.getTotalCount(), "입금 확인 및 이용권 발급"));
-        if (paymentPending != null) {
-            pass.deductOne();
-            ticketTransactionRepository.save(TicketTransaction.of(
-                    pass, paymentPending, TicketTransactionType.USE, -1, "이용권 구매 신청 자동 확정"));
-            paymentPending.confirmPayment();
-            paymentPending.confirm();
-            // @Async 확정 메일이 트랜잭션 밖에서 모임 제목(종류)을 읽으므로 여기서 로드해 둔다.
-            Hibernate.initialize(paymentPending.getGathering());
-            eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
-        }
-        return AdminTicketPassResponse.from(pass);
-    }
-
-    private Application resolvePaymentPendingApplication(TicketPass pass) {
-        Application linked = pass.getApplication();
-        if (linked != null) {
-            return linked.getStatus() == ApplicationStatus.PAYMENT_PENDING ? linked : null;
-        }
-        if (pass.getUser() == null) {
-            return null;    // 레거시 비회원 이용권: 자동 확정 대상 신청 매칭 없음
-        }
-        return applicationRepository
-                .findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                        pass.getUser().getId(), ApplicationStatus.PAYMENT_PENDING)
-                .orElse(null);
+    public AdminTicketPassResponse confirm(UUID passId, UUID adminId) {
+        return AdminTicketPassResponse.from(ticketService.settlePass(passId, "ADMIN:" + adminId));
     }
 
     public AdminTicketPassResponse adjust(UUID passId, TicketAdjustmentRequest request) {

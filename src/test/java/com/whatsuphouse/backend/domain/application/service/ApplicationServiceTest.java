@@ -430,7 +430,8 @@ class ApplicationServiceTest {
         Application application = savedApplication.getValue();
         assertThat(application.getSession()).isNull();
         assertThat(application.getGathering()).isSameAs(randomTable);
-        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+        // 심사 전 회원도 자동 승인되며, 이용권이 없으면 결제 대기로 접수된다.
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
         assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
         assertThat(response.getGatheringId()).isEqualTo(gatheringId);
         ArgumentCaptor<ApplicationCandidateSession> candidates = ArgumentCaptor.forClass(ApplicationCandidateSession.class);

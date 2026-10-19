@@ -81,4 +81,19 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
     // 삭제(취소)된 신청까지 조회한다. 이미 취소된 신청을 404가 아닌 409로 구분할 때만 쓴다. (KAN-342)
     @EntityGraph(attributePaths = {"gathering", "session", "user"})
     Optional<Application> findIncludingDeletedById(UUID id);
+
+    // 입금 대사 후보: 입금 확인 전인 일반 모임(우연한 식탁 제외) 신청. 유료 여부는 호출 측이 가격으로 거른다.
+    @EntityGraph(attributePaths = {"gathering", "session"})
+    @Query("""
+            SELECT a FROM Application a
+            WHERE a.deletedAt IS NULL
+              AND a.paymentConfirmedAt IS NULL
+              AND a.session IS NOT NULL
+              AND a.gathering.gatheringType <> :excludedType
+              AND a.status IN :statuses
+            ORDER BY a.createdAt ASC
+            """)
+    List<Application> findUnpaidRegularApplications(
+            @Param("excludedType") GatheringType excludedType,
+            @Param("statuses") List<ApplicationStatus> statuses);
 }

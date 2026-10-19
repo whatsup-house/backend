@@ -9,7 +9,10 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
+import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
+import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
@@ -22,11 +25,13 @@ import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -72,6 +77,69 @@ public class TicketService {
             eventPublisher.publishEvent(new TicketPurchaseRequestedEvent(application, pass));
         }
         return TicketPassResponse.from(pass);
+    }
+
+    /**
+     * 입금 확인 → 이용권 활성화(잔여 충전). 연결된 결제 대기 신청이 있으면 1회 차감 후 자동 확정한다.
+     * PENDING이 아니면 TICKET_ALREADY_PROCESSED. actor는 거래 메모에 남는다("ADMIN:{id}", "WEBHOOK", "SIMULATOR").
+     */
+    public TicketPass settlePass(UUID passId, String actor) {
+        TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNull(passId)
+                .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
+        Application paymentPending = resolvePaymentPendingApplication(pass);
+        // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 정원을 세지 않는다. (KAN-338)
+        if (paymentPending != null && paymentPending.getSession() != null) {
+            int occupied = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                    paymentPending.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING);
+            if (occupied >= paymentPending.getSession().getMaxAttendees()) {
+                throw new CustomException(ErrorCode.GATHERING_FULL);
+            }
+        }
+        pass.activate();
+        ticketTransactionRepository.save(TicketTransaction.of(
+                pass, null, TicketTransactionType.ISSUE, pass.getTotalCount(), "입금 확인 및 이용권 발급 (" + actor + ")"));
+        if (paymentPending != null) {
+            pass.deductOne();
+            ticketTransactionRepository.save(TicketTransaction.of(
+                    pass, paymentPending, TicketTransactionType.USE, -1, "이용권 구매 신청 자동 확정 (" + actor + ")"));
+            paymentPending.confirmPayment();
+            paymentPending.confirm();
+            // @Async 확정 메일이 트랜잭션 밖에서 모임 제목(종류)을 읽으므로 여기서 로드해 둔다.
+            Hibernate.initialize(paymentPending.getGathering());
+            eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
+        }
+        return pass;
+    }
+
+    /** 이용권에 딸린 결제 대기(PAYMENT_PENDING) 신청. 연결 신청이 없으면 회원의 가장 오래된 결제 대기 신청. 없으면 null. */
+    @Transactional(readOnly = true)
+    public Application resolvePaymentPendingApplication(TicketPass pass) {
+        Application linked = pass.getApplication();
+        if (linked != null) {
+            return linked.getStatus() == ApplicationStatus.PAYMENT_PENDING ? linked : null;
+        }
+        if (pass.getUser() == null) {
+            return null;    // 레거시 비회원 이용권: 자동 확정 대상 신청 매칭 없음
+        }
+        return applicationRepository
+                .findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+                        pass.getUser().getId(), ApplicationStatus.PAYMENT_PENDING)
+                .orElse(null);
+    }
+
+    /** 입금 대사 후보: 입금 기한이 지나지 않은 PENDING 이용권. 소유자가 없는 레거시 이용권은 입금자 이름이 없어 제외한다. */
+    @Transactional(readOnly = true)
+    public List<PendingPayment> listPendingPasses() {
+        LocalDateTime now = LocalDateTime.now();
+        return ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING)
+                .stream()
+                .filter(pass -> pass.getUser() != null
+                        && (pass.getPaymentDeadline() == null || pass.getPaymentDeadline().isAfter(now)))
+                .map(pass -> new PendingPayment(
+                        PaymentTargetType.TICKET_PASS, pass.getId(),
+                        pass.getApplication() != null ? pass.getApplication().getId() : null,
+                        pass.getUser().getName(), pass.getPurchaseAmount()))
+                .toList();
     }
 
     @Transactional(readOnly = true)

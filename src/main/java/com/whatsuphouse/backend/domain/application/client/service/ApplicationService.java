@@ -29,6 +29,9 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEv
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
+import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
+import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
@@ -202,6 +205,8 @@ public class ApplicationService {
         boolean paymentPending = false;
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
             validateRandomTableEligibility(user);
+            // 자격 심사 없이 바로 참가한다: 제한 대상만 막고, 처음 신청하는 회원은 자동 승인한다.
+            user.approveRandomTable();
         }
 
         Application application = Application.builder()
@@ -225,8 +230,7 @@ public class ApplicationService {
             eventPublisher.publishEvent(new GuestEmailVerificationConsumedEvent(email));
         }
 
-        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
-                && user.isApprovedForRandomTable()) {
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
             if (!saved.requiresRandomTableTicket()) {
                 saved.confirm();
                 autoConfirmed = true;
@@ -424,6 +428,32 @@ public class ApplicationService {
         }
 
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
+    }
+
+    /**
+     * 시스템(입금 웹훅·시뮬레이터)이 일반 모임 입금을 확인한다. 관리자 입금 확인(changePayment confirmed=true)과 같은 효과:
+     * 처음 확인되는 순간에만 입금 완료 안내 이벤트를 낸다. 신청 상태(status)는 건드리지 않는다.
+     */
+    @Transactional
+    public void confirmRegularPaymentBySystem(UUID applicationId) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        boolean alreadyConfirmed = application.isPaymentConfirmed();
+        application.confirmPayment();
+        if (!alreadyConfirmed) {
+            eventPublisher.publishEvent(new ApplicationPaymentConfirmedEvent(application));
+        }
+    }
+
+    /** 입금 대사 후보: 입금 확인 전인 유료 일반 모임 신청(PENDING·CONFIRMED). */
+    public List<PendingPayment> listPendingRegularPayments() {
+        return applicationRepository.findUnpaidRegularApplications(
+                        GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED))
+                .stream()
+                .filter(Application::isPaidGathering)
+                .map(a -> new PendingPayment(PaymentTargetType.REGULAR_APPLICATION, a.getId(), a.getId(),
+                        a.getName(), a.getSession().getEffectivePrice()))
+                .toList();
     }
 
     /** 회차별 정원을 차지한 인원(승인+출석). 신청이 없는 회차는 결과에 없다. (KAN-338) */
