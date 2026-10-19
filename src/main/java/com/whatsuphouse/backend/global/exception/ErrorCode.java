@@ -185,7 +185,17 @@ public enum ErrorCode {
     CHAT_REPORT_NOT_FOUND("존재하지 않는 신고입니다.", HttpStatus.NOT_FOUND),
     CHAT_CRYPTO_FAILED("메시지를 처리하지 못했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
     CHAT_PUSH_DISABLED("웹 푸시를 사용할 수 없습니다.", HttpStatus.SERVICE_UNAVAILABLE),
-    CHAT_PUSH_INVALID_ENDPOINT("올바르지 않은 푸시 구독 주소입니다.", HttpStatus.BAD_REQUEST);
+    CHAT_PUSH_INVALID_ENDPOINT("올바르지 않은 푸시 구독 주소입니다.", HttpStatus.BAD_REQUEST),
+
+    // Bot (그록봇 답변 수신, KAN-406)
+    BOT_DISPATCH_NOT_FOUND("존재하지 않는 봇 요청입니다.", HttpStatus.NOT_FOUND),
+    BOT_REPLY_FORBIDDEN("요청한 문의방·메시지와 일치하지 않습니다.", HttpStatus.FORBIDDEN),
+    BOT_REPLY_ALREADY_HANDLED("이미 처리된 봇 요청입니다.", HttpStatus.CONFLICT),
+    BOT_DISPATCH_STALE("더 최신 문의가 있어 이전 답변은 등록하지 않습니다.", HttpStatus.CONFLICT),
+    BOT_DISPATCH_NOT_SENT("답변을 기다리는 상태가 아닙니다.", HttpStatus.CONFLICT),
+    BOT_ROOM_PAUSED("담당자가 응대 중인 문의방이라 봇 답변을 등록하지 않습니다.", HttpStatus.CONFLICT),
+    BOT_IDEMPOTENCY_KEY_MISMATCH("Idempotency-Key가 eventId와 다릅니다.", HttpStatus.UNPROCESSABLE_ENTITY),
+    BOT_REPLY_INVALID_TEXT("답변은 1자 이상 2000자 이하여야 합니다.", HttpStatus.UNPROCESSABLE_ENTITY);
 
     private final String message;
     private final HttpStatus status;

@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.chat.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
+import com.whatsuphouse.backend.domain.bot.service.BotDispatchService;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatGroupRoomCreateRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMemberAddRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMuteRequest;
@@ -28,6 +29,8 @@ import com.whatsuphouse.backend.domain.chat.repository.ChatMessageRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMuteRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatReportRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatRoomRepository;
+import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
@@ -66,6 +69,7 @@ public class AdminChatService {
     private final UserService userService;
     private final AdminApplicationService adminApplicationService;
     private final MatchingService matchingService;
+    private final ExceptionCaseService exceptionCaseService;
     private final ApplicationEventPublisher eventPublisher;
 
     public ChatRoomIdResponse createGroupRoom(UUID adminId, boolean isAdmin, ChatGroupRoomCreateRequest request) {
@@ -162,6 +166,18 @@ public class AdminChatService {
                     Arrays.asList(assembler.displayNickname(admin, room, false)));
         }
         eventPublisher.publishEvent(new ChatNoticeChangedEvent(roomId, messageId));
+    }
+
+    /** 문의방 그록봇 자동응답 재개: botPaused·needsHuman 해제, 이 방의 열린 CS 예외 처리 완료. (KAN-406) */
+    public void resumeBot(UUID roomId, UUID adminId, boolean isAdmin) {
+        accessPolicy.checkAdmin(isAdmin);
+        ChatRoom room = findRoom(roomId);
+        if (!room.isInquiry()) {
+            throw new CustomException(ErrorCode.CHAT_ROOM_TYPE_MISMATCH);
+        }
+        room.resumeBot();
+        exceptionCaseService.resolveOpen(ExceptionCaseType.CS, null, BotDispatchService.caseReasonPrefix(roomId),
+                adminId, "봇 자동응답 재개");
     }
 
     public void deleteRoom(UUID roomId, boolean isAdmin) {

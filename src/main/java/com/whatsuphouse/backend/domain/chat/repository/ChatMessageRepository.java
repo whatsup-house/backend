@@ -29,6 +29,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
     // 메시지 조회는 joined_at 필터 없이 방 전체(삭제된 메시지도 "삭제된 메시지입니다"로 노출)
     List<ChatMessage> findAllByRoomIdOrderByCreatedAtDescIdDesc(UUID roomId, Pageable pageable);
 
+    // 그록봇 대화 기록(KAN-406): 시스템·삭제 메시지 제외 최신순
+    List<ChatMessage> findAllByRoomIdAndTypeNotAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+            UUID roomId, ChatMessageType type, Pageable pageable);
+
     @Query("""
             select m from ChatMessage m
             where m.roomId = :roomId
