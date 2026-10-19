@@ -38,12 +38,12 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     @Query("select a.tableMemberId as tableMemberId, a.status as status from Attendance a where a.tableMemberId in :tableMemberIds")
     List<MemberStatusProjection> findStatusesByTableMemberIdIn(@Param("tableMemberIds") Collection<UUID> tableMemberIds);
 
-    // since(포함) 이후 회차에 status로 참석한 회원과 그 회차 장소(없으면 NULL). 다음 모집 알림 대상. (KAN-349)
+    // since(포함) 이후 회차에 status로 참석한 회원과 그 회차 장소(없으면 NULL). 다음 모집 알림 대상. (KAN-349) 체험(데모) 회원은 제외한다. (KAN-407)
     @Query("""
             select distinct u.id as userId, l.id as locationId
             from DiningTableMember m join m.application ap join ap.user u join m.table t join t.session s
                  left join s.location l, Attendance a
-            where a.tableMemberId = m.id and a.status = :status and s.eventDate >= :since
+            where a.tableMemberId = m.id and a.status = :status and s.eventDate >= :since and u.isDemo = false
             """)
     List<AttendeeLocationProjection> findAttendeeLocationsSince(@Param("status") AttendanceStatus status,
                                                                @Param("since") LocalDate since);

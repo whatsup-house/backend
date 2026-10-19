@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringDe
 import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringResponse;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
+import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import com.whatsuphouse.backend.global.common.enums.AppLocale;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -35,9 +37,10 @@ public class GatheringController {
             @Parameter(description = "날짜 필터 (YYYY-MM-DD)", example = "2026-04-21")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @Parameter(description = "회차 상태 필터 (OPEN/CLOSED/DONE/CANCELLED). 날짜가 지난 모집중 회차는 DONE", example = "OPEN")
-            @RequestParam(required = false) GatheringSessionStatus status
+            @RequestParam(required = false) GatheringSessionStatus status,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.ok(ApiResult.success(gatheringService.listGatherings(date, status)));
+        return ResponseEntity.ok(ApiResult.success(gatheringService.listGatherings(date, status, principal)));
     }
 
     @Operation(summary = "모임 상세 조회", description = "모임 종류 상세와 전체 회차 목록을 조회합니다. "

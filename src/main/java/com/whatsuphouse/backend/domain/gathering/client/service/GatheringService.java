@@ -13,6 +13,9 @@ import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.translation.enums.TranslatableType;
 import com.whatsuphouse.backend.domain.translation.service.ContentTranslationService;
+import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.user.service.UserService;
+import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.enums.AppLocale;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 @Service
@@ -44,14 +48,18 @@ public class GatheringService {
     private final GatheringSessionRepository gatheringSessionRepository;
     private final ContentTranslationService contentTranslationService;
     private final ApplicationService applicationService;
+    private final UserService userService;
 
     /**
      * 종류 단위 목록. 각 종류에는 조건(date, 유효 status)에 맞는 회차만 붙고, 조건이 없으면 오늘 이후 회차(다가오는 회차)만 본다.
      * 맞는 회차가 없는 종류는 빠진다. 순서는 각 종류의 가장 이른 회차 순. (KAN-338)
      * status는 유효 상태로 거른다: 날짜가 지난 OPEN 회차는 DONE이라 OPEN 목록에서 빠진다. (KAN-163)
+     * 숨김 종류는 viewer에 따라 걸러진다(visibleTo). (KAN-407)
      */
-    public List<GatheringResponse> listGatherings(LocalDate date, GatheringSessionStatus status) {
+    public List<GatheringResponse> listGatherings(LocalDate date, GatheringSessionStatus status, UserPrincipal viewer) {
+        Predicate<Gathering> visible = visibleTo(viewer);
         List<GatheringSession> sessions = findSessions(date, status).stream()
+                .filter(session -> visible.test(session.getGathering()))
                 .filter(session -> status == null || session.getEffectiveSessionStatus() == status)
                 .sorted(SESSION_ORDER)
                 .toList();
@@ -75,14 +83,30 @@ public class GatheringService {
     }
 
     // 큐레이션은 종류 단위. 날짜·장소·가격·상태는 대표 회차 값으로 채운다. 회차가 없는 종류는 노출하지 않는다.
-    public List<CuratedGatheringResponse> listCuratedGatherings() {
-        List<Gathering> curated = gatheringRepository.findByIsCuratedTrueAndDeletedAtIsNullOrderByCuratedRankAsc();
+    public List<CuratedGatheringResponse> listCuratedGatherings(UserPrincipal viewer) {
+        Predicate<Gathering> visible = visibleTo(viewer);
+        List<Gathering> curated = gatheringRepository.findByIsCuratedTrueAndDeletedAtIsNullOrderByCuratedRankAsc().stream()
+                .filter(visible)
+                .toList();
         Map<UUID, GatheringSession> representatives =
                 findRepresentativeSessions(curated.stream().map(Gathering::getId).toList());
         return curated.stream()
                 .filter(gathering -> representatives.containsKey(gathering.getId()))
                 .map(gathering -> CuratedGatheringResponse.from(gathering, representatives.get(gathering.getId())))
                 .toList();
+    }
+
+    /**
+     * 모임 종류 노출 규칙. 관리자는 전체, 체험(데모) 회원은 숨김 종류만, 그 외(비회원 포함)는 숨김이 아닌 종류만. (KAN-407)
+     * 직접 링크(상세)에는 적용하지 않는다.
+     */
+    public Predicate<Gathering> visibleTo(UserPrincipal viewer) {
+        if (viewer != null && viewer.isAdmin()) {
+            return gathering -> true;
+        }
+        boolean demo = viewer != null
+                && userService.findUsersByIds(List.of(viewer.getUserId())).values().stream().anyMatch(User::isDemo);
+        return gathering -> gathering.isHidden() == demo;
     }
 
     public GatheringDetailResponse getGathering(UUID id) {

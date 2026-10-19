@@ -27,6 +27,8 @@ public class UserRepositoryCustomImpl implements UserRepositoryCustom {
 
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(user.deletedAt.isNull());
+        // 심사용 체험(데모) 회원은 운영 회원 목록에서 뺀다. (KAN-407)
+        builder.and(user.isDemo.isFalse());
         if (search != null && !search.isBlank()) {
             builder.and(
                     user.nickname.containsIgnoreCase(search)

@@ -60,7 +60,7 @@ class FormProvisionServiceTest {
     }
 
     @Test
-    @DisplayName("우연한 식탁 종류 폼에는 예약 질문 3개 뒤에 표준 질문 7개가 복사된다")
+    @DisplayName("우연한 식탁 종류 폼에는 예약 질문 3개 뒤에 표준 질문 8개가 복사된다")
     @SuppressWarnings("unchecked")
     void createDefaultForm_randomTable_copiesStandardQuestions() {
         given(formRepository.save(any(Form.class))).willAnswer(inv -> inv.getArgument(0));
@@ -72,12 +72,12 @@ class FormProvisionServiceTest {
         ArgumentCaptor<List<FormQuestion>> saved = ArgumentCaptor.forClass(List.class);
         then(formQuestionRepository).should().saveAll(saved.capture());
         List<FormQuestion> questions = saved.getValue();
-        assertThat(questions).hasSize(10);
+        assertThat(questions).hasSize(11);
         assertThat(questions).allMatch(q -> q.getForm() == form);
-        assertThat(questions.subList(3, 10)).extracting(FormQuestion::getReservedKey)
+        assertThat(questions.subList(3, 11)).extracting(FormQuestion::getReservedKey)
                 .containsExactly(ReservedQuestionKey.values());
         assertThat(questions).extracting(FormQuestion::getDisplayOrder)
-                .containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+                .containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
     }
 
     @Test
