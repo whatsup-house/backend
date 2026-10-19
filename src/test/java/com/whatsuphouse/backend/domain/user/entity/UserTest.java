@@ -63,4 +63,26 @@ class UserTest {
         assertThat(user.isBlockedFromRandomTable()).isTrue();
         assertThat(user.isApprovedForRandomTable()).isFalse();
     }
+
+    @Test
+    @DisplayName("보증금 대상으로 표시하면 플래그가 켜진다")
+    void markDepositRequired_setsFlag() {
+        User user = buildUser(25, null);
+        assertThat(user.isDepositRequired()).isFalse();
+
+        user.markDepositRequired();
+
+        assertThat(user.isDepositRequired()).isTrue();
+    }
+
+    @Test
+    @DisplayName("데모 계정으로 표시하면 플래그가 켜진다")
+    void markDemo_setsFlag() {
+        User user = buildUser(25, null);
+        assertThat(user.isDemo()).isFalse();
+
+        user.markDemo();
+
+        assertThat(user.isDemo()).isTrue();
+    }
 }

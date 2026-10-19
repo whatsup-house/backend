@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.user.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.enums.Job;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -31,6 +32,9 @@ public class ProfileResponse {
     private String intro;
     private boolean isAdmin;
     private Integer mileage;
+    @Getter(onMethod_ = @JsonProperty("isDemo"))
+    private boolean isDemo;
+    private boolean depositRequired;
     private LocalDateTime createdAt;
 
     public static ProfileResponse from(User user, String characterUrl) {
@@ -53,6 +57,8 @@ public class ProfileResponse {
                 .intro(user.getIntro())
                 .isAdmin(user.isAdmin())
                 .mileage(user.getMileageBalance())
+                .isDemo(user.isDemo())
+                .depositRequired(user.isDepositRequired())
                 .createdAt(user.getCreatedAt())
                 .build();
     }

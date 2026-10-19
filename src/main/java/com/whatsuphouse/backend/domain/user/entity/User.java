@@ -81,6 +81,14 @@ public class User extends BaseEntity {
     @Column(name = "random_table_eligibility", length = 20)
     private RandomTableEligibility randomTableEligibility = RandomTableEligibility.UNREVIEWED;
 
+    // 데모 계정 여부. 해커톤 시연용 입금 흐름 트리거에 쓴다. (KAN-399)
+    @Column(name = "is_demo", nullable = false)
+    private boolean isDemo = false;
+
+    // 보증금 입금 대상 회원 여부. (KAN-399)
+    @Column(name = "deposit_required", nullable = false)
+    private boolean depositRequired = false;
+
     @Builder
     public User(String email, String password, String name, Gender gender, Integer age, LocalDate birthDate,
                 String nickname, String phone, String instagramId, Mbti mbti, String job, String intro) {
@@ -189,6 +197,14 @@ public class User extends BaseEntity {
 
     public void changePassword(String encodedPassword) {
         this.password = encodedPassword;
+    }
+
+    public void markDemo() {
+        this.isDemo = true;
+    }
+
+    public void markDepositRequired() {
+        this.depositRequired = true;
     }
 
     public void withdraw() {
