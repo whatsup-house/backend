@@ -164,6 +164,10 @@ public class ApplicationService {
         User user = null;
         if (userId != null) {
             user = userService.findUser(userId);
+            // 체험(데모) 계정은 실제 회원 모임에 섞이지 않도록 숨김 종류에만 신청할 수 있다. (KAN-407)
+            if (user.isDemo() && !gathering.isHidden()) {
+                throw new CustomException(ErrorCode.DEMO_USER_REAL_GATHERING_FORBIDDEN);
+            }
             // 우연한 식탁은 고른 희망 회차 중 하나라도 이미 신청했으면 중복이다.
             boolean alreadyApplied = session != null
                     ? applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(session.getId(), userId)

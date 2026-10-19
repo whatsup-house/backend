@@ -137,6 +137,35 @@ class AdminDiningServiceTest {
         assertThat(secondCard.getOpenExceptionCount()).isEqualTo(3);
     }
 
+    @Test
+    @DisplayName("숨김 종류(심사용) 회차는 대시보드 타일·카드·미해결 예외 수에 들어가지 않는다")
+    void getDashboard_excludesHiddenKindSessions() {
+        GatheringSession visible = session(3);
+        Gathering hiddenKind = Gathering.builder().title("심사용").gatheringType(GatheringType.RANDOM_TABLE).build();
+        ReflectionTestUtils.setField(hiddenKind, "hidden", true);
+        GatheringSession hidden = GatheringSession.builder()
+                .gathering(hiddenKind).eventDate(LocalDate.now().plusDays(4)).maxAttendees(12).build();
+        ReflectionTestUtils.setField(hidden, "id", UUID.randomUUID());
+
+        given(gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE)).willReturn(List.of(visible, hidden));
+        given(adminApplicationService.listSessionApplications(visible.getId())).willReturn(List.of());
+        given(matchingService.countTablesBySessionIds(List.of(visible.getId())))
+                .willReturn(Map.of(visible.getId(), Map.of(DiningTableStatus.PROPOSED, 1L)));
+        given(matchingService.findSessionIdsWithMatchRun(List.of(visible.getId()))).willReturn(Set.of());
+        given(exceptionCaseRepository.countBySessionIdsAndStatus(any(), eq(ExceptionCaseStatus.OPEN))).willReturn(List.of());
+        // 전체 미해결 7건 중 2건이 숨김 종류 회차의 건
+        given(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN)).willReturn(7L);
+        given(exceptionCaseRepository.countByStatusOnHiddenGatherings(ExceptionCaseStatus.OPEN)).willReturn(2L);
+
+        DiningDashboardResponse dashboard = adminDiningService.getDashboard();
+
+        assertThat(dashboard.getUpcomingSessionCount()).isEqualTo(1);
+        assertThat(dashboard.getSessions()).hasSize(1);
+        assertThat(dashboard.getProposedTableCount()).isEqualTo(1);
+        assertThat(dashboard.getConfirmedTableCount()).isZero();
+        assertThat(dashboard.getOpenExceptionCount()).isEqualTo(5);
+    }
+
     private User member(Integer age, LocalDate birthDate) {
         User user = User.builder().email(UUID.randomUUID() + "@test.com").name("회원").age(age).birthDate(birthDate).build();
         ReflectionTestUtils.setField(user, "id", UUID.randomUUID());

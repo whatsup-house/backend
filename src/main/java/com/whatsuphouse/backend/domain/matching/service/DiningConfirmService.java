@@ -1,5 +1,7 @@
 package com.whatsuphouse.backend.domain.matching.service;
 
+import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatGroupRoomCreateRequest;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
 import com.whatsuphouse.backend.domain.chat.enums.ChatSourceType;
@@ -7,8 +9,10 @@ import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.entity.Venue;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.dining.enums.PriceRangeOption;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
@@ -37,7 +41,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -70,6 +77,7 @@ public class DiningConfirmService {
     private final AttendanceRepository attendanceRepository;
     private final GatheringService gatheringService;
     private final DiningMatchService diningMatchService;
+    private final AdminApplicationService adminApplicationService;
     private final SessionVenueService sessionVenueService;
     private final ExceptionCaseService exceptionCaseService;
     private final AdminChatService adminChatService;
@@ -178,7 +186,7 @@ public class DiningConfirmService {
 
     // ── 3. 식당 ─────────────────────────────────────────────────────────────
 
-    private void assignVenue(UUID tableId) {
+    void assignVenue(UUID tableId) {
         try {
             runInNewTransaction(() -> {
                 DiningTable table = findTable(tableId);
@@ -186,7 +194,7 @@ public class DiningConfirmService {
                     return; // 유예 중 운영자가 미리 배정
                 }
                 UUID sessionId = table.getSession().getId();
-                sessionVenueService.useFirstAvailableVenue(sessionId).ifPresentOrElse(table::assignVenue,
+                sessionVenueService.useFirstAvailableVenue(sessionId, preferredPriceRanges(tableId)).ifPresentOrElse(table::assignVenue,
                         () -> exceptionCaseService.open(ExceptionCaseType.VENUE, sessionId, tableId, null,
                                 "회차 식당 풀에 남은 자리가 없어 식당을 배정하지 못했습니다."));
             });
@@ -194,6 +202,32 @@ public class DiningConfirmService {
             log.warn("테이블 식당 배정 실패: tableId={}", tableId, e);
             openCase(ExceptionCaseType.VENUE, tableId, "식당 배정 실패: " + e.getMessage());
         }
+    }
+
+    // 테이블 멤버가 PRICE_RANGE에 답한 선택지의 교집합. 상관 없음을 고른 멤버는 뺀다. 답한 멤버가 없거나 겹치지 않으면 빈 집합(선호 없음). (KAN-407)
+    Set<String> preferredPriceRanges(UUID tableId) {
+        List<UUID> applicationIds = findActiveMembers(tableId).stream().map(member -> member.getApplication().getId()).toList();
+        Map<UUID, Set<String>> byApplication = new HashMap<>();
+        for (ApplicationAnswer answer : adminApplicationService.findAnswers(applicationIds)) {
+            if (answer.getQuestion().getDeletedAt() == null
+                    && answer.getQuestion().getReservedKey() == ReservedQuestionKey.PRICE_RANGE
+                    && answer.getValue() != null) {
+                Set<String> choices = DiningMatchService.values(answer.getValue().get("value"));
+                // 상관 없음(HIGH 선택지)을 고른 멤버는 테이블 가격을 제약하지 않는다.
+                if (!choices.contains(PriceRangeOption.HIGH.getLabel())) {
+                    byApplication.put(answer.getApplication().getId(), choices);
+                }
+            }
+        }
+        Set<String> common = null;
+        for (Set<String> choices : byApplication.values()) {
+            if (common == null) {
+                common = new HashSet<>(choices);
+            } else {
+                common.retainAll(choices);
+            }
+        }
+        return common != null ? common : Set.of();
     }
 
     // ── 4. 채팅방 ───────────────────────────────────────────────────────────

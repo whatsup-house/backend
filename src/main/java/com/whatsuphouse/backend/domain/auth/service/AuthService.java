@@ -107,6 +107,11 @@ public class AuthService {
             throw new CustomException(ErrorCode.INVALID_CREDENTIALS);
         }
 
+        return issueLogin(user);
+    }
+
+    /** 인증을 마친 회원에게 로그인 토큰을 발급한다(리프레시 토큰은 Redis 저장). 로그인·체험 계정 시작이 함께 쓴다. */
+    public LoginResponse issueLogin(User user) {
         UserPrincipal principal = new UserPrincipal(user.getId(), user.getEmail(), user.isAdmin());
         String accessToken = jwtTokenProvider.generateAccessToken(principal);
         String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId());

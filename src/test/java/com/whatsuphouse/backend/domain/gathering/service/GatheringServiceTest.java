@@ -87,7 +87,7 @@ class GatheringServiceTest {
                 .willReturn(List.of(later, session, otherSoon));
 
         // when
-        List<GatheringResponse> result = gatheringService.listGatherings(null, null);
+        List<GatheringResponse> result = gatheringService.listGatherings(null, null, null);
 
         // then
         assertThat(result).extracting(GatheringResponse::getId).containsExactly(other.getId(), gatheringId);
@@ -105,7 +105,7 @@ class GatheringServiceTest {
                 .willReturn(List.of(session));
 
         // when
-        List<GatheringResponse> result = gatheringService.listGatherings(eventDate, null);
+        List<GatheringResponse> result = gatheringService.listGatherings(eventDate, null, null);
 
         // then
         assertThat(result).hasSize(1);
@@ -121,7 +121,7 @@ class GatheringServiceTest {
         given(gatheringSessionRepository.findByDeletedAtIsNull()).willReturn(List.of(session, pastOpen));
 
         // when
-        List<GatheringResponse> result = gatheringService.listGatherings(null, GatheringSessionStatus.OPEN);
+        List<GatheringResponse> result = gatheringService.listGatherings(null, GatheringSessionStatus.OPEN, null);
 
         // then
         assertThat(result).hasSize(1);
@@ -136,7 +136,7 @@ class GatheringServiceTest {
         given(gatheringSessionRepository.findByDeletedAtIsNull()).willReturn(List.of(session, pastOpen));
 
         // when
-        List<GatheringResponse> result = gatheringService.listGatherings(null, GatheringSessionStatus.DONE);
+        List<GatheringResponse> result = gatheringService.listGatherings(null, GatheringSessionStatus.DONE, null);
 
         // then
         assertThat(result).hasSize(1);
@@ -325,7 +325,7 @@ class GatheringServiceTest {
                 .willReturn(List.of(oldestPast, session));
 
         // when
-        List<CuratedGatheringResponse> result = gatheringService.listCuratedGatherings();
+        List<CuratedGatheringResponse> result = gatheringService.listCuratedGatherings(null);
 
         // then: 카드 날짜와 클릭 시 열리는 상세가 같은 다가오는 회차여야 한다
         assertThat(result).hasSize(1);

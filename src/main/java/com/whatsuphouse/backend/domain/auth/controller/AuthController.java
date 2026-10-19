@@ -12,6 +12,7 @@ import com.whatsuphouse.backend.domain.auth.dto.response.PasswordResetRequestRes
 import com.whatsuphouse.backend.domain.auth.dto.response.RegisterResponse;
 import com.whatsuphouse.backend.domain.auth.dto.response.TokenRefreshResponse;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
+import com.whatsuphouse.backend.domain.auth.service.DemoAccountService;
 import com.whatsuphouse.backend.global.auth.AuthCookieProvider;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -36,6 +37,7 @@ import java.util.Arrays;
 public class AuthController {
 
     private final AuthService authService;
+    private final DemoAccountService demoAccountService;
     private final AuthCookieProvider authCookieProvider;
 
     @Operation(summary = "회원가입", description = "이메일, 비밀번호, 닉네임 등 기본 정보로 회원가입한다.")
@@ -53,6 +55,15 @@ public class AuthController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, authCookieProvider.issue(response.getAccessToken(), response.getRefreshToken()))
                 .body(ApiResult.success("로그인되었습니다.", response));
+    }
+
+    @Operation(summary = "체험 시작", description = "심사용 체험 회원을 새로 만들고 로그인 쿠키를 발급한다. IP당 분당 3회 제한(초과 시 429).")
+    @PostMapping("/demo")
+    public ResponseEntity<ApiResult<LoginResponse>> startDemo() {
+        LoginResponse response = demoAccountService.createDemo();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, authCookieProvider.issue(response.getAccessToken(), response.getRefreshToken()))
+                .body(ApiResult.success("체험을 시작합니다.", response));
     }
 
     @Operation(summary = "로그아웃", description = "Redis의 refreshToken을 삭제하고 accessToken, refreshToken 쿠키를 만료 처리한다.")

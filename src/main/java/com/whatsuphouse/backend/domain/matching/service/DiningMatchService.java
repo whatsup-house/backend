@@ -479,7 +479,8 @@ public class DiningMatchService {
         }
     }
 
-    private static Set<String> values(Object value) {
+    // 답변 값(단일 값 또는 목록)을 문자열 집합으로. 식당 가격대 선호(DiningConfirmService)도 쓴다.
+    static Set<String> values(Object value) {
         Set<String> result = new LinkedHashSet<>();
         if (value instanceof Collection<?> collection) {
             collection.stream().filter(Objects::nonNull).map(Object::toString).forEach(result::add);

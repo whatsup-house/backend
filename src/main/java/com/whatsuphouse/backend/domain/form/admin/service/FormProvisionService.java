@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
  * 이름/연락처/이메일은 applications.name/phone/email 컬럼으로 전달되는 필수 정보라 관리자가 삭제/키변경할 수 없다.
  * 이메일은 비회원 신청 알림 발송에 사용된다(회원은 계정 이메일 사용).
  * 나머지 질문은 관리자가 자유롭게 추가/삭제한다.
- * 우연한 식탁(RANDOM_TABLE) 종류 폼에는 템플릿 '우연한 식탁 표준 폼'의 표준 질문 7개를 복사한다. (KAN-341)
+ * 우연한 식탁(RANDOM_TABLE) 종류 폼에는 템플릿 '우연한 식탁 표준 폼'의 표준 질문을 복사한다. (KAN-341)
  */
 @Service
 @RequiredArgsConstructor
@@ -71,7 +71,7 @@ public class FormProvisionService {
         return formQuestionRepository.findByFormAndDeletedAtIsNullOrderByDisplayOrderAsc(form);
     }
 
-    // RANDOM_TABLE 종류에 연결되는 폼은 표준 질문 7개를 모두 가져야 한다. 템플릿이 빠져 있으면 폼 생성(=종류 생성)을 막는다.
+    // RANDOM_TABLE 종류에 연결되는 폼은 표준 질문을 모두 가져야 한다. 템플릿이 빠져 있으면 폼 생성(=종류 생성)을 막는다.
     private void validateStandardQuestions(List<FormQuestion> questions) {
         EnumSet<ReservedQuestionKey> present = questions.stream()
                 .map(FormQuestion::getReservedKey)
