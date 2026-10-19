@@ -83,4 +83,20 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 그록봇 발송 큐 적재 전용(KAN-406). 단일 스레드라 같은 방 디바운스(PENDING 찾기→갱신/생성)가 서로 겹치지 않는다.
+     * 포화 시 버린다(그 메시지는 사람 응답으로 남는다).
+     */
+    @Bean(name = "botExecutor")
+    public TaskExecutor botExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("bot-dispatch-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

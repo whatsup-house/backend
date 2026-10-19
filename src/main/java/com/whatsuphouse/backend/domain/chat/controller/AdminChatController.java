@@ -104,6 +104,16 @@ public class AdminChatController {
         return ResponseEntity.ok(ApiResult.success(null));
     }
 
+    @Operation(summary = "그록봇 자동응답 재개", description = "문의방만. botPaused·needsHuman을 풀고 이 방의 열린 CS 예외를 처리 완료로 닫는다.")
+    @PostMapping("/rooms/{id}/bot/resume")
+    public ResponseEntity<ApiResult<Void>> resumeBot(
+            @Parameter(description = "방 ID") @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        adminChatService.resumeBot(id, principal.getUserId(), principal.isAdmin());
+        return ResponseEntity.ok(ApiResult.success(null));
+    }
+
     @Operation(summary = "방 삭제", description = "단체방 소프트 삭제")
     @DeleteMapping("/rooms/{id}")
     public ResponseEntity<ApiResult<Void>> deleteRoom(

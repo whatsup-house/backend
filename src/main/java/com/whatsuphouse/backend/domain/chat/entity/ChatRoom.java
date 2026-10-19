@@ -52,6 +52,13 @@ public class ChatRoom extends BaseEntity {
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
 
+    // 문의방 그록봇(KAN-406): 봇이 담당자에게 넘긴 상태 / 담당자가 답해 봇 자동응답을 멈춘 상태
+    @Column(name = "needs_human", nullable = false)
+    private boolean needsHuman = false;
+
+    @Column(name = "bot_paused", nullable = false)
+    private boolean botPaused = false;
+
     private ChatRoom(ChatRoomType type, String name, ChatSourceType sourceType, UUID sourceId,
                      UUID inquiryUserId, UUID createdBy) {
         this.type = type;
@@ -76,5 +83,19 @@ public class ChatRoom extends BaseEntity {
 
     public void changeNotice(UUID messageId) {
         this.noticeMessageId = messageId;
+    }
+
+    public void requestHuman() {
+        this.needsHuman = true;
+    }
+
+    public void pauseBot() {
+        this.botPaused = true;
+    }
+
+    /** 담당자가 봇 자동응답을 다시 켠다. 이관 표시도 해제. */
+    public void resumeBot() {
+        this.botPaused = false;
+        this.needsHuman = false;
     }
 }

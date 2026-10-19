@@ -95,6 +95,23 @@ r2:
   bucket: ${R2_BUCKET:}
   public-base-url: ${R2_PUBLIC_BASE_URL:}
 
+# 1:1 문의방 그록봇 AI 자동응답 (KAN-406). 비밀값(웹훅 주소·키, 답변 토큰)은 환경변수로만. 로그 출력 금지.
+# - enabled: 마스터 스위치. 관리자 화면 전역 토글(bot_settings)과 함께 켜져야 동작한다.
+# - allowed-user-ids: 자동응답 대상 회원 UUID(쉼표 구분). 데모 회원(is_demo)은 목록과 무관하게 대상.
+# - reply-url: 에이전트에 알려 주는 답변 주소. https + whatsup.house(*.whatsup.house)가 아니면 시작 시 봇을 끈다.
+bot:
+  enabled: ${BOT_ENABLED:false}
+  allowed-user-ids: ${BOT_ALLOWED_USER_IDS:}
+  webhook-url: ${GROK_WEBHOOK_URL:}
+  webhook-key: ${GROK_WEBHOOK_KEY:}
+  reply-token: ${WHATSUP_BOT_TOKEN:}
+  reply-url: https://api.whatsup.house/api/bot/replies
+  debounce-seconds: 10
+  reply-timeout-minutes: 3
+  per-user-hourly-limit: 20
+  daily-limit: 300
+  max-text-length: 2000
+
 # 채팅 본문 AES-256-GCM 키(base64 32바이트). 운영 필수 — 없으면 기동 실패가 의도된 동작.
 # 생성: openssl rand -base64 32 / 키를 바꾸면 기존 메시지는 복호화되지 않는다(키 로테이션 미지원).
 chat:

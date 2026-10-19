@@ -53,6 +53,14 @@ notification:
   email:
     from: noreply@test.com
 
+# 그록봇은 기본 꺼짐(외부 호출 차단). 필요한 테스트가 @TestPropertySource로 켠다.
+bot:
+  enabled: false
+  allowed-user-ids: ''
+  webhook-url: ''
+  webhook-key: ''
+  reply-token: ''
+
 # 로컬/테스트 전용 고정 더미 키(0x00~0x1f). 운영 키와 무관하며 실데이터에 쓰지 않는다.
 chat:
   encryption-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=

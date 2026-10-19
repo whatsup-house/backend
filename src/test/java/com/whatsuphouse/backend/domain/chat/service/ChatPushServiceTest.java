@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.chat.service;
 
+import com.whatsuphouse.backend.domain.bot.service.BotHandoffService;
 import com.whatsuphouse.backend.domain.chat.entity.ChatMember;
 import com.whatsuphouse.backend.domain.chat.entity.ChatMessage;
 import com.whatsuphouse.backend.domain.chat.entity.ChatRoom;
@@ -48,7 +49,7 @@ import static org.mockito.Mockito.verify;
 /** 발송 대상 선정(멤버십·소켓 구독·발신자·SYSTEM)을 실제 JPA 조회로 검증한다. 실제 HTTP 발송(WebPushSender)과 소켓 현황은 목. */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({TestJpaConfig.class, ChatPushService.class, ChatResponseAssembler.class, ChatCipher.class})
+@Import({TestJpaConfig.class, ChatPushService.class, ChatResponseAssembler.class, ChatCipher.class, BotHandoffService.class})
 @ActiveProfiles("test")
 class ChatPushServiceTest {
 
