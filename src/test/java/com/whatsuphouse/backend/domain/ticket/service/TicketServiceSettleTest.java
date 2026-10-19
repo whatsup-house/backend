@@ -1,6 +1,11 @@
 package com.whatsuphouse.backend.domain.ticket.service;
 
+import com.whatsuphouse.backend.domain.application.client.service.MembershipWeekRule;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketProductKind;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
@@ -43,6 +48,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -58,6 +66,9 @@ class TicketServiceSettleTest {
     @Mock private ApplicationRepository applicationRepository;
     @Mock private GatheringSessionService gatheringSessionService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private DepositService depositService;
+    @Mock private MembershipWeekRule membershipWeekRule;
+    @Mock private ExceptionCaseService exceptionCaseService;
 
     @InjectMocks private TicketService ticketService;
 
@@ -104,6 +115,7 @@ class TicketServiceSettleTest {
                 .willReturn(Optional.of(application.getSession()));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
                 application.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
+        given(depositService.isSatisfied(application.getId())).willReturn(true);
 
         TicketPass settled = ticketService.settlePass(passId, "WEBHOOK");
 
@@ -119,6 +131,122 @@ class TicketServiceSettleTest {
         assertThat(saved.getAllValues()).allSatisfy(tx -> assertThat(tx.getReason()).contains("WEBHOOK"));
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
         then(gatheringSessionService).should().findSessionForUpdate(application.getSession().getId());
+    }
+
+    @Test
+    @DisplayName("보증금 입금 전이면 이용권은 차감(USE)하되 신청은 결제 대기로 두고 확정 이벤트를 내지 않는다 (KAN-402)")
+    void settlePass_depositUnpaid_usesTicketButStaysPending() {
+        Application application = paymentPendingApplication(4);
+        TicketPass pass = pendingPass(application);
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(gatheringSessionService.findSessionForUpdate(application.getSession().getId()))
+                .willReturn(Optional.of(application.getSession()));
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
+                application.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
+        given(depositService.isSatisfied(application.getId())).willReturn(false);
+
+        ticketService.settlePass(passId, "WEBHOOK");
+
+        assertThat(pass.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
+        assertThat(pass.getRemainingCount()).isEqualTo(3);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        ArgumentCaptor<TicketTransaction> saved = ArgumentCaptor.forClass(TicketTransaction.class);
+        then(ticketTransactionRepository).should(times(2)).save(saved.capture());
+        assertThat(saved.getAllValues()).extracting(TicketTransaction::getTransactionType)
+                .containsExactly(TicketTransactionType.ISSUE, TicketTransactionType.USE);
+        then(eventPublisher).should(never()).publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("이미 이용권을 쓰고 보증금만 기다리는 신청이면 새 이용권에서 또 차감하지 않는다 (KAN-402)")
+    void settlePass_applicationAlreadyUsedTicket_noSecondDeduction() {
+        Application application = paymentPendingApplication(4);
+        TicketPass pass = pendingPass(application);
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(ticketTransactionRepository.existsByApplication_IdAndTransactionType(
+                application.getId(), TicketTransactionType.USE)).willReturn(true);
+
+        ticketService.settlePass(passId, "WEBHOOK");
+
+        assertThat(pass.getRemainingCount()).isEqualTo(4);
+        ArgumentCaptor<TicketTransaction> saved = ArgumentCaptor.forClass(TicketTransaction.class);
+        then(ticketTransactionRepository).should().save(saved.capture());
+        assertThat(saved.getValue().getTransactionType()).isEqualTo(TicketTransactionType.ISSUE);
+    }
+
+    @Test
+    @DisplayName("멤버십 입금 확인 시 주 1회 조건을 어기면 이용권만 활성화, 신청은 결제 대기 + 예외함 CONFLICT (KAN-402)")
+    void settlePass_periodPassWeeklyLimitViolated_opensConflict() {
+        Application application = periodPendingApplication();
+        TicketPass pass = periodPass(application);
+        LocalDate thursday = LocalDate.now().plusDays(10);
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(membershipWeekRule.candidateDates(application.getId())).willReturn(List.of(thursday));
+        given(membershipWeekRule.check(user.getId(), application.getId(), List.of(thursday)))
+                .willReturn(Optional.of(ErrorCode.MEMBERSHIP_WEEKLY_LIMIT));
+
+        ticketService.settlePass(passId, "WEBHOOK");
+
+        assertThat(pass.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        then(exceptionCaseService).should().open(eq(ExceptionCaseType.CONFLICT), isNull(), isNull(), eq(application.getId()),
+                startsWith("멤버십 조건 불충족: " + ErrorCode.MEMBERSHIP_WEEKLY_LIMIT.getMessage()));
+        ArgumentCaptor<TicketTransaction> saved = ArgumentCaptor.forClass(TicketTransaction.class);
+        then(ticketTransactionRepository).should().save(saved.capture());
+        assertThat(saved.getValue().getTransactionType()).isEqualTo(TicketTransactionType.ISSUE);
+        then(eventPublisher).should(never()).publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("멤버십 기간이 마지막 희망 회차를 덮지 못하면 이용권만 활성화하고 예외함 CONFLICT (KAN-402)")
+    void settlePass_periodPassNotCoveringLatestCandidate_opensConflict() {
+        Application application = periodPendingApplication();
+        TicketPass pass = periodPass(application);
+        LocalDate farAway = LocalDate.now().plusMonths(2);
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(membershipWeekRule.candidateDates(application.getId())).willReturn(List.of(farAway));
+
+        ticketService.settlePass(passId, "WEBHOOK");
+
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        then(exceptionCaseService).should().open(eq(ExceptionCaseType.CONFLICT), isNull(), isNull(), eq(application.getId()),
+                startsWith("멤버십 조건 불충족: "));
+        then(membershipWeekRule).should(never()).check(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("멤버십 조건을 지키면 수량 0 USE로 확정한다")
+    void settlePass_periodPassRulesMet_confirms() {
+        Application application = periodPendingApplication();
+        TicketPass pass = periodPass(application);
+        LocalDate thursday = LocalDate.now().plusDays(10);
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(membershipWeekRule.candidateDates(application.getId())).willReturn(List.of(thursday));
+        given(membershipWeekRule.check(user.getId(), application.getId(), List.of(thursday))).willReturn(Optional.empty());
+        given(depositService.isSatisfied(application.getId())).willReturn(true);
+
+        ticketService.settlePass(passId, "WEBHOOK");
+
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(exceptionCaseService).shouldHaveNoInteractions();
+        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    // 매칭 전(회차 미배정) 우연한 식탁 결제 대기 신청.
+    private Application periodPendingApplication() {
+        Gathering gathering = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        Application application = Application.builder().bookingNumber("WH-PAY-M01").gathering(gathering)
+                .user(user).name("홍길동").phone("01012345678").build();
+        ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
+        application.awaitPayment();
+        return application;
+    }
+
+    private TicketPass periodPass(Application application) {
+        TicketPass pass = new TicketPass(user, application, new TicketProductOption(
+                "멤버십 1개월", 0, 35000, TicketProductKind.PERIOD, 1));
+        ReflectionTestUtils.setField(pass, "id", passId);
+        return pass;
     }
 
     @Test

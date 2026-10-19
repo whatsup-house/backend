@@ -31,7 +31,9 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEve
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
 import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
@@ -43,7 +45,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
@@ -75,14 +76,13 @@ public class ApplicationService {
     private final TicketService ticketService;
     private final AuthService authService;
     private final ApplicationLookupTokenService applicationLookupTokenService;
+    private final MembershipWeekRule membershipWeekRule;
+    private final DepositService depositService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int MIN_BIRTH_YEAR = 1900;
     private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
-    // 멤버십 주 1회 검사에서 '활성' 신청으로 보는 상태. (KAN-401)
-    private static final List<ApplicationStatus> ACTIVE_STATUSES = List.of(
-            ApplicationStatus.PENDING, ApplicationStatus.PAYMENT_PENDING, ApplicationStatus.CONFIRMED, ApplicationStatus.ATTENDED);
     private static final java.util.regex.Pattern EMAIL_PATTERN =
             java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
@@ -105,18 +105,19 @@ public class ApplicationService {
             }
             locked.put(id, session);
         });
-        return applyInternal(candidateIds.stream().map(locked::get).toList(), request.getAnswers(), userId);
+        return applyInternal(candidateIds.stream().map(locked::get).toList(), request.getAnswers(), userId,
+                request.getDepositReturnAccount());
     }
 
     // 기존 신청 경로: 경로의 gatheringId는 회차 ID다(마이그레이션된 회차는 옛 게더링 ID와 같다). 그 회차 하나를 고른 신청으로 처리한다.
     @Transactional
     public ApplicationResponse apply(UUID sessionId, ApplicationRequest request, UUID userId) {
-        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), userId);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), userId, null);
     }
 
     @Transactional
     public ApplicationResponse applyAsGuest(UUID sessionId, ApplicationRequest request) {
-        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), null);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), null, null);
     }
 
     private GatheringSession lockSession(UUID sessionId) {
@@ -125,9 +126,10 @@ public class ApplicationService {
     }
 
     // applyInternal은 @Transactional 퍼블릭 메서드에서만 호출되므로 self-invocation 트랜잭션 누락 위험 없음
-    // candidates: 같은 종류의 잠근 회차들, 희망 순위 순.
+    // candidates: 같은 종류의 잠근 회차들, 희망 순위 순. depositReturnAccount: 보증금 대상 회원의 반환 계좌(KAN-402).
     @SuppressWarnings("java:S6809")
-    private ApplicationResponse applyInternal(List<GatheringSession> candidates, List<AnswerItem> answers, UUID userId) {
+    private ApplicationResponse applyInternal(List<GatheringSession> candidates, List<AnswerItem> answers, UUID userId,
+                                              RefundAccount depositReturnAccount) {
         Gathering gathering = candidates.get(0).getGathering();
         boolean randomTable = gathering.getGatheringType() == GatheringType.RANDOM_TABLE;
         if (!randomTable && candidates.size() != 1) {
@@ -209,8 +211,13 @@ public class ApplicationService {
 
         boolean autoConfirmed = false;
         boolean paymentPending = false;
+        // 노쇼 이력 회원은 보증금 입금 전까지 확정하지 않는다. 반환 계좌는 신청 시 필수. (KAN-402)
+        boolean depositRequired = randomTable && user.isDepositRequired();
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
             validateRandomTableEligibility(user);
+            if (depositRequired && (depositReturnAccount == null || !depositReturnAccount.isComplete())) {
+                throw new CustomException(ErrorCode.DEPOSIT_ACCOUNT_REQUIRED);
+            }
             // 자격 심사 없이 바로 참가한다: 제한 대상만 막고, 처음 신청하는 회원은 자동 승인한다.
             user.approveRandomTable();
         }
@@ -232,7 +239,10 @@ public class ApplicationService {
             ticketDate = candidates.stream().map(GatheringSession::getEventDate)
                     .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
             if (ticketDate != null && ticketService.hasMembershipFor(userId, ticketDate)) {
-                validateMembershipWeek(candidates, userId);
+                membershipWeekRule.check(userId, null, candidates.stream().map(GatheringSession::getEventDate).toList())
+                        .ifPresent(code -> {
+                            throw new CustomException(code);
+                        });
             }
         }
 
@@ -251,7 +261,12 @@ public class ApplicationService {
                 saved.confirm();
                 autoConfirmed = true;
             } else {
-                autoConfirmed = ticketService.tryUseOneTicket(user, saved, ticketDate);
+                // 보증금 대상이면 이용권(멤버십 USE(0) 포함)은 쓰되 확정은 보증금 입금 후 DepositService.markPaid가 한다.
+                boolean ticketUsed = ticketService.tryUseOneTicket(user, saved, ticketDate);
+                if (depositRequired) {
+                    depositService.createPending(saved, depositReturnAccount);
+                }
+                autoConfirmed = ticketUsed && !depositRequired;
                 paymentPending = !autoConfirmed;
                 if (autoConfirmed) {
                     saved.confirm();
@@ -271,21 +286,6 @@ public class ApplicationService {
             eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
         }
         return ApplicationResponse.from(saved);
-    }
-
-    /** 멤버십은 주(ISO, 월~일) 1회: 희망 회차가 한 주 안에 있어야 하고, 그 주에 다른 활성 신청이 없어야 한다. */
-    private void validateMembershipWeek(List<GatheringSession> candidates, UUID userId) {
-        Set<LocalDate> mondays = candidates.stream()
-                .map(candidate -> candidate.getEventDate().with(DayOfWeek.MONDAY))
-                .collect(Collectors.toSet());
-        if (mondays.size() > 1) {
-            throw new CustomException(ErrorCode.CANDIDATE_SESSIONS_DIFFERENT_WEEKS);
-        }
-        LocalDate monday = mondays.iterator().next();
-        if (applicationCandidateSessionRepository.existsActiveApplicationInDateRange(
-                userId, GatheringType.RANDOM_TABLE, ACTIVE_STATUSES, monday, monday.plusDays(6))) {
-            throw new CustomException(ErrorCode.MEMBERSHIP_WEEKLY_LIMIT);
-        }
     }
 
     private void validateRandomTableEligibility(User user) {

@@ -20,9 +20,9 @@ public interface ApplicationCandidateSessionRepository extends JpaRepository<App
 
     boolean existsBySession_IdInAndApplication_DeletedAtIsNull(Collection<UUID> sessionIds);
 
-    // 회원이 [from, to] 날짜 회차에 활성 신청이 있는지. 배정 회차가 있으면 그 회차만, 없으면 희망 회차로 본다. (멤버십 주 1회, KAN-401)
+    // 회원의 [from, to] 날짜 회차 활성 신청 ID. 배정 회차가 있으면 그 회차만, 없으면 희망 회차로 본다. (멤버십 주 1회, KAN-401)
     @Query("""
-            select count(c) > 0 from ApplicationCandidateSession c
+            select distinct a.id from ApplicationCandidateSession c
             join c.application a
             join c.session s
             where a.user.id = :userId and a.deletedAt is null and a.status in :statuses
@@ -30,11 +30,11 @@ public interface ApplicationCandidateSessionRepository extends JpaRepository<App
               and s.eventDate between :from and :to
               and (a.session is null or a.session = s)
             """)
-    boolean existsActiveApplicationInDateRange(@Param("userId") UUID userId,
-                                               @Param("type") GatheringType type,
-                                               @Param("statuses") Collection<ApplicationStatus> statuses,
-                                               @Param("from") LocalDate from,
-                                               @Param("to") LocalDate to);
+    List<UUID> findActiveApplicationIdsInDateRange(@Param("userId") UUID userId,
+                                                   @Param("type") GatheringType type,
+                                                   @Param("statuses") Collection<ApplicationStatus> statuses,
+                                                   @Param("from") LocalDate from,
+                                                   @Param("to") LocalDate to);
 
     // 대체 회차 이동(KAN-347) 시 희망 회차를 통째로 교체한다.
     void deleteByApplication_Id(UUID applicationId);

@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.payment.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Embeddable;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -17,6 +18,7 @@ public class RefundAccount {
     private String accountNumber;
     private String holder;
 
+    @JsonIgnore
     public boolean isComplete() {
         return hasText(bank) && hasText(accountNumber) && hasText(holder);
     }

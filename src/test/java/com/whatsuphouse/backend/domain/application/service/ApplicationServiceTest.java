@@ -8,6 +8,9 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.Applicati
 import com.whatsuphouse.backend.domain.application.client.dto.response.ApplicationResponse;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationLookupTokenService;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
+import com.whatsuphouse.backend.domain.application.client.service.MembershipWeekRule;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.auth.event.GuestEmailVerificationConsumedEvent;
 import com.whatsuphouse.backend.domain.auth.service.AuthService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
@@ -99,6 +102,12 @@ class ApplicationServiceTest {
 
     @Mock
     private ApplicationLookupTokenService applicationLookupTokenService;
+
+    @Mock
+    private MembershipWeekRule membershipWeekRule;
+
+    @Mock
+    private DepositService depositService;
 
     @InjectMocks
     private ApplicationService applicationService;
@@ -414,8 +423,8 @@ class ApplicationServiceTest {
         GatheringSession thursday = sessionOf(randomTable, monday.plusDays(3), 6);
         givenRandomTableCandidates(thursday);
         given(ticketService.hasMembershipFor(userId, monday.plusDays(3))).willReturn(true);
-        given(applicationCandidateSessionRepository.existsActiveApplicationInDateRange(
-                eq(userId), eq(GatheringType.RANDOM_TABLE), any(), eq(monday), eq(monday.plusDays(6)))).willReturn(true);
+        given(membershipWeekRule.check(userId, null, List.of(monday.plusDays(3))))
+                .willReturn(Optional.of(ErrorCode.MEMBERSHIP_WEEKLY_LIMIT));
 
         assertThatThrownBy(() -> applicationService.apply(createRequest(thursday.getId()), userId))
                 .isInstanceOf(CustomException.class)
@@ -433,6 +442,8 @@ class ApplicationServiceTest {
         ReflectionTestUtils.setField(nextMonday, "eventDate", monday.plusDays(7));
         givenRandomTableCandidates(thursday, nextMonday);
         given(ticketService.hasMembershipFor(userId, monday.plusDays(7))).willReturn(true);
+        given(membershipWeekRule.check(userId, null, List.of(monday.plusDays(3), monday.plusDays(7))))
+                .willReturn(Optional.of(ErrorCode.CANDIDATE_SESSIONS_DIFFERENT_WEEKS));
 
         assertThatThrownBy(() -> applicationService.apply(createRequest(thursday.getId(), nextMonday.getId()), userId))
                 .isInstanceOf(CustomException.class)
@@ -449,14 +460,81 @@ class ApplicationServiceTest {
         ReflectionTestUtils.setField(thursday, "eventDate", monday.plusDays(3));
         givenRandomTableCandidates(tuesday, thursday);
         given(ticketService.hasMembershipFor(userId, monday.plusDays(3))).willReturn(true);
-        given(applicationCandidateSessionRepository.existsActiveApplicationInDateRange(
-                eq(userId), eq(GatheringType.RANDOM_TABLE), any(), eq(monday), eq(monday.plusDays(6)))).willReturn(false);
+        given(membershipWeekRule.check(any(), any(), any())).willReturn(Optional.empty());
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
         given(ticketService.tryUseOneTicket(eq(user), any(Application.class), eq(monday.plusDays(3)))).willReturn(true);
 
         ApplicationResponse response = applicationService.apply(createRequest(tuesday.getId(), thursday.getId()), userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+    }
+
+    // ── 노쇼 보증금 (KAN-402) ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("보증금 대상 회원이 멤버십으로 신청하면 USE(0)는 기록하되 보증금 PENDING을 만들고 결제 대기로 둔다")
+    void apply_depositRequiredWithMembership_staysPaymentPending() {
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        LocalDate monday = nextMondayPlusWeek();
+        GatheringSession thursday = sessionOf(randomTable, monday.plusDays(3), 6);
+        givenRandomTableCandidates(thursday);
+        user.markDepositRequired();
+        given(ticketService.hasMembershipFor(userId, monday.plusDays(3))).willReturn(true);
+        given(membershipWeekRule.check(any(), any(), any())).willReturn(Optional.empty());
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class), eq(monday.plusDays(3)))).willReturn(true);
+        RefundAccount account = new RefundAccount("국민", "12345678901", "김철수");
+
+        ApplicationResponse response = applicationService.apply(
+                createRequest(account, thursday.getId()), userId);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        then(ticketService).should().tryUseOneTicket(eq(user), any(Application.class), eq(monday.plusDays(3)));
+        then(depositService).should().createPending(any(Application.class), eq(account));
+        then(eventPublisher).should(never()).publishEvent(any(ApplicationConfirmedEvent.class));
+    }
+
+    @Test
+    @DisplayName("보증금 대상 회원이 반환 계좌 없이 신청하면 DEPOSIT_ACCOUNT_REQUIRED, 저장하지 않는다")
+    void apply_depositRequiredWithoutAccount_throws() {
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        GatheringSession thursday = sessionOf(randomTable, nextMondayPlusWeek().plusDays(3), 6);
+        givenRandomTableCandidates(thursday);
+        user.markDepositRequired();
+
+        assertThatThrownBy(() -> applicationService.apply(
+                createRequest(new RefundAccount("국민", " ", "김철수"), thursday.getId()), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DEPOSIT_ACCOUNT_REQUIRED);
+        then(applicationRepository).should(never()).save(any());
+        then(depositService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("보증금 대상이 아닌 회원은 이용권을 쓰면 바로 확정되고 보증금을 만들지 않는다")
+    void apply_notDepositRequired_confirmsWithoutDeposit() {
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        GatheringSession thursday = sessionOf(randomTable, nextMondayPlusWeek().plusDays(3), 6);
+        givenRandomTableCandidates(thursday);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class), any())).willReturn(true);
+
+        ApplicationResponse response = applicationService.apply(createRequest(thursday.getId()), userId);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(depositService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("신청 요청의 depositReturnAccount JSON이 반환 계좌로 읽힌다")
+    void createRequest_depositReturnAccountJson_deserializes() throws Exception {
+        ApplicationCreateRequest parsed = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+                {"gatheringId":"%s","candidateSessionIds":[],"answers":[],
+                 "depositReturnAccount":{"bank":"국민","accountNumber":"12345678901","holder":"김철수"}}
+                """.formatted(gatheringId), ApplicationCreateRequest.class);
+
+        assertThat(parsed.getDepositReturnAccount().isComplete()).isTrue();
+        assertThat(parsed.getDepositReturnAccount().getAccountNumber()).isEqualTo("12345678901");
     }
 
     // ── apply(ApplicationCreateRequest) — 종류 + 희망 회차 (KAN-338) ─────────
@@ -724,6 +802,12 @@ class ApplicationServiceTest {
     }
 
     // 요청 종류 ID는 setUp의 gatheringId.
+    private ApplicationCreateRequest createRequest(RefundAccount depositReturnAccount, UUID... candidateSessionIds) {
+        ApplicationCreateRequest created = createRequest(candidateSessionIds);
+        ReflectionTestUtils.setField(created, "depositReturnAccount", depositReturnAccount);
+        return created;
+    }
+
     private ApplicationCreateRequest createRequest(UUID... candidateSessionIds) {
         ApplicationCreateRequest created = new ApplicationCreateRequest();
         ReflectionTestUtils.setField(created, "gatheringId", gatheringId);

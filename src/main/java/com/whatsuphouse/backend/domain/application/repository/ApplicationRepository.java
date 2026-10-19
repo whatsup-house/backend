@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -73,10 +74,20 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
     Optional<Application> findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
             UUID userId, ApplicationStatus status);
 
-    // 우연한 식탁 내 신청 목록. 배정 회차의 지역(장소)까지 함께 로드한다. (KAN-342)
+    // 우연한 식탁 내 신청 목록: 활성 신청 + cancelledSince 이후 취소한 신청(보증금 배지 표시용). 배정 회차의 지역(장소)까지 로드한다. (KAN-342, KAN-402)
     @EntityGraph(attributePaths = {"gathering", "session", "session.location"})
-    List<Application> findByUser_IdAndGathering_GatheringTypeAndDeletedAtIsNullOrderByCreatedAtDesc(
-            UUID userId, GatheringType gatheringType);
+    @Query("""
+            SELECT a FROM Application a
+            WHERE a.user.id = :userId
+              AND a.gathering.gatheringType = :type
+              AND (a.deletedAt IS NULL OR (a.status = :cancelled AND a.deletedAt >= :cancelledSince))
+            ORDER BY a.createdAt DESC
+            """)
+    List<Application> findMyApplicationsIncludingRecentlyCancelled(
+            @Param("userId") UUID userId,
+            @Param("type") GatheringType type,
+            @Param("cancelled") ApplicationStatus cancelled,
+            @Param("cancelledSince") LocalDateTime cancelledSince);
 
     // 삭제(취소)된 신청까지 조회한다. 이미 취소된 신청을 404가 아닌 409로 구분할 때만 쓴다. (KAN-342)
     @EntityGraph(attributePaths = {"gathering", "session", "user"})

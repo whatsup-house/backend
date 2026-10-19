@@ -6,14 +6,18 @@ import com.whatsuphouse.backend.domain.ticket.dto.response.TicketProductResponse
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
+import com.whatsuphouse.backend.domain.application.client.service.MembershipWeekRule;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
 import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
 import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProductKind;
@@ -56,6 +60,9 @@ public class TicketService {
     private final ApplicationRepository applicationRepository;
     private final GatheringSessionService gatheringSessionService;
     private final ApplicationEventPublisher eventPublisher;
+    private final DepositService depositService;
+    private final MembershipWeekRule membershipWeekRule;
+    private final ExceptionCaseService exceptionCaseService;
 
     // 멤버십으로 확정한 신청이 매칭에 실패하면 기간을 이만큼 연장한다. (KAN-401)
     private static final int MEMBERSHIP_FAILURE_EXTENSION_DAYS = 7;
@@ -88,12 +95,19 @@ public class TicketService {
 
     /**
      * 입금 확인 → 이용권 활성화(잔여 충전). 연결된 결제 대기 신청이 있으면 1회 차감 후 자동 확정한다.
+     * 보증금 대상 신청은 보증금 입금 전이면 차감만 하고 결제 대기로 둔다(확정은 DepositService.markPaid). (KAN-402)
+     * 멤버십이 그 신청의 주 1회·기간 조건을 어기면 이용권만 활성화하고 신청은 결제 대기로 둔 채 예외함(CONFLICT)에 올린다.
      * PENDING이 아니면 TICKET_ALREADY_PROCESSED. actor는 거래 메모에 남는다("ADMIN:{id}", "WEBHOOK", "SIMULATOR").
      */
     public TicketPass settlePass(UUID passId, String actor) {
         TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)
                 .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
         Application paymentPending = resolvePaymentPendingApplication(pass);
+        // 이미 이용권을 쓴(보증금만 기다리는) 신청에서 또 차감하지 않는다.
+        // ponytail: 연결 없는 이용권이면 그 회원의 다른 결제 대기 신청은 찾지 않는다. 필요하면 USE 없는 신청을 고르도록 조회를 바꾼다.
+        if (paymentPending != null && hasTicketUse(paymentPending.getId())) {
+            paymentPending = null;
+        }
         // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 정원을 세지 않는다. (KAN-338)
         if (paymentPending != null && paymentPending.getSession() != null) {
             // 동시 승인·신청과의 정원 경쟁을 막기 위해 회차 행을 잠근 뒤 센다.
@@ -107,6 +121,14 @@ public class TicketService {
         pass.activate();
         ticketTransactionRepository.save(TicketTransaction.of(
                 pass, null, TicketTransactionType.ISSUE, pass.getTotalCount(), "입금 확인 및 이용권 발급 (" + actor + ")"));
+        if (paymentPending != null && pass.isPeriod()) {
+            String violation = findMembershipViolation(pass, paymentPending);
+            if (violation != null) {
+                exceptionCaseService.open(ExceptionCaseType.CONFLICT, null, null, paymentPending.getId(),
+                        "멤버십 조건 불충족: " + violation);
+                paymentPending = null;
+            }
+        }
         if (paymentPending != null) {
             // 멤버십은 횟수를 깎지 않고 수량 0 USE로 사용 기록만 남긴다(취소 복원·연장의 기준).
             int quantity = pass.isPeriod() ? 0 : -1;
@@ -116,12 +138,26 @@ public class TicketService {
             ticketTransactionRepository.save(TicketTransaction.of(
                     pass, paymentPending, TicketTransactionType.USE, quantity, "이용권 구매 신청 자동 확정 (" + actor + ")"));
             paymentPending.confirmPayment();
-            paymentPending.confirm();
-            // @Async 확정 메일이 트랜잭션 밖에서 모임 제목(종류)을 읽으므로 여기서 로드해 둔다.
-            Hibernate.initialize(paymentPending.getGathering());
-            eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
+            if (depositService.isSatisfied(paymentPending.getId())) {
+                paymentPending.confirm();
+                // @Async 확정 메일이 트랜잭션 밖에서 모임 제목(종류)을 읽으므로 여기서 로드해 둔다.
+                Hibernate.initialize(paymentPending.getGathering());
+                eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
+            }
         }
         return pass;
+    }
+
+    // 신청 경로와 같은 멤버십 조건: 마지막 희망 회차가 기간 안, 희망 회차가 한 주, 그 주에 다른 활성 신청 없음. 위반 사유 또는 null.
+    private String findMembershipViolation(TicketPass pass, Application application) {
+        List<LocalDate> dates = membershipWeekRule.candidateDates(application.getId());
+        LocalDate latest = dates.stream().max(Comparator.naturalOrder()).orElse(null);
+        if (latest != null && !pass.isUsableOn(latest)) {
+            return "희망 회차(" + latest + ")가 멤버십 기간(~" + pass.getValidUntil() + ") 밖입니다.";
+        }
+        return membershipWeekRule.check(application.getUser().getId(), application.getId(), dates)
+                .map(ErrorCode::getMessage)
+                .orElse(null);
     }
 
     /** 이용권에 딸린 결제 대기(PAYMENT_PENDING) 신청. 연결 신청이 없으면 회원의 가장 오래된 결제 대기 신청. 없으면 null. */
@@ -265,6 +301,22 @@ public class TicketService {
         ticketTransactionRepository.save(TicketTransaction.of(
                 pass, application, TicketTransactionType.USE, -1, "우연한 식탁 참가 확정"));
         return true;
+    }
+
+    /** 이 신청에 이용권 사용(USE) 기록이 있는가(멤버십 USE(0) 포함). */
+    @Transactional(readOnly = true)
+    public boolean hasTicketUse(UUID applicationId) {
+        return ticketTransactionRepository.existsByApplication_IdAndTransactionType(applicationId, TicketTransactionType.USE);
+    }
+
+    /** 이 신청의 마지막 USE가 아직 차감 상태인 횟수권(1회권) 사용인가. 취소 미리보기의 '1회권 복원' 판단용. (KAN-402) */
+    @Transactional(readOnly = true)
+    public boolean hasCountDeduction(UUID applicationId) {
+        return ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
+                .filter(TicketTransaction::isDeducted)
+                .filter(use -> !use.getTicketPass().isPeriod())
+                .isPresent();
     }
 
     /** 이 회차 날짜를 덮는 활성 멤버십이 있는가. 신청 도메인의 주 1회 검사 진입 조건. */

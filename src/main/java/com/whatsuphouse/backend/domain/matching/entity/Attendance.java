@@ -85,6 +85,13 @@ public class Attendance {
         }
     }
 
+    /** 마감 후·당일 취소 시스템 처리. 예정 상태일 때만 바꾼다. (KAN-402) */
+    public void cancelLate() {
+        if (status == AttendanceStatus.SCHEDULED) {
+            this.status = AttendanceStatus.CANCELED_LATE;
+        }
+    }
+
     /** 회차 종료 후 체크인이 없는 예정 참석을 노쇼 후보로 표시한다(상태는 그대로). */
     public void markNoShowCandidate() {
         if (status == AttendanceStatus.SCHEDULED) {

@@ -264,7 +264,7 @@ class DiningLifecycleTest {
 
         // 신청 취소 훅 → CANCELED_EARLY, 이후 운영자 변경 불가
         UUID cancelledApplicationId = members(table).get(1).getApplication().getId();
-        diningAttendanceService.cancelAttendance(cancelledApplicationId);
+        diningAttendanceService.cancelAttendance(cancelledApplicationId, false);
         assertThat(attendanceRepository.findById(attendances.get(1).getId()).orElseThrow().getStatus())
                 .isEqualTo(AttendanceStatus.CANCELED_EARLY);
         assertError(() -> diningAttendanceService.changeAttendanceStatus(

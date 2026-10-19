@@ -1,6 +1,9 @@
 package com.whatsuphouse.backend.domain.ticket.service;
 
+import com.whatsuphouse.backend.domain.application.client.service.MembershipWeekRule;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
@@ -57,6 +60,9 @@ class TicketServiceMembershipTest {
     @Mock private ApplicationRepository applicationRepository;
     @Mock private GatheringSessionService gatheringSessionService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private DepositService depositService;
+    @Mock private MembershipWeekRule membershipWeekRule;
+    @Mock private ExceptionCaseService exceptionCaseService;
 
     @InjectMocks private TicketService ticketService;
 
@@ -113,6 +119,7 @@ class TicketServiceMembershipTest {
         UUID passId = UUID.randomUUID();
         ReflectionTestUtils.setField(pass, "id", passId);
         given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(depositService.isSatisfied(application.getId())).willReturn(true);
 
         ticketService.settlePass(passId, "WEBHOOK");
 
