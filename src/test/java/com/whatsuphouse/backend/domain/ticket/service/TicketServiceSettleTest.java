@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.ticket.service;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
@@ -55,6 +56,7 @@ class TicketServiceSettleTest {
     @Mock private TicketTransactionRepository ticketTransactionRepository;
     @Mock private TicketProductRepository ticketProductRepository;
     @Mock private ApplicationRepository applicationRepository;
+    @Mock private GatheringSessionService gatheringSessionService;
     @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks private TicketService ticketService;
@@ -97,7 +99,9 @@ class TicketServiceSettleTest {
     void settlePass_activatesAndConfirmsPendingApplication() {
         Application application = paymentPendingApplication(4);
         TicketPass pass = pendingPass(application);
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(passId)).willReturn(Optional.of(pass));
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(gatheringSessionService.findSessionForUpdate(application.getSession().getId()))
+                .willReturn(Optional.of(application.getSession()));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
                 application.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
 
@@ -114,13 +118,14 @@ class TicketServiceSettleTest {
                 .containsExactly(TicketTransactionType.ISSUE, TicketTransactionType.USE);
         assertThat(saved.getAllValues()).allSatisfy(tx -> assertThat(tx.getReason()).contains("WEBHOOK"));
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
+        then(gatheringSessionService).should().findSessionForUpdate(application.getSession().getId());
     }
 
     @Test
     @DisplayName("결제 대기 신청이 없으면 활성화와 ISSUE 거래만 남기고 전체 횟수가 충전된다")
     void settlePass_noPendingApplication_onlyIssues() {
         TicketPass pass = pendingPass(null);
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(passId)).willReturn(Optional.of(pass));
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
         given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
                 user.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.empty());
 
@@ -139,7 +144,7 @@ class TicketServiceSettleTest {
     void settlePass_alreadyActive_throws() {
         TicketPass pass = pendingPass(null);
         pass.activate();
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(passId)).willReturn(Optional.of(pass));
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
 
         assertThatThrownBy(() -> ticketService.settlePass(passId, "WEBHOOK"))
                 .isInstanceOf(CustomException.class)
@@ -149,7 +154,7 @@ class TicketServiceSettleTest {
     @Test
     @DisplayName("존재하지 않는 이용권이면 TICKET_PASS_NOT_FOUND")
     void settlePass_notFound_throws() {
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(passId)).willReturn(Optional.empty());
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.settlePass(passId, "WEBHOOK"))
                 .isInstanceOf(CustomException.class)
@@ -161,7 +166,9 @@ class TicketServiceSettleTest {
     void settlePass_sessionFull_throwsBeforeActivation() {
         Application application = paymentPendingApplication(2);
         TicketPass pass = pendingPass(application);
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(passId)).willReturn(Optional.of(pass));
+        given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
+        given(gatheringSessionService.findSessionForUpdate(application.getSession().getId()))
+                .willReturn(Optional.of(application.getSession()));
         given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
                 application.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(2);
 
@@ -169,6 +176,7 @@ class TicketServiceSettleTest {
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.GATHERING_FULL);
         assertThat(pass.getStatus()).isEqualTo(TicketPassStatus.PENDING);
+        then(gatheringSessionService).should().findSessionForUpdate(application.getSession().getId());
     }
 
     @Test

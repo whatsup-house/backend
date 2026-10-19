@@ -435,6 +435,7 @@ public class ApplicationService {
      * 처음 확인되는 순간에만 입금 완료 안내 이벤트를 낸다. 신청 상태(status)는 건드리지 않는다.
      */
     @Transactional
+    // 같은 입금 확인 규칙 - AdminApplicationService.changePayment와 함께 수정
     public void confirmRegularPaymentBySystem(UUID applicationId) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));

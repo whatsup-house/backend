@@ -89,7 +89,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
             WHERE a.deletedAt IS NULL
               AND a.paymentConfirmedAt IS NULL
               AND a.session IS NOT NULL
-              AND a.gathering.gatheringType <> :excludedType
+              AND (a.gathering.gatheringType IS NULL OR a.gathering.gatheringType <> :excludedType)
               AND a.status IN :statuses
             ORDER BY a.createdAt ASC
             """)

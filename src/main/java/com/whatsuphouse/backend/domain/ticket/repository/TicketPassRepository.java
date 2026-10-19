@@ -20,6 +20,11 @@ public interface TicketPassRepository extends JpaRepository<TicketPass, UUID> {
 
     Optional<TicketPass> findByIdAndDeletedAtIsNull(UUID id);
 
+    // 입금 확인 중복 호출(웹훅 재시도·관리자 동시 클릭)을 직렬화한다. 뒤 호출은 ACTIVE를 보고 TICKET_ALREADY_PROCESSED.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from TicketPass t where t.id = :id and t.deletedAt is null")
+    Optional<TicketPass> findByIdAndDeletedAtIsNullForUpdate(@Param("id") UUID id);
+
     List<TicketPass> findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus status);
 
     long countByStatusAndDeletedAtIsNull(TicketPassStatus status);

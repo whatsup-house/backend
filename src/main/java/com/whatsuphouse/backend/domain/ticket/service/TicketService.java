@@ -9,6 +9,7 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
 import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
@@ -51,6 +52,7 @@ public class TicketService {
     private final TicketTransactionRepository ticketTransactionRepository;
     private final TicketProductRepository ticketProductRepository;
     private final ApplicationRepository applicationRepository;
+    private final GatheringSessionService gatheringSessionService;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
@@ -84,11 +86,13 @@ public class TicketService {
      * PENDING이 아니면 TICKET_ALREADY_PROCESSED. actor는 거래 메모에 남는다("ADMIN:{id}", "WEBHOOK", "SIMULATOR").
      */
     public TicketPass settlePass(UUID passId, String actor) {
-        TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNull(passId)
+        TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)
                 .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
         Application paymentPending = resolvePaymentPendingApplication(pass);
         // 회차 배정 전(우연한 식탁 매칭 전) 신청은 매칭이 회차별 인원을 정하므로 정원을 세지 않는다. (KAN-338)
         if (paymentPending != null && paymentPending.getSession() != null) {
+            // 동시 승인·신청과의 정원 경쟁을 막기 위해 회차 행을 잠근 뒤 센다.
+            gatheringSessionService.findSessionForUpdate(paymentPending.getSession().getId());
             int occupied = applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
                     paymentPending.getSession().getId(), ApplicationStatus.SEAT_OCCUPYING);
             if (occupied >= paymentPending.getSession().getMaxAttendees()) {
