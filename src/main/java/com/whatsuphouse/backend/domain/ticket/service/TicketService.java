@@ -16,6 +16,7 @@ import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
 import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketProductKind;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Comparator;
@@ -55,9 +57,12 @@ public class TicketService {
     private final GatheringSessionService gatheringSessionService;
     private final ApplicationEventPublisher eventPublisher;
 
+    // 멤버십으로 확정한 신청이 매칭에 실패하면 기간을 이만큼 연장한다. (KAN-401)
+    private static final int MEMBERSHIP_FAILURE_EXTENSION_DAYS = 7;
+
     @Transactional(readOnly = true)
     public List<TicketProductResponse> listProducts() {
-        return ticketProductRepository.findAllByDeletedAtIsNullOrderBySessionCountAscPriceAscCreatedAtAsc()
+        return ticketProductRepository.findAllByDeletedAtIsNullOrderByPriceAscCreatedAtAsc()
                 .stream()
                 .map(TicketProductResponse::from)
                 .toList();
@@ -103,9 +108,13 @@ public class TicketService {
         ticketTransactionRepository.save(TicketTransaction.of(
                 pass, null, TicketTransactionType.ISSUE, pass.getTotalCount(), "입금 확인 및 이용권 발급 (" + actor + ")"));
         if (paymentPending != null) {
-            pass.deductOne();
+            // 멤버십은 횟수를 깎지 않고 수량 0 USE로 사용 기록만 남긴다(취소 복원·연장의 기준).
+            int quantity = pass.isPeriod() ? 0 : -1;
+            if (!pass.isPeriod()) {
+                pass.deductOne();
+            }
             ticketTransactionRepository.save(TicketTransaction.of(
-                    pass, paymentPending, TicketTransactionType.USE, -1, "이용권 구매 신청 자동 확정 (" + actor + ")"));
+                    pass, paymentPending, TicketTransactionType.USE, quantity, "이용권 구매 신청 자동 확정 (" + actor + ")"));
             paymentPending.confirmPayment();
             paymentPending.confirm();
             // @Async 확정 메일이 트랜잭션 밖에서 모임 제목(종류)을 읽으므로 여기서 로드해 둔다.
@@ -222,11 +231,29 @@ public class TicketService {
                 .build();
     }
 
-    /** 회원 기준으로 잔여 이용권을 1회 차감한다. 이용권이 없으면 상태 변경 없이 false를 반환한다. */
+    /** 배정 회차가 있으면 그 날짜 기준으로 {@link #tryUseOneTicket(User, Application, LocalDate)}. 없으면 횟수권만 본다. */
     public boolean tryUseOneTicket(User user, Application application) {
+        LocalDate sessionDate = application != null && application.getSession() != null
+                ? application.getSession().getEventDate() : null;
+        return tryUseOneTicket(user, application, sessionDate);
+    }
+
+    /**
+     * 회원 기준으로 이용권을 1회 사용한다. sessionDate를 덮는 멤버십이 있으면 멤버십을 우선 쓰고(수량 0 USE),
+     * 없으면 횟수권을 1회 차감한다. 둘 다 없으면 상태 변경 없이 false. (KAN-401)
+     */
+    public boolean tryUseOneTicket(User user, Application application, LocalDate sessionDate) {
         if (application != null && ticketTransactionRepository.existsByApplication_IdAndTransactionType(
                 application.getId(), TicketTransactionType.USE)) {
             return true;
+        }
+        if (sessionDate != null) {
+            Optional<TicketPass> membership = findMembershipFor(user.getId(), sessionDate);
+            if (membership.isPresent()) {
+                ticketTransactionRepository.save(TicketTransaction.of(
+                        membership.get(), application, TicketTransactionType.USE, 0, "우연한 식탁 참가 확정 (멤버십)"));
+                return true;
+            }
         }
         List<TicketPass> usable = ticketPassRepository.findUsableByUserForUpdate(
                 user.getId(), TicketPassStatus.ACTIVE, PageRequest.of(0, 1));
@@ -238,6 +265,49 @@ public class TicketService {
         ticketTransactionRepository.save(TicketTransaction.of(
                 pass, application, TicketTransactionType.USE, -1, "우연한 식탁 참가 확정"));
         return true;
+    }
+
+    /** 이 회차 날짜를 덮는 활성 멤버십이 있는가. 신청 도메인의 주 1회 검사 진입 조건. */
+    public boolean hasMembershipFor(UUID userId, LocalDate sessionDate) {
+        return findMembershipFor(userId, sessionDate).isPresent();
+    }
+
+    private Optional<TicketPass> findMembershipFor(UUID userId, LocalDate sessionDate) {
+        return ticketPassRepository
+                .findMembershipsByUserForUpdate(userId, TicketPassStatus.ACTIVE, TicketProductKind.PERIOD).stream()
+                .filter(pass -> pass.isUsableOn(sessionDate))
+                .findFirst();
+    }
+
+    /**
+     * 매칭 실패 보상: 신청을 멤버십으로 확정했으면 만료일을 7일 늘리고 EXTEND 거래(수량 0)를 남긴다.
+     * 같은 신청에 EXTEND가 이미 있으면 무시한다(멱등). 횟수권 신청은 대상 아님.
+     */
+    public void extendMembershipForFailure(UUID applicationId) {
+        if (ticketTransactionRepository.existsByApplication_IdAndTransactionType(applicationId, TicketTransactionType.EXTEND)) {
+            return;
+        }
+        ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
+                .filter(use -> use.getTicketPass().isPeriod())
+                .ifPresent(use -> {
+                    TicketPass pass = use.getTicketPass();
+                    pass.extend(MEMBERSHIP_FAILURE_EXTENSION_DAYS);
+                    ticketTransactionRepository.save(TicketTransaction.of(pass, use.getApplication(),
+                            TicketTransactionType.EXTEND, 0, "매칭 실패 멤버십 연장 +" + MEMBERSHIP_FAILURE_EXTENSION_DAYS + "일"));
+                });
+    }
+
+    /** 만료일이 today 이전인 활성 멤버십을 USED_UP으로 바꾸고 EXPIRE 거래(수량 0)를 남긴다. 처리 건수를 돌려준다. */
+    public int expireMemberships(LocalDate today) {
+        List<TicketPass> expired = ticketPassRepository.findByStatusAndProductOption_KindAndValidUntilBeforeAndDeletedAtIsNull(
+                TicketPassStatus.ACTIVE, TicketProductKind.PERIOD, today);
+        expired.forEach(pass -> {
+            pass.expire();
+            ticketTransactionRepository.save(TicketTransaction.of(
+                    pass, null, TicketTransactionType.EXPIRE, 0, "멤버십 기간 만료"));
+        });
+        return expired.size();
     }
 
     // 신청에 기록된 마지막 USE 거래 직후 잔여 수. 신청 조회 응답용. (KAN-393)
@@ -264,9 +334,9 @@ public class TicketService {
                 .ifPresent(use -> {
                     use.restore();
                     TicketPass pass = use.getTicketPass();
-                    pass.refundOne();
+                    pass.refundOne();   // 멤버십은 횟수가 없어 잔여 그대로
                     ticketTransactionRepository.save(TicketTransaction.of(
-                            pass, application, TicketTransactionType.REFUND, 1, "신청 취소 복구"));
+                            pass, application, TicketTransactionType.REFUND, pass.isPeriod() ? 0 : 1, "신청 취소 복구"));
                 });
     }
 

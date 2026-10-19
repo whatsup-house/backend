@@ -175,7 +175,7 @@ class ApplicationServiceTest {
         given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         user.approveRandomTable();
-        given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(true);
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class), any())).willReturn(true);
         ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
         given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
@@ -184,7 +184,7 @@ class ApplicationServiceTest {
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         // 차감 성공 → 매칭 대기 (KAN-342)
         assertThat(saved.getValue().getMatchStatus()).isEqualTo(MatchStatus.WAITING);
-        then(ticketService).should().tryUseOneTicket(eq(user), any(Application.class));
+        then(ticketService).should().tryUseOneTicket(eq(user), any(Application.class), any());
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
@@ -200,7 +200,7 @@ class ApplicationServiceTest {
         given(formProvisionService.findQuestions(any())).willReturn(List.of());
         given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
-        given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(false);
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class), any())).willReturn(false);
         ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
         given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
@@ -230,7 +230,7 @@ class ApplicationServiceTest {
         ApplicationResponse response = applicationService.apply(sessionId, request, userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
-        then(ticketService).should(never()).tryUseOneTicket(eq(user), any(Application.class));
+        then(ticketService).should(never()).tryUseOneTicket(eq(user), any(Application.class), any());
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
@@ -388,6 +388,75 @@ class ApplicationServiceTest {
         assertThatThrownBy(() -> applicationService.apply(sessionId, request, null))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ALREADY_APPLIED);
+    }
+
+    // ── 멤버십 주 1회 규칙 (KAN-401) ──────────────────────────────────────────
+
+    private LocalDate nextMondayPlusWeek() {
+        return LocalDate.now().with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY)).plusWeeks(1);
+    }
+
+    private void givenRandomTableCandidates(GatheringSession... candidates) {
+        for (GatheringSession candidate : candidates) {
+            given(gatheringSessionService.findSessionForUpdate(candidate.getId())).willReturn(Optional.of(candidate));
+        }
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
+        given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
+    }
+
+    @Test
+    @DisplayName("멤버십 사용 시 같은 ISO 주 회차에 활성 신청이 있으면 MEMBERSHIP_WEEKLY_LIMIT")
+    void apply_membershipSameWeekTwice_throws() {
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        LocalDate monday = nextMondayPlusWeek();
+        GatheringSession thursday = sessionOf(randomTable, monday.plusDays(3), 6);
+        givenRandomTableCandidates(thursday);
+        given(ticketService.hasMembershipFor(userId, monday.plusDays(3))).willReturn(true);
+        given(applicationCandidateSessionRepository.existsActiveApplicationInDateRange(
+                eq(userId), eq(GatheringType.RANDOM_TABLE), any(), eq(monday), eq(monday.plusDays(6)))).willReturn(true);
+
+        assertThatThrownBy(() -> applicationService.apply(createRequest(thursday.getId()), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.MEMBERSHIP_WEEKLY_LIMIT);
+        then(applicationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("멤버십 사용 시 희망 회차가 서로 다른 주면 CANDIDATE_SESSIONS_DIFFERENT_WEEKS")
+    void apply_membershipCandidatesInDifferentWeeks_throws() {
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        LocalDate monday = nextMondayPlusWeek();
+        GatheringSession thursday = sessionOf(randomTable, monday.plusDays(3), 6);
+        GatheringSession nextMonday = otherSessionOf(randomTable);
+        ReflectionTestUtils.setField(nextMonday, "eventDate", monday.plusDays(7));
+        givenRandomTableCandidates(thursday, nextMonday);
+        given(ticketService.hasMembershipFor(userId, monday.plusDays(7))).willReturn(true);
+
+        assertThatThrownBy(() -> applicationService.apply(createRequest(thursday.getId(), nextMonday.getId()), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CANDIDATE_SESSIONS_DIFFERENT_WEEKS);
+    }
+
+    @Test
+    @DisplayName("멤버십 사용 시 같은 주에 다른 활성 신청이 없으면 마지막 희망 회차 날짜로 이용권을 써서 확정한다")
+    void apply_membershipWithinWeek_usesTicketForLatestCandidate() {
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        LocalDate monday = nextMondayPlusWeek();
+        GatheringSession tuesday = sessionOf(randomTable, monday.plusDays(1), 6);
+        GatheringSession thursday = otherSessionOf(randomTable);
+        ReflectionTestUtils.setField(thursday, "eventDate", monday.plusDays(3));
+        givenRandomTableCandidates(tuesday, thursday);
+        given(ticketService.hasMembershipFor(userId, monday.plusDays(3))).willReturn(true);
+        given(applicationCandidateSessionRepository.existsActiveApplicationInDateRange(
+                eq(userId), eq(GatheringType.RANDOM_TABLE), any(), eq(monday), eq(monday.plusDays(6)))).willReturn(false);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class), eq(monday.plusDays(3)))).willReturn(true);
+
+        ApplicationResponse response = applicationService.apply(createRequest(tuesday.getId(), thursday.getId()), userId);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
     }
 
     // ── apply(ApplicationCreateRequest) — 종류 + 희망 회차 (KAN-338) ─────────

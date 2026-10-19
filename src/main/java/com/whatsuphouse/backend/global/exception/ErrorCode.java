@@ -159,6 +159,8 @@ public enum ErrorCode {
     NO_AVAILABLE_TICKET("사용 가능한 이용권이 없습니다. 이용권을 먼저 구매해주세요.", HttpStatus.BAD_REQUEST),
     TICKET_PURCHASE_NOT_ALLOWED("우연한 식탁 참여 승인 후 이용권을 구매할 수 있습니다.", HttpStatus.FORBIDDEN),
     INVALID_TICKET_ADJUSTMENT("유효하지 않은 이용권 횟수 조정입니다.", HttpStatus.BAD_REQUEST),
+    MEMBERSHIP_WEEKLY_LIMIT("멤버십은 한 주에 한 번만 신청할 수 있습니다.", HttpStatus.CONFLICT),
+    CANDIDATE_SESSIONS_DIFFERENT_WEEKS("멤버십으로 신청할 때는 같은 주의 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
     TICKET_PRODUCT_NOT_FOUND("존재하지 않는 이용권 상품입니다.", HttpStatus.NOT_FOUND),
     INVALID_REFUND_TRANSITION("환불을 진행할 수 없는 이용권 차감 기록입니다.", HttpStatus.CONFLICT),
 

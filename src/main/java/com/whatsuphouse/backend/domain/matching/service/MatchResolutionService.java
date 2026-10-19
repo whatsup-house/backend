@@ -63,6 +63,8 @@ public class MatchResolutionService {
      */
     @Transactional
     public void offerResolution(Application application, Collection<UUID> wishedSessionIds) {
+        // 멤버십으로 확정한 신청이면 매칭 실패 보상으로 기간을 연장한다(신청당 1회). (KAN-401)
+        ticketService.extendMembershipForFailure(application.getId());
         LocalDateTime now = LocalDateTime.now();
         List<UUID> offered = gatheringService.listSessionsByGathering(application.getGathering().getId()).stream()
                 .filter(session -> !wishedSessionIds.contains(session.getId()) && isOfferable(session, now))

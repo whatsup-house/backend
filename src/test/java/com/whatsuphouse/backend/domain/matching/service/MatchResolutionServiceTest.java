@@ -134,6 +134,8 @@ class MatchResolutionServiceTest {
         assertThat(saved.getValue().getStatus()).isEqualTo(ResolutionStatus.OFFERED);
         assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.ALTERNATIVE_OFFERED);
         assertThat(publishedTypes(1)).containsExactly(NotificationType.DINING_ALTERNATIVE_OFFERED);
+        // 매칭 실패: 멤버십으로 확정한 신청이면 기간을 7일 연장한다 (KAN-401)
+        then(ticketService).should().extendMembershipForFailure(application.getId());
     }
 
     @Test

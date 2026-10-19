@@ -36,7 +36,7 @@ public class AdminTicketService {
 
     @Transactional(readOnly = true)
     public List<TicketProductResponse> listProducts() {
-        return ticketProductRepository.findAllByDeletedAtIsNullOrderBySessionCountAscPriceAscCreatedAtAsc()
+        return ticketProductRepository.findAllByDeletedAtIsNullOrderByPriceAscCreatedAtAsc()
                 .stream()
                 .map(TicketProductResponse::from)
                 .toList();

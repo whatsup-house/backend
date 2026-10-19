@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -24,6 +25,8 @@ public class TicketPassResponse {
     private int purchaseAmount;
     private LocalDateTime paymentDeadline;
     private LocalDateTime paymentConfirmedAt;
+    private LocalDate validUntil;
+    private int extendedDays;
 
     public static TicketPassResponse from(TicketPass pass) {
         return TicketPassResponse.builder()
@@ -39,6 +42,8 @@ public class TicketPassResponse {
                 .purchaseAmount(pass.getPurchaseAmount())
                 .paymentDeadline(pass.getPaymentDeadline())
                 .paymentConfirmedAt(pass.getPaymentConfirmedAt())
+                .validUntil(pass.getValidUntil())
+                .extendedDays(pass.getExtendedDays())
                 .build();
     }
 }

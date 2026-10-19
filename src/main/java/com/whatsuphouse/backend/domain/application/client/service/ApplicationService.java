@@ -43,15 +43,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -77,6 +80,9 @@ public class ApplicationService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int MIN_BIRTH_YEAR = 1900;
     private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
+    // 멤버십 주 1회 검사에서 '활성' 신청으로 보는 상태. (KAN-401)
+    private static final List<ApplicationStatus> ACTIVE_STATUSES = List.of(
+            ApplicationStatus.PENDING, ApplicationStatus.PAYMENT_PENDING, ApplicationStatus.CONFIRMED, ApplicationStatus.ATTENDED);
     private static final java.util.regex.Pattern EMAIL_PATTERN =
             java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
@@ -220,6 +226,16 @@ public class ApplicationService {
                 .formSnapshot(buildFormSnapshot(questions))
                 .build();
 
+        // 이용권 사용 기준 날짜: 매칭 전이라 어느 희망 회차에 앉을지 모르므로 가장 늦은 희망 회차. (KAN-401)
+        LocalDate ticketDate = null;
+        if (randomTable && application.requiresRandomTableTicket()) {
+            ticketDate = candidates.stream().map(GatheringSession::getEventDate)
+                    .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+            if (ticketDate != null && ticketService.hasMembershipFor(userId, ticketDate)) {
+                validateMembershipWeek(candidates, userId);
+            }
+        }
+
         Application saved = applicationRepository.save(application);
         // 희망 회차: 요청 순서대로 1순위부터. 일반 모임은 신청 회차 1행.
         for (int i = 0; i < candidates.size(); i++) {
@@ -235,7 +251,7 @@ public class ApplicationService {
                 saved.confirm();
                 autoConfirmed = true;
             } else {
-                autoConfirmed = ticketService.tryUseOneTicket(user, saved);
+                autoConfirmed = ticketService.tryUseOneTicket(user, saved, ticketDate);
                 paymentPending = !autoConfirmed;
                 if (autoConfirmed) {
                     saved.confirm();
@@ -255,6 +271,21 @@ public class ApplicationService {
             eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
         }
         return ApplicationResponse.from(saved);
+    }
+
+    /** 멤버십은 주(ISO, 월~일) 1회: 희망 회차가 한 주 안에 있어야 하고, 그 주에 다른 활성 신청이 없어야 한다. */
+    private void validateMembershipWeek(List<GatheringSession> candidates, UUID userId) {
+        Set<LocalDate> mondays = candidates.stream()
+                .map(candidate -> candidate.getEventDate().with(DayOfWeek.MONDAY))
+                .collect(Collectors.toSet());
+        if (mondays.size() > 1) {
+            throw new CustomException(ErrorCode.CANDIDATE_SESSIONS_DIFFERENT_WEEKS);
+        }
+        LocalDate monday = mondays.iterator().next();
+        if (applicationCandidateSessionRepository.existsActiveApplicationInDateRange(
+                userId, GatheringType.RANDOM_TABLE, ACTIVE_STATUSES, monday, monday.plusDays(6))) {
+            throw new CustomException(ErrorCode.MEMBERSHIP_WEEKLY_LIMIT);
+        }
     }
 
     private void validateRandomTableEligibility(User user) {

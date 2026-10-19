@@ -111,7 +111,7 @@ class ApplicationServiceAutoApproveTest {
     void apply_randomTable_unreviewedUser_autoApproved() {
         stubFormAndUser();
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
-        given(ticketService.tryUseOneTicket(eq(user), any(Application.class))).willReturn(false);
+        given(ticketService.tryUseOneTicket(eq(user), any(Application.class), any())).willReturn(false);
         assertThat(user.isApprovedForRandomTable()).isFalse();
 
         ApplicationResponse response = applicationService.apply(request(), userId);
