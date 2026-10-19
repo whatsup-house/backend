@@ -511,6 +511,34 @@ class ApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("무료 식탁(이용권 불필요)은 보증금 면제: 보증금 대상 회원도 계좌 없이 바로 확정된다")
+    void apply_depositRequiredOnFreeTable_exempt() {
+        Gathering freeTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE)
+                .basePrice(0).build();
+        GatheringSession thursday = sessionOf(freeTable, nextMondayPlusWeek().plusDays(3), 6);
+        givenRandomTableCandidates(thursday);
+        user.markDepositRequired();
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        ApplicationResponse response = applicationService.apply(createRequest(thursday.getId()), userId);
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
+        then(depositService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("반환 계좌 필드가 50자를 넘으면 요청 검증에서 걸린다(400)")
+    void createRequest_depositReturnAccountTooLong_invalid() {
+        ApplicationCreateRequest request = createRequest(
+                new RefundAccount("국민", "1".repeat(51), "김철수"), UUID.randomUUID());
+        try (jakarta.validation.ValidatorFactory factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(request))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .containsExactly("depositReturnAccount.accountNumber");
+        }
+    }
+
+    @Test
     @DisplayName("보증금 대상이 아닌 회원은 이용권을 쓰면 바로 확정되고 보증금을 만들지 않는다")
     void apply_notDepositRequired_confirmsWithoutDeposit() {
         Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
@@ -649,6 +677,24 @@ class ApplicationServiceTest {
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(eventPublisher).should().publishEvent(any(ApplicationCancelledEvent.class));
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 신청은 레거시 취소 경로로 취소할 수 없다(CANNOT_CANCEL), 이용권·상태는 그대로 (KAN-402)")
+    void cancel_randomTable_rejected() {
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        Application application = Application.builder().bookingNumber("WH-RT-001").gathering(randomTable)
+                .user(user).name(user.getName()).phone(user.getPhone()).build();
+        ReflectionTestUtils.setField(application, "id", applicationId);
+        application.awaitPayment();
+        given(applicationRepository.findByIdAndDeletedAtIsNull(applicationId)).willReturn(Optional.of(application));
+
+        assertThatThrownBy(() -> applicationService.cancel(applicationId, userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CANNOT_CANCEL);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
+        then(ticketService).shouldHaveNoInteractions();
+        then(depositService).shouldHaveNoInteractions();
     }
 
     @Test

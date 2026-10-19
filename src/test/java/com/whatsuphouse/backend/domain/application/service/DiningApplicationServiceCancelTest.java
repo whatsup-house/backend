@@ -14,6 +14,7 @@ import com.whatsuphouse.backend.domain.form.client.service.FormService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
+import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.DiningTableService;
 import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
@@ -124,12 +125,15 @@ class DiningApplicationServiceCancelTest {
     }
 
     @Test
-    @DisplayName("당일 취소: 이용권 복원 없음, 보증금 몰수, 회원은 보증금 대상이 된다")
+    @DisplayName("당일 취소(테이블에 앉은 신청): 이용권 복원 없음, 보증금 몰수, 회원은 보증금 대상이 된다")
     void cancel_sameDay_depositForfeited_userFlagged() {
         Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        DiningTable table = seatedTable(application.getSession());
 
         diningApplicationService.cancelApplication(applicationId, userId);
+
+        then(diningTableService).should().rebalance(table.getId());
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(ticketService).should(never()).refundOneTicket(any());
@@ -137,6 +141,21 @@ class DiningApplicationServiceCancelTest {
         then(depositService).should().forfeit(applicationId);
         then(depositService).should(never()).requestReturn(any());
         assertThat(user.isDepositRequired()).isTrue();
+    }
+
+    @Test
+    @DisplayName("당일 취소(테이블에 앉지 않은 신청): 마감 후 취소와 같다 — 보증금 반환 요청, 제재 없음 (R18)")
+    void cancel_sameDayUnseated_treatedAsAfterDeadline() {
+        Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+
+        diningApplicationService.cancelApplication(applicationId, userId);
+
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        then(ticketService).should(never()).refundOneTicket(any());
+        then(depositService).should().requestReturn(applicationId);
+        then(depositService).should(never()).forfeit(any());
+        assertThat(user.isDepositRequired()).isFalse();
     }
 
     @Test
@@ -184,10 +203,11 @@ class DiningApplicationServiceCancelTest {
     }
 
     @Test
-    @DisplayName("미리보기(당일, 보증금 입금): 복원 없음, 보증금 몰수, 제재")
+    @DisplayName("미리보기(당일, 테이블에 앉음, 보증금 입금): 복원 없음, 보증금 몰수, 제재")
     void preview_sameDay_forfeitAndSanction() {
         Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        seatedTable(application.getSession());
         given(depositService.findByApplicationIds(List.of(applicationId)))
                 .willReturn(Map.of(applicationId, paidDeposit(application)));
 
@@ -196,6 +216,20 @@ class DiningApplicationServiceCancelTest {
         assertThat(preview).isEqualTo(new DiningCancelPreviewResponse(
                 CancelWindow.SAME_DAY, false, false, DepositOutcome.FORFEIT, true));
         then(ticketService).should(never()).hasCountDeduction(any());
+    }
+
+    @Test
+    @DisplayName("미리보기(당일, 테이블에 앉지 않음, 보증금 입금): 창은 SAME_DAY지만 보증금 반환, 제재 없음 (R18)")
+    void preview_sameDayUnseated_returnNoSanction() {
+        Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        given(depositService.findByApplicationIds(List.of(applicationId)))
+                .willReturn(Map.of(applicationId, paidDeposit(application)));
+
+        DiningCancelPreviewResponse preview = diningApplicationService.previewCancel(applicationId, userId);
+
+        assertThat(preview).isEqualTo(new DiningCancelPreviewResponse(
+                CancelWindow.SAME_DAY, false, false, DepositOutcome.RETURN, false));
     }
 
     @Test
@@ -242,6 +276,15 @@ class DiningApplicationServiceCancelTest {
         ReflectionTestUtils.setField(application, "id", applicationId);
         application.confirm();
         return application;
+    }
+
+    // 이 신청이 앉은 활성 테이블(제안·확정).
+    private DiningTable seatedTable(GatheringSession session) {
+        DiningTable table = DiningTable.builder().session(session).eventDate(session.getEventDate()).groupSize(4)
+                .algorithmVersion("rule-v2").build();
+        ReflectionTestUtils.setField(table, "id", UUID.randomUUID());
+        given(matchingService.findTablesByApplicationIds(List.of(applicationId))).willReturn(Map.of(applicationId, table));
+        return table;
     }
 
     private Deposit paidDeposit(Application application) {

@@ -16,6 +16,7 @@ import com.whatsuphouse.backend.domain.matching.enums.ResolutionStatus;
 import com.whatsuphouse.backend.domain.matching.repository.MatchResolutionRepository;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
 import com.whatsuphouse.backend.domain.notification.event.DiningResolutionEvent;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -53,6 +54,7 @@ public class MatchResolutionService {
     private final TicketService ticketService;
     private final ExceptionCaseService exceptionCaseService;
     private final ApplicationEventPublisher eventPublisher;
+    private final DepositService depositService;
 
     @Value("${dining.resolution-respond-hours:48}")
     private long respondHours;
@@ -135,7 +137,7 @@ public class MatchResolutionService {
 
     // ── 선택 처리 ────────────────────────────────────────────────────────────
 
-    // 희망 회차를 고른 회차 1개로 바꾸고 매칭 대기로 돌린다. 결제(차감)는 유지.
+    // 희망 회차를 고른 회차 1개로 바꾸고 매칭 대기로 돌린다. 결제(차감)·보증금은 신청을 따라 새 회차로 간다.
     private UUID transfer(MatchResolution resolution, UUID sessionId) {
         if (sessionId == null) {
             throw new CustomException(ErrorCode.RESOLUTION_SESSION_REQUIRED);
@@ -149,10 +151,11 @@ public class MatchResolutionService {
         return sessionId;
     }
 
-    // 차감한 이용권을 되돌리고(RESTORED) 신청을 취소한다.
+    // 차감한 이용권을 되돌리고(RESTORED) 신청을 취소한다. 보증금은 반환 대기로(설계 4.3, KAN-402).
     private void keepTicket(Application application) {
         ticketService.refundOneTicket(application);
         application.cancel();
+        depositService.requestReturn(application.getId());
     }
 
     // 모의 환불. 구매 건(차감 기록)을 특정할 수 없으면 이용권 보관과 같이 처리한다.
@@ -165,6 +168,7 @@ public class MatchResolutionService {
             return;
         }
         application.cancel();
+        depositService.requestReturn(application.getId());
         eventPublisher.publishEvent(new DiningResolutionEvent(application, NotificationType.DINING_REFUND_REQUESTED));
         if (result.get() == TicketDeductionStatus.REFUNDED) {
             eventPublisher.publishEvent(new DiningResolutionEvent(application, NotificationType.DINING_REFUND_COMPLETED));

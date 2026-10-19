@@ -163,8 +163,9 @@ class TicketServiceSettleTest {
         Application application = paymentPendingApplication(4);
         TicketPass pass = pendingPass(application);
         given(ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)).willReturn(Optional.of(pass));
-        given(ticketTransactionRepository.existsByApplication_IdAndTransactionType(
-                application.getId(), TicketTransactionType.USE)).willReturn(true);
+        given(ticketTransactionRepository.findByApplication_IdInAndTransactionType(
+                List.of(application.getId()), TicketTransactionType.USE))
+                .willReturn(List.of(TicketTransaction.of(pass, application, TicketTransactionType.USE, -1, "이전 사용")));
 
         ticketService.settlePass(passId, "WEBHOOK");
 

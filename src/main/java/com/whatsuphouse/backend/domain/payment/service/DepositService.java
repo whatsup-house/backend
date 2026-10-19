@@ -46,15 +46,17 @@ public class DepositService {
 
     /**
      * 보증금 입금 확인. 신청이 결제 대기이고 이용권 사용(USE) 기록도 있으면 신청을 확정한다.
-     * 보증금이 없거나 이미 처리된 건이면 아무것도 하지 않는다(멱등).
+     * 이미 취소된 신청이면 확정하지 않고 바로 반환 대기로 둔다. 보증금이 없거나 이미 처리된 건이면 아무것도 하지 않는다(멱등).
      */
     public void markPaid(UUID applicationId) {
-        depositRepository.findByApplication_Id(applicationId)
+        depositRepository.findByApplication_IdForUpdate(applicationId)
                 .filter(deposit -> deposit.getStatus() == DepositStatus.PENDING)
                 .ifPresent(deposit -> {
                     deposit.markPaid();
                     Application application = deposit.getApplication();
-                    if (application.getStatus() == ApplicationStatus.PAYMENT_PENDING
+                    if (application.getStatus() == ApplicationStatus.CANCELLED) {
+                        deposit.requestReturn();
+                    } else if (application.getStatus() == ApplicationStatus.PAYMENT_PENDING
                             && ticketServiceProvider.getObject().hasTicketUse(applicationId)) {
                         application.confirm();
                         // @Async 확정 메일이 트랜잭션 밖에서 모임 제목(종류)을 읽으므로 여기서 로드해 둔다.

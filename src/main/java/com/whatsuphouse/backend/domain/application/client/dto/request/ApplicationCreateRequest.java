@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.client.dto.request;
 
 import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -27,5 +28,6 @@ public class ApplicationCreateRequest extends ApplicationRequest {
     private List<@NotNull UUID> candidateSessionIds;
 
     @Schema(description = "보증금 반환 계좌. 보증금 대상 회원의 우연한 식탁 신청이면 필수(KAN-402)", nullable = true)
+    @Valid
     private RefundAccount depositReturnAccount;
 }

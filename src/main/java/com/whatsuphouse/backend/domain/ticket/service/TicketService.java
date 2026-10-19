@@ -303,10 +303,12 @@ public class TicketService {
         return true;
     }
 
-    /** 이 신청에 이용권 사용(USE) 기록이 있는가(멤버십 USE(0) 포함). */
+    /** 이 신청에 아직 차감 상태인 이용권 사용(USE) 기록이 있는가(멤버십 USE(0) 포함). 복원·환불된 USE는 세지 않는다. */
     @Transactional(readOnly = true)
     public boolean hasTicketUse(UUID applicationId) {
-        return ticketTransactionRepository.existsByApplication_IdAndTransactionType(applicationId, TicketTransactionType.USE);
+        return ticketTransactionRepository
+                .findByApplication_IdInAndTransactionType(List.of(applicationId), TicketTransactionType.USE).stream()
+                .anyMatch(TicketTransaction::isDeducted);
     }
 
     /** 이 신청의 마지막 USE가 아직 차감 상태인 횟수권(1회권) 사용인가. 취소 미리보기의 '1회권 복원' 판단용. (KAN-402) */

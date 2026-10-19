@@ -77,7 +77,7 @@ class DepositServiceTest {
     @Test
     @DisplayName("보증금 입금 확인 후 이용권 사용(USE)도 있으면 결제 대기 신청을 확정하고 확정 이벤트를 낸다")
     void markPaid_thenConfirmsApplication() {
-        Deposit deposit = pending();
+        Deposit deposit = pendingLocked();
         given(ticketServiceProvider.getObject()).willReturn(ticketService);
         given(ticketService.hasTicketUse(application.getId())).willReturn(true);
 
@@ -91,7 +91,7 @@ class DepositServiceTest {
     @Test
     @DisplayName("보증금은 입금됐지만 이용권을 아직 안 썼으면(이용권 입금 대기) 결제 대기로 둔다")
     void markPaid_withoutTicketUse_staysPaymentPending() {
-        Deposit deposit = pending();
+        Deposit deposit = pendingLocked();
         given(ticketServiceProvider.getObject()).willReturn(ticketService);
         given(ticketService.hasTicketUse(application.getId())).willReturn(false);
 
@@ -105,11 +105,25 @@ class DepositServiceTest {
     @Test
     @DisplayName("이미 처리된 보증금을 다시 입금 확인해도 아무것도 바꾸지 않는다(멱등)")
     void markPaid_alreadyPaid_noop() {
-        Deposit deposit = pending();
+        Deposit deposit = pendingLocked();
         deposit.markPaid();
 
         depositService.markPaid(application.getId());
 
+        then(ticketServiceProvider).shouldHaveNoInteractions();
+        then(eventPublisher).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("이미 취소된 신청의 보증금이 입금되면 확정하지 않고 바로 반환 대기로 둔다")
+    void markPaid_cancelledApplication_returnPending() {
+        Deposit deposit = pendingLocked();
+        application.cancel();
+
+        depositService.markPaid(application.getId());
+
+        assertThat(deposit.getStatus()).isEqualTo(DepositStatus.RETURN_PENDING);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(ticketServiceProvider).shouldHaveNoInteractions();
         then(eventPublisher).shouldHaveNoInteractions();
     }
@@ -189,6 +203,13 @@ class DepositServiceTest {
         assertThat(depositService.findPendingByApplication(application.getId())).contains(deposit);
         deposit.markPaid();
         assertThat(depositService.findPendingByApplication(application.getId())).isEmpty();
+    }
+
+    // markPaid는 보증금 행을 잠가 읽는다.
+    private Deposit pendingLocked() {
+        Deposit deposit = Deposit.pending(application, new RefundAccount("국민", "12345678901", "김철수"));
+        given(depositRepository.findByApplication_IdForUpdate(application.getId())).willReturn(Optional.of(deposit));
+        return deposit;
     }
 
     private Deposit pending() {

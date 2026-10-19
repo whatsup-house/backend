@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.payment.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Embeddable;
+import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -14,8 +15,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class RefundAccount {
 
+    // 컬럼 길이(deposits.return_* VARCHAR(50))와 맞춘다. 요청 DTO에서 @Valid로 400 처리.
+    @Size(max = 50)
     private String bank;
+    @Size(max = 50)
     private String accountNumber;
+    @Size(max = 50)
     private String holder;
 
     @JsonIgnore

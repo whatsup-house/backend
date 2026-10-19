@@ -21,8 +21,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -328,6 +330,29 @@ class ApplicationRepositoryTest {
                 .name(name)
                 .phone(phoneValue)
                 .build());
+    }
+
+    @Test
+    @DisplayName("내 우연한 식탁 신청: 활성 + 30일 안에 취소한 신청만, 그보다 오래 전 취소·다른 종류는 빠진다 (KAN-402)")
+    void findMyApplicationsIncludingRecentlyCancelled() {
+        Gathering randomTable = gatheringRepository.save(Gathering.builder()
+                .title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
+        GatheringSession thursday = saveSession(randomTable, LocalDate.now().plusDays(7));
+        Application active = saveUnassigned("WH-MY1", randomTable, thursday);
+        Application recentlyCancelled = saveUnassigned("WH-MY2", randomTable, thursday);
+        recentlyCancelled.cancel();
+        Application oldCancelled = saveUnassigned("WH-MY3", randomTable, thursday);
+        oldCancelled.cancel();
+        ReflectionTestUtils.setField(oldCancelled, "deletedAt", LocalDateTime.now().minusDays(31));
+        saveApplication("WH-MY4", session, user, null);   // 일반 모임
+        em.flush();
+        em.clear();
+
+        List<Application> found = applicationRepository.findMyApplicationsIncludingRecentlyCancelled(
+                user.getId(), GatheringType.RANDOM_TABLE, ApplicationStatus.CANCELLED, LocalDateTime.now().minusDays(30));
+
+        assertThat(found).extracting(Application::getId)
+                .containsExactlyInAnyOrder(active.getId(), recentlyCancelled.getId());
     }
 
     @Test

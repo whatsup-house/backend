@@ -123,13 +123,16 @@ public class DiningApplicationService {
      * 취소(설계 4.1, KAN-402). 기준 회차 날짜로 시점을 나눈다. 취소는 돈으로 환불하지 않는다.
      * - 마감 전: 이용권 복원(RESTORED), 참석 CANCELED_EARLY, 보증금 반환 요청.
      * - 마감 후: 복원 없음, 참석 CANCELED_LATE, 보증금 반환 요청.
-     * - 당일: 마감 후와 같되 보증금 몰수 + 보증금 대상 지정(노쇼와 동일 취급).
+     * - 당일: 테이블(제안·확정)에 앉은 신청이면 노쇼와 동일 취급(보증금 몰수 + 보증금 대상 지정).
+     *   앉지 않은 신청(결제 대기·매칭 전)은 마감 후와 같다. (R18)
      * 회차가 이미 시작했으면 CANCEL_WINDOW_CLOSED. 테이블에 앉아 있었으면 빼고 재조정한다(설계 4.7).
      */
     @Transactional
     public void cancelApplication(UUID applicationId, UUID userId) {
         Application application = findCancellable(applicationId, userId);
         CancelWindow window = evaluateWindow(application);
+        DiningTable table = matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId);
+        boolean noShow = isNoShowCancel(window, table);
 
         application.cancel();
         if (window == CancelWindow.BEFORE_DEADLINE) {
@@ -139,14 +142,13 @@ public class DiningApplicationService {
         }
         // 확정 테이블 멤버였다면 참석을 취소로(참석 행이 있을 때만). 재조정이 멤버 행을 removed_at으로 빼기 전에 기록한다. (KAN-349)
         diningAttendanceService.cancelAttendance(applicationId, window != CancelWindow.BEFORE_DEADLINE);
-        if (window == CancelWindow.SAME_DAY) {
+        if (noShow) {
             depositService.forfeit(applicationId);
             application.getUser().markDepositRequired();
         } else {
             depositService.requestReturn(applicationId);
         }
         // 테이블(제안·확정)에 앉아 있었다면 빼고, 인원이 모자라면 충원·재배치한다. (설계 4.7)
-        DiningTable table = matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId);
         if (table != null) {
             diningTableService.rebalance(table.getId());
         }
@@ -157,15 +159,22 @@ public class DiningApplicationService {
     public DiningCancelPreviewResponse previewCancel(UUID applicationId, UUID userId) {
         Application application = findCancellable(applicationId, userId);
         CancelWindow window = evaluateWindow(application);
+        boolean noShow = isNoShowCancel(window,
+                matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId));
         boolean ticketRestored = window == CancelWindow.BEFORE_DEADLINE && ticketService.hasCountDeduction(applicationId);
         Deposit deposit = depositService.findByApplicationIds(List.of(applicationId)).get(applicationId);
         DepositOutcome depositOutcome;
         if (deposit == null || deposit.getStatus() != DepositStatus.PAID) {
             depositOutcome = DepositOutcome.NONE;    // 돌려주거나 몰수할 입금이 없다
         } else {
-            depositOutcome = window == CancelWindow.SAME_DAY ? DepositOutcome.FORFEIT : DepositOutcome.RETURN;
+            depositOutcome = noShow ? DepositOutcome.FORFEIT : DepositOutcome.RETURN;
         }
-        return new DiningCancelPreviewResponse(window, ticketRestored, false, depositOutcome, window == CancelWindow.SAME_DAY);
+        return new DiningCancelPreviewResponse(window, ticketRestored, false, depositOutcome, noShow);
+    }
+
+    // 당일 취소는 테이블(제안·확정)에 앉은 신청만 노쇼로 본다. 앉지 않은 신청은 마감 후 취소와 같다. (R18)
+    private static boolean isNoShowCancel(CancelWindow window, DiningTable table) {
+        return window == CancelWindow.SAME_DAY && table != null;
     }
 
     private Application findCancellable(UUID applicationId, UUID userId) {

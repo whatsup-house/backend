@@ -211,13 +211,8 @@ public class ApplicationService {
 
         boolean autoConfirmed = false;
         boolean paymentPending = false;
-        // 노쇼 이력 회원은 보증금 입금 전까지 확정하지 않는다. 반환 계좌는 신청 시 필수. (KAN-402)
-        boolean depositRequired = randomTable && user.isDepositRequired();
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
             validateRandomTableEligibility(user);
-            if (depositRequired && (depositReturnAccount == null || !depositReturnAccount.isComplete())) {
-                throw new CustomException(ErrorCode.DEPOSIT_ACCOUNT_REQUIRED);
-            }
             // 자격 심사 없이 바로 참가한다: 제한 대상만 막고, 처음 신청하는 회원은 자동 승인한다.
             user.approveRandomTable();
         }
@@ -232,6 +227,13 @@ public class ApplicationService {
                 .email(email)
                 .formSnapshot(buildFormSnapshot(questions))
                 .build();
+
+        // 노쇼 이력 회원은 보증금 입금 전까지 확정하지 않는다. 반환 계좌는 신청 시 필수. (KAN-402)
+        // 무료 식탁(이용권 불필요)은 보증금 면제다: 확정 조건인 이용권 사용이 없어 보증금을 받아도 확정할 수 없다.
+        boolean depositRequired = randomTable && user.isDepositRequired() && application.requiresRandomTableTicket();
+        if (depositRequired && (depositReturnAccount == null || !depositReturnAccount.isComplete())) {
+            throw new CustomException(ErrorCode.DEPOSIT_ACCOUNT_REQUIRED);
+        }
 
         // 이용권 사용 기준 날짜: 매칭 전이라 어느 희망 회차에 앉을지 모르므로 가장 늦은 희망 회차. (KAN-401)
         LocalDate ticketDate = null;
@@ -443,20 +445,14 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
         }
 
-        if (application.getStatus() != ApplicationStatus.PENDING
-                && application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
+        // 우연한 식탁은 취소 시점 정책·보증금 처리가 있는 POST /api/dining/applications/{id}/cancel만 쓴다. (KAN-402)
+        if (application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
+                || (application.getStatus() != ApplicationStatus.PENDING
+                && application.getStatus() != ApplicationStatus.PAYMENT_PENDING)) {
             throw new CustomException(ErrorCode.CANNOT_CANCEL);
         }
 
         application.cancel();
-
-        // 우연한 식탁 회원 신청 취소 시 차감했던 이용권을 환불한다. (KAN-261)
-        // 단, 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되었으므로 중복 환불하지 않는다.
-        if (application.getUser() != null
-                && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
-                && !application.isSessionCancelled()) {
-            ticketService.refundOneTicket(application);
-        }
 
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }

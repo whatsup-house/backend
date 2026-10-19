@@ -23,6 +23,7 @@ import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,8 @@ class MatchResolutionServiceTest {
     private ExceptionCaseService exceptionCaseService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private DepositService depositService;
 
     @InjectMocks
     private MatchResolutionService matchResolutionService;
@@ -168,6 +171,8 @@ class MatchResolutionServiceTest {
         assertThat(resolution.getChosenSessionId()).isEqualTo(alternative.getId());
         assertThat(publishedTypes(1)).containsExactly(NotificationType.DINING_TRANSFERRED);
         then(ticketService).shouldHaveNoInteractions();
+        // 보증금은 신청을 따라 새 회차로 간다(반환하지 않음). (KAN-402)
+        then(depositService).shouldHaveNoInteractions();
     }
 
     @Test
@@ -198,6 +203,7 @@ class MatchResolutionServiceTest {
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         assertThat(resolution.getStatus()).isEqualTo(ResolutionStatus.RESOLVED);
         assertThat(resolution.getChoice()).isEqualTo(ResolutionChoice.KEEP_TICKET);
+        then(depositService).should().requestReturn(application.getId());
     }
 
     @Test
@@ -215,6 +221,7 @@ class MatchResolutionServiceTest {
                 NotificationType.DINING_REFUND_REQUESTED, NotificationType.DINING_REFUND_COMPLETED);
         then(ticketService).should(never()).refundOneTicket(any());
         then(exceptionCaseService).shouldHaveNoInteractions();
+        then(depositService).should().requestReturn(application.getId());
     }
 
     @Test
@@ -243,6 +250,7 @@ class MatchResolutionServiceTest {
         then(ticketService).should().refundOneTicket(application);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(eventPublisher).shouldHaveNoInteractions();
+        then(depositService).should().requestReturn(application.getId());
     }
 
     @Test
@@ -277,6 +285,7 @@ class MatchResolutionServiceTest {
         assertThat(resolution.getChoice()).isEqualTo(ResolutionChoice.KEEP_TICKET);
         then(ticketService).should().refundOneTicket(application);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        then(depositService).should().requestReturn(application.getId());
     }
 
     @Test
@@ -291,5 +300,6 @@ class MatchResolutionServiceTest {
 
         assertThat(resolution.getStatus()).isEqualTo(ResolutionStatus.RESOLVED);
         then(ticketService).shouldHaveNoInteractions();
+        then(depositService).shouldHaveNoInteractions();
     }
 }
