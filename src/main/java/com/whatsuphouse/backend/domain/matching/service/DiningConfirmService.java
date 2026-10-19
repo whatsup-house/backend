@@ -9,6 +9,7 @@ import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.entity.Venue;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.dining.enums.PriceRangeOption;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
 import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
@@ -40,7 +41,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -204,7 +204,7 @@ public class DiningConfirmService {
         }
     }
 
-    // 테이블 멤버가 PRICE_RANGE에 답한 선택지의 교집합. 답한 멤버가 없거나 겹치지 않으면 빈 집합(선호 없음). (KAN-407)
+    // 테이블 멤버가 PRICE_RANGE에 답한 선택지의 교집합. 상관 없음을 고른 멤버는 뺀다. 답한 멤버가 없거나 겹치지 않으면 빈 집합(선호 없음). (KAN-407)
     Set<String> preferredPriceRanges(UUID tableId) {
         List<UUID> applicationIds = findActiveMembers(tableId).stream().map(member -> member.getApplication().getId()).toList();
         Map<UUID, Set<String>> byApplication = new HashMap<>();
@@ -212,7 +212,11 @@ public class DiningConfirmService {
             if (answer.getQuestion().getDeletedAt() == null
                     && answer.getQuestion().getReservedKey() == ReservedQuestionKey.PRICE_RANGE
                     && answer.getValue() != null) {
-                byApplication.put(answer.getApplication().getId(), choices(answer.getValue().get("value")));
+                Set<String> choices = DiningMatchService.values(answer.getValue().get("value"));
+                // 상관 없음(HIGH 선택지)을 고른 멤버는 테이블 가격을 제약하지 않는다.
+                if (!choices.contains(PriceRangeOption.HIGH.getLabel())) {
+                    byApplication.put(answer.getApplication().getId(), choices);
+                }
             }
         }
         Set<String> common = null;
@@ -224,13 +228,6 @@ public class DiningConfirmService {
             }
         }
         return common != null ? common : Set.of();
-    }
-
-    private static Set<String> choices(Object value) {
-        if (value instanceof Collection<?> values) {
-            return values.stream().filter(Objects::nonNull).map(Object::toString).collect(Collectors.toSet());
-        }
-        return value != null ? Set.of(value.toString()) : Set.of();
     }
 
     // ── 4. 채팅방 ───────────────────────────────────────────────────────────

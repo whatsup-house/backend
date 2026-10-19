@@ -123,12 +123,26 @@ class DiningConfirmServiceVenueTest {
     @Test
     @DisplayName("교집합이 비면 선호 없음으로 본다")
     void assignVenue_disjointAnswers_noPreference() {
-        answers = List.of(priceAnswer(0, List.of(LOW)), priceAnswer(1, List.of(HIGH)));
+        answers = List.of(priceAnswer(0, List.of(LOW)), priceAnswer(1, List.of(MID)));
         given(sessionVenueService.useFirstAvailableVenue(sessionId, Set.of())).willReturn(Optional.of(UUID.randomUUID()));
 
         diningConfirmService.assignVenue(tableId);
 
         verify(sessionVenueService).useFirstAvailableVenue(sessionId, Set.of());
+    }
+
+    @Test
+    @DisplayName("상관 없음(30,000원 이상)을 고른 멤버는 교집합에서 빠져 테이블 가격을 제약하지 않는다")
+    void assignVenue_anyPriceMember_excludedFromIntersection() {
+        answers = List.of(
+                priceAnswer(0, List.of(HIGH)),
+                priceAnswer(1, List.of(MID)),
+                priceAnswer(2, List.of(LOW, MID)));
+        given(sessionVenueService.useFirstAvailableVenue(sessionId, Set.of(MID))).willReturn(Optional.of(UUID.randomUUID()));
+
+        diningConfirmService.assignVenue(tableId);
+
+        verify(sessionVenueService).useFirstAvailableVenue(sessionId, Set.of(MID));
     }
 
     private ApplicationAnswer priceAnswer(int applicationNo, List<String> choices) {

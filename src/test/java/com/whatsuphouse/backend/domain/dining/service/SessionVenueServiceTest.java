@@ -80,6 +80,8 @@ class SessionVenueServiceTest {
         assertThat(PriceRangeOption.ofVenueText("1만~2만원")).contains(PriceRangeOption.LOW);
         assertThat(PriceRangeOption.ofVenueText("25000")).contains(PriceRangeOption.MID);
         assertThat(PriceRangeOption.ofVenueText("30,000원 이상")).contains(PriceRangeOption.HIGH);
+        assertThat(PriceRangeOption.ofVenueText("1인 2만원")).contains(PriceRangeOption.MID);
+        assertThat(PriceRangeOption.ofVenueText("2인 이상 25,000원")).contains(PriceRangeOption.MID);
         assertThat(PriceRangeOption.ofVenueText("시가")).isEmpty();
         assertThat(PriceRangeOption.ofVenueText(null)).isEmpty();
     }

@@ -45,6 +45,7 @@ class DemoAccountServiceTest {
         verify(userRepository).save(saved.capture());
         User user = saved.getValue();
         assertThat(user.isDemo()).isTrue();
+        assertThat(user.isAdmin()).isFalse();
         assertThat(user.getRandomTableEligibility()).isEqualTo(RandomTableEligibility.APPROVED);
         assertThat(user.getName()).matches("체험\\d{4}");
         assertThat(user.getEmail()).matches("demo\\+[0-9a-f]{8}@whatsup\\.house");

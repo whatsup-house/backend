@@ -30,6 +30,14 @@ public interface ExceptionCaseRepository extends JpaRepository<ExceptionCase, UU
 
     long countByStatus(ExceptionCaseStatus status);
 
+    // 숨김 종류(심사용) 회차에 걸린 건. 운영 대시보드 집계에서 뺀다. (KAN-407)
+    @Query("""
+            select count(e) from ExceptionCase e
+            where e.status = :status
+              and e.sessionId in (select s.id from GatheringSession s where s.gathering.hidden = true)
+            """)
+    long countByStatusOnHiddenGatherings(@Param("status") ExceptionCaseStatus status);
+
     List<ExceptionCase> findAllByTypeAndTableIdAndStatus(ExceptionCaseType type, UUID tableId, ExceptionCaseStatus status);
 
     @Query("""

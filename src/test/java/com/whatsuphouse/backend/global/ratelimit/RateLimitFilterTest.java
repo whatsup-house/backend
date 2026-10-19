@@ -165,6 +165,7 @@ class RateLimitFilterTest {
 
     @Test
     @DisplayName("체험 시작(POST /api/auth/demo)은 IP당 분당 3회까지, 4번째부터 429를 반환한다")
+    @SuppressWarnings("unchecked")
     void createDemo_rateLimited_429() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/demo");
         request.setRequestURI("/api/auth/demo");
@@ -175,6 +176,7 @@ class RateLimitFilterTest {
         filter.doFilter(request, allowedResponse, allowed);
         assertThat(allowed.getRequest()).isNotNull();
         assertThat(allowedResponse.getStatus()).isEqualTo(200);
+        verify(redisTemplate).execute(any(RedisScript.class), eq(List.of("rate-limit:demo:127.0.0.1")), eq("60"));
 
         stubCount(4L);
         MockFilterChain blocked = new MockFilterChain();

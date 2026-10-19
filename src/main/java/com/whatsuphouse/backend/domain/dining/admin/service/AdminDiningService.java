@@ -71,7 +71,9 @@ public class AdminDiningService {
     private final MatchExclusionProvider matchExclusionProvider;
 
     public DiningDashboardResponse getDashboard() {
-        List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE);
+        List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE).stream()
+                .filter(session -> !session.getGathering().isHidden()) // 심사용 숨김 종류는 운영 집계에서 뺀다. (KAN-407)
+                .toList();
         List<UUID> sessionIds = sessions.stream().map(GatheringSession::getId).toList();
         Map<UUID, Map<DiningTableStatus, Long>> tableCounts = matchingService.countTablesBySessionIds(sessionIds);
         Set<UUID> matchRunSessionIds = matchingService.findSessionIdsWithMatchRun(sessionIds);
@@ -105,7 +107,8 @@ public class AdminDiningService {
                 .paidApplicantCount(distinctApplications.values().stream().filter(this::isPaid).count())
                 .proposedTableCount(sumTables(tableCounts, DiningTableStatus.PROPOSED))
                 .confirmedTableCount(sumTables(tableCounts, DiningTableStatus.CONFIRMED))
-                .openExceptionCount(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN))
+                .openExceptionCount(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN)
+                        - exceptionCaseRepository.countByStatusOnHiddenGatherings(ExceptionCaseStatus.OPEN))
                 .sessions(cards)
                 .build();
     }

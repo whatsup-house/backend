@@ -12,6 +12,7 @@ public enum PriceRangeOption {
     MID("20,000~30,000원"),
     HIGH("30,000원 이상 (상관 없음)");
 
+    private static final long MIN_AMOUNT = 1_000;
     private static final Pattern AMOUNT = Pattern.compile("(\\d[\\d,]{0,11})\\s*(만)?");
 
     private final String label;
@@ -25,7 +26,7 @@ public enum PriceRangeOption {
     }
 
     /**
-     * 식당 가격대 문자열에서 숫자(콤마 허용, "만" 단위 허용)를 모아 평균으로 선택지를 고른다.
+     * 식당 가격대 문자열에서 금액(콤마 허용, "만" 단위 허용, 1,000원 미만 숫자는 인원수로 보고 무시)을 모아 평균으로 선택지를 고른다.
      * 20,000원 미만 LOW, 30,000원 미만 MID, 그 이상 HIGH. 숫자가 없으면 empty(선호 없음으로 본다).
      * ponytail: "1만5천" 같은 복합 표기는 지원하지 않는다. 필요해지면 식당에 정형 가격대 컬럼을 둔다.
      */
@@ -38,8 +39,11 @@ public enum PriceRangeOption {
         int count = 0;
         while (matcher.find()) {
             long amount = Long.parseLong(matcher.group(1).replace(",", ""));
-            sum += matcher.group(2) != null ? amount * 10_000 : amount;
-            count++;
+            amount = matcher.group(2) != null ? amount * 10_000 : amount;
+            if (amount >= MIN_AMOUNT) { // "1인", "2인 이상" 같은 인원 숫자는 금액이 아니다
+                sum += amount;
+                count++;
+            }
         }
         if (count == 0) {
             return Optional.empty();

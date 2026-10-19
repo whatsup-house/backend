@@ -253,6 +253,40 @@ class ApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("체험(데모) 계정은 숨김이 아닌 실제 모임에 신청할 수 없다 (KAN-407)")
+    void apply_demoUser_realGathering_forbidden() {
+        user.markDemo();
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
+
+        assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DEMO_USER_REAL_GATHERING_FORBIDDEN);
+        then(applicationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("체험(데모) 계정도 숨김 종류에는 신청할 수 있다 (KAN-407)")
+    void apply_demoUser_hiddenGathering_allowed() {
+        user.markDemo();
+        ReflectionTestUtils.setField(gathering, "hidden", true);
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
+        given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        ApplicationResponse response = applicationService.apply(sessionId, request, userId);
+
+        assertThat(response).isNotNull();
+    }
+
+    @Test
     @DisplayName("비회원 정상 신청")
     void apply_guest_success() {
         FormQuestion phoneQuestion = question("phone", false);
