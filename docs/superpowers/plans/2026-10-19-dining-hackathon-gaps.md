@@ -18,7 +18,7 @@
 - 대사는 후보가 **정확히 1건**일 때만 자동 처리. 이름 비교: 같거나 `payerName.startsWith(알림이름)`.
 - 타 도메인 Repository 직접 주입 금지(서비스·이벤트 경유). `remainingCount` 변경 시 `TicketTransaction` 기록 필수. 시스템 질문 키는 enum만.
 - 커밋·PR에 AI·Claude·Co-Authored-By 문구 금지. 커밋 메시지 `feat: … (KAN-4xx)` 형식. 에픽 KAN-399, 각 태스크 제목 옆 키 사용.
-- 시크릿(`DEPOSIT_WEBHOOK_SECRET`, `OPENAI_API_KEY`)은 `.env`·배포 환경변수로만. 코드·문서·채팅에 값 금지.
+- 시크릿(`DEPOSIT_WEBHOOK_SECRET`, `GROK_WEBHOOK_URL`, `GROK_WEBHOOK_KEY`, `WHATSUP_BOT_TOKEN`)은 `.env`·배포 환경변수로만. 코드·문서·채팅에 값 금지.
 - Flyway 번호 고정: BE-0 V18, BE-2 V19, BE-3 V20, BE-4 V21, BE-5 V22, BE-7 V23, BE-8 V24. (아래 태스크 본문의 옛 번호 V18~V23은 이 표로 대체)
 - 병렬 레인: 통합 브랜치 `feature/KAN-399-dining-hackathon`(BE·FE 각각)에서 BE-0 후 분기. 레인 A = BE-1→2→3→4→5→6, B = BE-7, C = BE-8, D = FE-1→2→3, E = FE-4→5→6. 레인은 서로의 코드가 없다고 가정하고 BE-0과 이 계획의 인터페이스만 의존한다.
 - `src/test/.../global/storage/service/SupabaseStorageServiceTest.java`의 변경·삭제는 보안 도구 오탐 처리 결과라 **절대 커밋에 포함하지 않는다**.
@@ -30,7 +30,7 @@
 - 보증금 대상 회원이 멤버십으로 신청 → 보증금 입금 전에는 매칭 후보가 되면 안 됨. (BE-3 `apply_depositRequiredWithMembership_staysPaymentPending`)
 - 1회권 신규 + 보증금 합산 입금(59,900)이 9,900 후보와 50,000 후보로 따로 잡혀 2건 매칭되면 안 됨 → 합산 후보 1건만. (BE-4 `reconcile_bundledPassAndDeposit_singleCandidate`)
 - 멤버십 이용권 취소 복원 시 `remainingCount`가 늘어나면 안 됨. (BE-2 `refundOneTicket_periodPass_remainingUnchanged`)
-- AI가 다른 회원의 신청 정보를 컨텍스트에 받으면 안 됨. (BE-7 `buildContext_onlyRequesterData`)
+- 그록봇 웹훅 페이로드에 다른 회원 데이터가 섞이면 안 됨. (BE-7 `payload_customerA_containsNoCustomerBData`)
 
 ---
 
@@ -59,7 +59,7 @@
 | 이용권 | `domain/ticket/entity/{TicketProductOption,TicketPass}.java`, `domain/ticket/enums/{TicketProductKind,TicketTransactionType}.java`, `domain/ticket/repository/TicketPassRepository.java`, `domain/ticket/service/MembershipExpiryScheduler.java` |
 | 정책 | `domain/application/client/service/CancelPolicy.java`(새, 순수), `DiningApplicationService.java` |
 | payment 도메인(새) | `domain/payment/entity/{Deposit,DepositNotification,PayoutRequest}.java`, `enums/{DepositStatus,DepositSource,DepositMatchResult,PayoutType,PayoutStatus,PaymentTargetType}.java`, `dto/PendingPayment.java`, `service/{DepositService,DepositTextParser,DepositReconciliationService,PayoutService}.java`, `controller/{DepositWebhookController,DemoDepositController}.java`, `admin/controller/AdminPaymentController.java` |
-| AI CS(새) | `domain/csai/{client/CsAiClient,service/CsAiService,service/CsContextBuilder}.java`, `resources/cs/faq.md` |
+| AI CS(새, 그록봇) | `domain/bot/**`, `global/config/BotSecurityConfig.java`, `resources/cs/faq.md` |
 | 데모 | `domain/auth/service/DemoAccountService.java`, `User.isDemo`, `Gathering.hidden` |
 | 마이그레이션 | `resources/db/migration/V18__ticket_membership.sql` … `V23__demo_and_price_range.sql` |
 | FE | `app/(main)/payments/random-table/page.tsx`, `components/payment/{DepositSimulatorCard,PaymentPendingPanel,RefundAccountForm}.tsx`, `components/mypage/DiningStatusCard.tsx`, `components/dining/CancelPreviewModal.tsx`, `app/admin/payments/page.tsx`, `components/chat/ChatMessageBubble.tsx`, `app/admin/chat/*`, `app/(auth)/login/page.tsx`, `components/admin/GatheringSessionModal.tsx`, `app/(main)/dining/history/page.tsx`, `lib/api/{ticket,payment,adminPayment,application,chat,adminChat,auth}.ts` |
@@ -187,22 +187,62 @@
 - [ ] **Step 2-4:** FAIL → 구현 → PASS.
 - [ ] **Step 5:** 커밋 `feat: 확정 테이블 인원 부족 시 남은 참가자에게 해결 선택지 제공 (KAN-405)`
 
-### Task BE-7 (KAN-406): AI CS (1:1 문의방)
+### Task BE-7 (KAN-406): 1:1 문의방 그록봇 AI 자동응답 (웹훅 발송 + 답변 수신 API)
 
-**Files:** Create `V22__chat_ai.sql`(`chat_rooms.ai_paused_at TIMESTAMP NULL`, `chat_messages.ai_generated BOOLEAN NOT NULL DEFAULT false`), `domain/csai/client/CsAiClient.java`, `service/CsAiService.java`, `service/CsContextBuilder.java`, `resources/cs/faq.md`; Modify `ChatRoom.java`(+`pauseAi(now)`, `resumeAi()`, `isAiActive(now)`), `ChatMessage.java`(+`aiGenerated`), `ChatService.java`(+`postAiReply`, 관리자 메시지 시 pause), `AdminChatService.java`(+`resumeAi`), `ChatMessageResponse`(+`aiGenerated`), `ExceptionCaseType`(+`CS`), `application.yml`(`cs-ai.*`); Test `CsAiServiceTest.java`, `CsContextBuilderTest.java`
+AI는 외부 에이전트(Grok Bot). 우리 서버가 웹훅으로 문의를 보내고, 에이전트가 우리 답변 API를 호출해 답을 등록한다. 봇은 **읽기 전용**: 데이터 변경(취소·환불·입금 확인 등) 금지, 할 수 있는 건 "답변 등록"과 "담당자 이관 표시"뿐. 비밀값(`GROK_WEBHOOK_URL`, `GROK_WEBHOOK_KEY`, `WHATSUP_BOT_TOKEN`)은 환경변수만, 로그 출력 금지.
 
-**Interfaces — Produces:**
-- `CsAiClient.ask(String systemPrompt, List<Map<String,String>> messages): CsAiAnswer(answer, escalate, reason)` — `GmsTranslationClient`와 같은 RestClient 패턴, `response_format: json_object`, 타임아웃 15초. 설정 `cs-ai.base-url (https://api.openai.com/v1)`, `cs-ai.key ${OPENAI_API_KEY:}`, `cs-ai.model ${CS_AI_MODEL:gpt-4o-mini}`, `cs-ai.enabled`. 키 없으면 `isEnabled()==false`.
-- `CsContextBuilder.build(UUID userId): String` — 기존 서비스만 사용: 내 신청·매칭 상태(`DiningApplicationService`의 내 신청 조회), 이용권(`TicketService.getMyTickets`), 보증금(`DepositService.listMine`), 결제 대기 금액·입금자명. **userId 외 조회 금지.**
-- `CsAiService.onMessageCreated(ChatMessageCreatedEvent)` — `@Async @TransactionalEventListener(AFTER_COMMIT)`. 조건: INQUIRY, 보낸 사람 비관리자, `room.isAiActive(now)`(aiPausedAt null 또는 24시간 경과), 방의 최근 1분 AI 메시지 < 5. escalate 또는 LLM 예외 → 안내 문구 게시(escalate일 때만) + `ExceptionCase(CS, reason="문의방 {roomId}: …")` + `room.pauseAi(now)`.
-- `ChatService.postAiReply(UUID roomId, String text)` — 시스템 관리자(`dining.system-admin-id`, 없으면 활성 관리자) 발신, `aiGenerated=true`, `ChatMessageCreatedEvent` 발행(리스너는 aiGenerated 메시지 무시).
-- `POST /api/admin/chat/rooms/{id}/ai/resume`.
-- 시스템 프롬프트 규칙: FAQ와 상태 요약만 근거, 다른 참가자 정보·정책 밖 약속·"처리했어요" 금지, 행동은 앱 경로 링크(`/mypage/applications`, `/payments/random-table`, `/dining/history`) 안내, JSON `{answer, escalate, reason}`. 신고·안전·환불 실패·결제 분쟁·상담원 요청은 escalate=true.
-- `faq.md`: 가격, 멤버십(주 1회·실패 연장·첫 참석 전 환불), 마감(화 24:00)·당일 취소·노쇼 보증금, 입금자명=실명, 매칭 방식(4~6명·나이 차 8살), 지역 4곳, 체크인·피드백, 일반 모임 신청·입금 기본.
+**Files:** Create `V23__bot_dispatch.sql`, `domain/bot/entity/{BotDispatch,BotSetting}.java`, `domain/bot/enums/BotDispatchStatus.java`, `domain/bot/service/{BotDispatchListener,BotDispatchService,BotPayloadBuilder,BotWebhookClient,BotReplyService,BotDispatchScheduler}.java`, `domain/bot/controller/BotReplyController.java`, `domain/bot/admin/controller/AdminBotController.java`, `global/config/BotSecurityConfig.java`(별도 필터 체인), `resources/cs/faq.md`; Modify `ChatRoom.java`(+`needsHuman`, `botPaused`), `ChatMessage.java`(+`aiGenerated`), `ChatService.java`(+`postBotMessage`, 관리자가 INQUIRY 방에 답하면 `botPaused=true`), `AdminChatService.java`(+봇 재개), 채팅 응답 DTO(`aiGenerated`, 방 요약·상세에 `needsHuman`, `botPaused`, 관리자용 `handoffReason`), `application.yml`/`application-test.yml`(`bot.*`), `.github/workflows/deploy.yml`(세 시크릿 전달 + `BOT_ENABLED`, `BOT_ALLOWED_USER_IDS`); Test `domain/bot/**`
 
-- [ ] **Step 1: 실패 테스트**(LLM 클라이언트 목) — `onMessage_userInInquiry_postsAiReply`, `onMessage_escalate_opensCsCaseAndPauses`, `onMessage_groupRoom_ignored`, `onMessage_aiPausedWithin24h_ignored`, `onMessage_aiGeneratedMessage_ignored`, `adminMessage_pausesAi`, `buildContext_onlyRequesterData`(다른 userId 서비스 호출 0회 검증), `clientDisabled_noCall`.
-- [ ] **Step 2-4:** FAIL → 구현 → 전체 PASS.
-- [ ] **Step 5:** 커밋 `feat: 1:1 문의방 AI 답변과 상담원 연결 (KAN-406)`
+**설정 (`bot.*`):** `enabled ${BOT_ENABLED:false}`(마스터 스위치), `allowed-user-ids ${BOT_ALLOWED_USER_IDS:}`(쉼표 UUID), `webhook-url ${GROK_WEBHOOK_URL:}`, `webhook-key ${GROK_WEBHOOK_KEY:}`, `reply-token ${WHATSUP_BOT_TOKEN:}`, `reply-url https://api.whatsup.house/api/bot/replies`(시작 시 `https://` + 호스트가 `whatsup.house` 또는 `*.whatsup.house`인지 검증, 아니면 봇 비활성 + 경고 로그), `debounce-seconds 10`, `reply-timeout-minutes 3`, `per-user-hourly-limit 20`, `daily-limit 300`, `max-text-length 2000`. 테스트 프로파일은 `enabled=false` 기본, 테스트에서 필요 시 켬.
+
+**대상 고객:** `bot.enabled` && 관리자 화면 전역 토글(`bot_settings.enabled`) ON && (고객 userId ∈ `allowed-user-ids` **또는 `user.isDemo()`**) && 방 `botPaused=false`. 그 외 고객은 지금처럼 사람만 응답.
+
+**DB (V23):**
+- `bot_dispatch(id UUID PK, event_id UUID UNIQUE, conversation_id UUID, message_id UUID UNIQUE, customer_id UUID, status VARCHAR(20) — PENDING|SENT|REPLIED|HANDED_OFF|FAILED, attempts INT, last_error TEXT, send_after TIMESTAMP, next_attempt_at TIMESTAMP, sent_at TIMESTAMP, handoff_reason TEXT, created_at, updated_at)`. `last_error`에 비밀값·요청 본문 금지(상태 코드·예외 클래스만).
+- `bot_settings(id SMALLINT PK=1, enabled BOOLEAN DEFAULT true, updated_by UUID, updated_at)` 1행 시드.
+- `chat_rooms.needs_human BOOLEAN DEFAULT false`, `chat_rooms.bot_paused BOOLEAN DEFAULT false`, `chat_messages.ai_generated BOOLEAN DEFAULT false`.
+- 봇 전용 시스템 계정 1행 insert(고정 UUID 상수 `BotAccount.ID`, email `bot@whatsup.house`, 닉네임 `와썹 AI`, 로그인 불가 랜덤 비밀번호 해시, 관리자 아님). 봇이 INQUIRY 방에 글을 쓸 수 있게 ChatAccessPolicy/멤버십을 최소 변경.
+
+**1. 발송 (고객 메시지 → 웹훅)**
+- `BotDispatchListener`: `ChatMessageCreatedEvent` `@TransactionalEventListener(AFTER_COMMIT) @Async`. INQUIRY 방이고 발신자 = 방의 `inquiryUserId`이고 대상 고객일 때만.
+- 디바운스: 같은 방에 PENDING 행이 있으면 그 행의 `message_id`를 새 메시지로, `send_after = now + 10s`로 갱신(한 건으로 묶음). 없으면 새 PENDING 행(event_id 새 UUID). 같은 메시지 이벤트 중복은 `message_id UNIQUE`로 1회만.
+- 같은 방에 SENT 상태 dispatch가 있는데 고객이 새 메시지를 보내면 새 PENDING을 만든다(이전 SENT의 답변은 2절 규칙으로 409 처리됨).
+- 한도: 고객별 최근 1시간 dispatch 수 ≥ 20 또는 오늘 전체 ≥ 300이면 발송하지 않고 담당자 이관(3절 이관 처리).
+- `BotDispatchScheduler`(2초 주기): `PENDING && send_after <= now` 또는 재시도 대기 중 `next_attempt_at <= now`인 행을 행 잠금(`FOR UPDATE SKIP LOCKED`)으로 집어 발송.
+- `BotPayloadBuilder.build(dispatch)`: **dispatch.customerId 하나로만** 기존 서비스 호출(내 신청 목록·상세 = `DiningApplicationService`/`ApplicationService`의 본인 조회, 이용권 = `TicketService.getMyTickets(userId)`, `user.isDepositRequired()`). 다른 고객 조회 메서드 호출 금지. 전화번호는 뒤 4자리만, 계좌번호는 앞 3자리+`***`, 이메일 제외. history = 그 방 최근 10개(role: 고객=customer, 관리자=agent, aiGenerated=bot, 시스템 메시지 제외), faq = `faq.md`를 `{q, a}` 목록으로 파싱.
+- 본문: `{eventId, conversationId, messageId, customer{id, displayName(닉네임)}, message{text, createdAt ISO-8601}, history[], context{applications[], tickets{}}, faq[], replyUrl}`.
+- `BotWebhookClient`: `POST {webhook-url}`, `Authorization: Bearer {webhook-key}`, JSON, 연결 5초·응답 10초 타임아웃. 200 → `SENT`, `sent_at=now`. 400·429·5xx·네트워크 오류 → `attempts++`, 백오프 5s → 30s → 2m(`next_attempt_at`), 3회 재시도 후 실패면 `FAILED` + 이관.
+- 무응답 감시: `SENT && sent_at + 3분 <= now` → `HANDED_OFF`(reason "응답 시간 초과") + 이관.
+
+**2. 답변 수신 `POST /api/bot/replies`**
+- `BotSecurityConfig`: `securityMatcher("/api/bot/**")` 전용 `SecurityFilterChain`(@Order 우선), stateless, CSRF off, JWT 필터 없음, `BotTokenFilter`가 `Authorization: Bearer` 값을 `MessageDigest.isEqual`로 비교. 불일치·누락 401. 일반 JWT/세션으로는 통과 불가. `reply-token` 미설정이면 항상 401.
+- 본문 `{eventId, conversationId, inReplyToMessageId, action: "reply"|"handoff", text, handoffReason}`, 헤더 `Idempotency-Key`(= eventId, 다르면 422).
+- 검증 순서: dispatch 없음 → 404, conversationId·inReplyToMessageId 불일치 → 403, 이미 REPLIED/HANDED_OFF → 409(아무것도 안 함), 같은 방에 이보다 최신 dispatch 존재 → 409(오래된 답변 폐기, 상태 그대로), 상태가 SENT 아님 → 409, text 비었거나 2000자 초과 → 422. 처리는 dispatch 행 잠금 후 한 트랜잭션(동시 중복 호출에도 메시지 1개).
+- text는 `HtmlUtils.htmlEscape` 후 저장.
+- `reply`: `ChatService.postBotMessage(roomId, text)` — 발신자 봇 계정, `aiGenerated=true`, `ChatMessageCreatedEvent` 발행(기존 WebSocket 브로드캐스트·푸시 그대로; 봇 리스너는 봇 발신 메시지 무시). dispatch `REPLIED`.
+- `handoff`: 같은 방식으로 text 게시 + 이관 처리 + `handoff_reason` 저장(관리자만 조회). dispatch `HANDED_OFF`.
+
+**3. 이관 처리 (공통 `BotDispatchService.handOff(dispatch, reason)`)**
+- 방 `needsHuman=true`, `ExceptionCaseService.open(CS, null, null, null, "문의방 {roomId}: {reason}")`. 웹훅 실패·타임아웃·한도 초과 이관이면 고객에게 고정 문구 게시: "담당자에게 연결했어요. 곧 답변드릴게요." (봇 계정, aiGenerated=true). 같은 방에 열린 CS 예외가 있으면 새로 만들지 않음.
+- 담당자(관리자)가 INQUIRY 방에 메시지를 보내면 방 `botPaused=true`(이후 고객 메시지는 발송 안 함).
+- `POST /api/admin/chat/rooms/{id}/bot/resume` → `botPaused=false`, `needsHuman=false`, 그 방 열린 CS 예외 RESOLVED.
+- `GET/PUT /api/admin/bot/settings {enabled}` — 전역 토글.
+
+**4. 테스트 (합성 고객 A·B, 가상 데이터만; 웹훅은 `MockRestServiceServer`)**
+고객 A: 신청 1건 입금확인 완료, 이용권 잔여 3회. 고객 B: 신청 1건 입금 대기, 이용권 없음.
+1. `payload_customerA_containsNoCustomerBData`(A·B 동시 발송 포함, B의 id·이름·신청 id가 A 페이로드 직렬화 문자열에 없음)
+2. `duplicateMessageEvent_dispatchedOnce`
+3. `concurrentInquiries_eachReplyLandsInOwnRoom`
+4. `webhook400or5xx_retriesThenFailed_handsOff`(시도 4회 = 최초+3재시도, 상태 FAILED, needsHuman)
+5. `reply_sameEventIdTwice_secondIs409_singleMessage`
+6. `reply_wrongToken_401`, `reply_otherRoomConversationId_403`
+7. `sentWithoutReply3Minutes_handsOff`
+8. `refundRequest_handoffReply_marksNeedsHuman`
+추가: `debounce_threeMessagesWithin10s_singleDispatchWithLastMessageId`, `adminMessage_pausesBot`, `nonAllowlistedCustomer_noDispatch`, `demoCustomer_dispatched`, `hourlyLimitExceeded_handsOff`, `replyUrl_nonWhatsupHost_disablesBot`, `reply_staleDispatch_409`.
+
+- [ ] 실패 테스트 작성 → FAIL 확인 → 구현 → `./gradlew test` 전체 PASS.
+- [ ] 커밋 `feat: 문의방 그록봇 AI 자동응답 웹훅 발송과 답변 수신 API (KAN-406)`
+- [ ] 리포트에 변경 파일 목록, 환경변수 목록, 마이그레이션 SQL 요약, 스테이징 curl 수동 테스트 방법(웹훅 수신 확인용 요청 예시, `/api/bot/replies` reply·handoff·중복·잘못된 토큰 예시 — 토큰 값 대신 `$WHATSUP_BOT_TOKEN` 변수 사용)을 적는다.
 
 ### Task BE-8 (KAN-407): 데모 계정·숨김 종류·가격대·추천 회차
 
@@ -258,14 +298,16 @@
 - [ ] 송금 목록: 유형 탭(환불/보증금 반환), 은행·계좌·예금주·금액, 체크박스 일괄 "송금 완료".
 - [ ] 게이트 PASS. 커밋 `feat: 운영자 입금 알림 로그와 송금 목록 (KAN-411)`
 
-### Task FE-5 (KAN-412): AI 답변 라벨·AI 재개
+### Task FE-5 (KAN-412): AI 자동응답 라벨 + 운영자 담당자 필요 배지·봇 재개·전역 토글
 
-**Files:** Modify `components/chat/ChatMessageBubble.tsx`, `lib/api/chat.ts`(타입 `aiGenerated`), 어드민 채팅 방 헤더, `lib/api/adminChat.ts`
-**Consumes:** BE-7 `aiGenerated`, `POST /api/admin/chat/rooms/{id}/ai/resume`, 방 응답 `aiPausedAt`(BE-7에서 방 상세 응답에 추가).
+**Files:** Modify `components/chat/ChatMessageBubble.tsx`, `lib/api/chat.ts`, 어드민 채팅 방 목록·방 헤더, `lib/api/adminChat.ts`; 어드민 봇 설정 위치는 채팅 관리 화면 상단 토글
+**Consumes:** BE-7 메시지 `aiGenerated`, 방 요약·상세 `needsHuman`, `botPaused`, 관리자 방 상세 `handoffReason`, `POST /api/admin/chat/rooms/{id}/bot/resume`, `GET/PUT /api/admin/bot/settings {enabled}`.
 
-- [ ] AI 메시지 말풍선에 "AI 답변" 라벨과 "상담원 연결을 원하면 '상담원'이라고 보내주세요" 보조 문구(첫 AI 메시지에만).
-- [ ] 어드민 문의방 헤더: AI 상태(활성/정지 + 자동 재개 시각), "AI 재개" 버튼.
-- [ ] 게이트 PASS. 커밋 `feat: 문의방 AI 답변 표시와 운영자 AI 재개 (KAN-412)`
+- [ ] 고객 말풍선: `aiGenerated` 메시지에 "AI 자동응답" 라벨(발신자명 옆), 봇 메시지는 고객 쪽에서도 "와썹하우스" 계열로 보이게.
+- [ ] 어드민 방 목록: `needsHuman` 방에 "담당자 필요" 배지, 목록 상단 정렬 우선.
+- [ ] 어드민 방 헤더: 봇 상태(동작 중/일시정지), `handoffReason` 표시, "봇 재개" 버튼(일시정지 또는 담당자 필요일 때).
+- [ ] 어드민 채팅 화면 상단 "AI 자동응답 전체 ON/OFF" 토글(확인 대화상자).
+- [ ] 게이트 PASS. 커밋 `feat: 문의방 AI 자동응답 표시와 운영자 봇 제어 (KAN-412)`
 
 ### Task FE-6 (KAN-413): 체험 시작·가격대·추천 회차·회차 기본값
 
@@ -282,7 +324,7 @@
 **Files:** Create `backend/scripts/seed_dining_demo.py`(또는 빌더 선택 언어), `backend/docs/deposit-webhook-setup.md`(MacroDroid·단축어 설정 방법, 시크릿 값은 적지 않음)
 
 - [ ] 숨김 RANDOM_TABLE 종류 1개 + 데모 회차 2개(가까운 시각), 식당 풀, 가상데이터에서 회차당 12~20명 데모 회원·신청·결제 완료 시드. 동명이인 PAYMENT 예외 1건 시드.
-- [ ] 운영 `.env`에 `DEPOSIT_WEBHOOK_SECRET`, `OPENAI_API_KEY`(사용자 제공) 설정, 배포.
+- [ ] 운영 `.env`에 `DEPOSIT_WEBHOOK_SECRET`, `GROK_WEBHOOK_URL`·`GROK_WEBHOOK_KEY`(사용자 제공), `WHATSUP_BOT_TOKEN`, `BOT_ENABLED`, `BOT_ALLOWED_USER_IDS` 설정, 배포.
 - [ ] MacroDroid(안드로이드) 실기기: 실제 소액 이체 → 결제 완료 확인, 30초 영상 녹화.
 - [ ] 심사 전용 관리자 계정 생성(제출 후 비활성화 메모).
 - [ ] PRD 18장 12단계를 실서비스에서 데모 계정으로 1회 완주, 막히는 단계 기록·수정.
