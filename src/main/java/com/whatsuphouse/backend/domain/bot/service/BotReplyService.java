@@ -33,7 +33,8 @@ public class BotReplyService {
 
     /**
      * 검증 순서: Idempotency-Key≠eventId 422 → dispatch 없음 404 → 방·메시지 불일치 403 → 이미 답함 409
-     * → 같은 방에 더 새 dispatch 409(오래된 답변 폐기) → SENT 아님 409 → text 비었거나 길이 초과 422.
+     * → 같은 방에 더 새 dispatch 409(오래된 답변 폐기) → SENT 아님 409 → 담당자 응대 중(botPaused) 409
+     * → text 비었거나 길이 초과 422.
      */
     @Transactional
     public void reply(String idempotencyKey, BotReplyRequest request) {
@@ -55,12 +56,16 @@ public class BotReplyService {
         if (dispatch.getStatus() != BotDispatchStatus.SENT) {
             throw new CustomException(ErrorCode.BOT_DISPATCH_NOT_SENT);
         }
+        if (chatService.isBotPaused(dispatch.getConversationId())) {
+            throw new CustomException(ErrorCode.BOT_ROOM_PAUSED);
+        }
         String text = request.getText();
         if (!StringUtils.hasText(text) || text.codePointCount(0, text.length()) > maxTextLength) {
             throw new CustomException(ErrorCode.BOT_REPLY_INVALID_TEXT);
         }
 
-        chatService.postBotMessage(dispatch.getConversationId(), HtmlUtils.htmlEscape(text.strip()));
+        // UTF-8 모드: < > & " ' 다섯 개만 엔티티로 바꾼다(…·“” 같은 문자는 그대로). FE가 aiGenerated 메시지에서 되돌린다.
+        chatService.postBotMessage(dispatch.getConversationId(), HtmlUtils.htmlEscape(text.strip(), "UTF-8"));
         if (request.isHandoff()) {
             String reason = StringUtils.hasText(request.getHandoffReason())
                     ? request.getHandoffReason().strip() : DEFAULT_HANDOFF_REASON;

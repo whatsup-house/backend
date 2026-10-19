@@ -29,6 +29,12 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+  # @Scheduled 공용 풀. 기본 1개면 그록봇 발송(웹훅 대기 최대 15초/건)이 매칭·확정 스케줄러를 밀어낸다. (KAN-406)
+  task:
+    scheduling:
+      pool:
+        size: 4
+
   servlet:
     multipart:
       max-file-size: 5MB

@@ -66,10 +66,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -204,6 +206,12 @@ class BotDispatchIntegrationTest {
         String bBody = bodyOf(b.getId());
         assertThat(aBody).doesNotContain(b.getId().toString(), "고객B", "박비", bApplication.getId().toString(), bRoom.toString());
         assertThat(aBody).doesNotContain(a.getEmail(), "\"email\"");
+        // 전화번호: B의 번호·뒤 4자리가 A 페이로드의 어떤 값에도 없다(UUID·시각 숫자와 우연히 겹치지 않게 값 단위로 본다).
+        assertThat(b.getPhone()).isNotEqualTo(a.getPhone());
+        String bLast4 = b.getPhone().substring(b.getPhone().length() - 4);
+        assertThat(aBody).doesNotContain(b.getPhone());
+        assertThat(textValues(objectMapper.readTree(aBody)))
+                .noneMatch(v -> v.contains(b.getPhone()) || v.equals(bLast4) || v.endsWith("*" + bLast4));
         assertThat(bBody).doesNotContain(a.getId().toString(), "고객A", "김에이", aApplication.getId().toString());
 
         JsonNode aJson = objectMapper.readTree(aBody);
@@ -399,7 +407,7 @@ class BotDispatchIntegrationTest {
     }
 
     @Test
-    @DisplayName("답변 본문의 HTML은 이스케이프해 저장한다")
+    @DisplayName("답변 본문은 < > & \" ' 다섯 개만 이스케이프하고 …·“”·한글은 그대로 저장한다")
     void reply_htmlText_escaped() throws Exception {
         // given
         User a = demoCustomer("고객A", "김에이");
@@ -407,11 +415,119 @@ class BotDispatchIntegrationTest {
         BotDispatch dispatch = sentDispatch(room, a, "문의");
 
         // when
-        reply(dispatch, "reply", "<script>alert(1)</script>", null, REPLY_TOKEN).andExpect(status().isOk());
+        reply(dispatch, "reply", "…“”한글 <b>&</b> \"q\" 'a'", null, REPLY_TOKEN).andExpect(status().isOk());
 
         // then
         assertThat(botMessages(room, a)).extracting(ChatMessageResponse::getContent)
-                .containsExactly("&lt;script&gt;alert(1)&lt;/script&gt;");
+                .containsExactly("…“”한글 &lt;b&gt;&amp;&lt;/b&gt; &quot;q&quot; &#39;a&#39;");
+    }
+
+    @Test
+    @DisplayName("같은 eventId 답변이 두 스레드에서 동시에 와도 하나만 200, 메시지는 하나")
+    void reply_sameEventIdConcurrently_singleMessage() throws Exception {
+        // given
+        User a = demoCustomer("고객A", "김에이");
+        UUID room = openRoom(a);
+        BotDispatch dispatch = sentDispatch(room, a, "문의");
+
+        // when
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Integer> statuses = new ArrayList<>();
+        try {
+            List<Callable<Integer>> calls = List.of(
+                    () -> reply(dispatch, "reply", "답변", null, REPLY_TOKEN).andReturn().getResponse().getStatus(),
+                    () -> reply(dispatch, "reply", "답변", null, REPLY_TOKEN).andReturn().getResponse().getStatus());
+            for (Future<Integer> future : pool.invokeAll(calls)) {
+                statuses.add(future.get());
+            }
+        } finally {
+            pool.shutdown();
+        }
+
+        // then
+        assertThat(statuses).containsExactlyInAnyOrder(200, 409);
+        assertThat(botMessages(room, a)).hasSize(1);
+        assertThat(dispatchOf(room).getStatus()).isEqualTo(BotDispatchStatus.REPLIED);
+    }
+
+    @Test
+    @DisplayName("디바운스 대기 중 담당자가 답하면 웹훅을 보내지 않고 '담당자 응대 중'으로 닫는다(안내 없음)")
+    void adminRepliesWithinDebounce_noWebhook() {
+        // given
+        User a = demoCustomer("고객A", "김에이");
+        UUID room = openRoom(a);
+        say(room, a, "문의드려요");
+        awaitDispatch(room);
+
+        // when
+        chatService.sendMessage(room, admin.getId(), true, text("담당자가 바로 볼게요."));
+        sendDue();
+
+        // then: 기대 요청이 없으므로 웹훅을 부르면 MockRestServiceServer가 실패시킨다
+        webhook.verify();
+        BotDispatch dispatch = dispatchOf(room);
+        assertThat(dispatch.getStatus()).isEqualTo(BotDispatchStatus.HANDED_OFF);
+        assertThat(dispatch.getHandoffReason()).isEqualTo("담당자 응대 중");
+        assertThat(botMessages(room, a)).isEmpty();
+        assertThat(openCsCases(room)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("SENT 대기 중 담당자가 답하면 봇 답변은 409, 메시지 없음")
+    void adminRepliesWhileSent_botReply409() throws Exception {
+        // given
+        User a = demoCustomer("고객A", "김에이");
+        UUID room = openRoom(a);
+        BotDispatch dispatch = sentDispatch(room, a, "문의");
+        chatService.sendMessage(room, admin.getId(), true, text("담당자입니다."));
+
+        // when & then
+        reply(dispatch, "reply", "봇 답변", null, REPLY_TOKEN).andExpect(status().isConflict());
+        assertThat(botMessages(room, a)).isEmpty();
+        assertThat(dispatchOf(room).getStatus()).isEqualTo(BotDispatchStatus.SENT);
+    }
+
+    @Test
+    @DisplayName("담당자 응대 중인 방의 무응답 SENT는 안내·이관 없이 닫는다")
+    void timeoutInPausedRoom_noNotice() {
+        // given
+        User a = demoCustomer("고객A", "김에이");
+        UUID room = openRoom(a);
+        sentDispatch(room, a, "문의");
+        chatService.sendMessage(room, admin.getId(), true, text("담당자입니다."));
+
+        // when
+        botDispatchService.handOffTimedOut(LocalDateTime.now().plusMinutes(10));
+
+        // then
+        BotDispatch dispatch = dispatchOf(room);
+        assertThat(dispatch.getStatus()).isEqualTo(BotDispatchStatus.HANDED_OFF);
+        assertThat(dispatch.getHandoffReason()).isEqualTo("담당자 응대 중");
+        assertThat(botMessages(room, a)).isEmpty();
+        assertThat(room(room).isNeedsHuman()).isFalse();
+        assertThat(openCsCases(room)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("웹훅이 3xx를 주면 성공으로 보지 않고 재시도 대기")
+    void webhookRedirect_treatedAsFailure() {
+        // given
+        User a = demoCustomer("고객A", "김에이");
+        UUID room = openRoom(a);
+        say(room, a, "문의");
+        awaitDispatch(room);
+        expectWebhook(1, HttpStatus.FOUND);
+
+        // when
+        sendDue();
+
+        // then
+        webhook.verify();
+        BotDispatch dispatch = dispatchOf(room);
+        assertThat(dispatch.getStatus()).isEqualTo(BotDispatchStatus.PENDING);
+        assertThat(dispatch.getAttempts()).isEqualTo(1);
+        assertThat(dispatch.getLastError()).isEqualTo("HTTP 302");
+        assertThat(dispatch.getNextAttemptAt()).isNotNull();
     }
 
     @Test
@@ -637,8 +753,9 @@ class BotDispatchIntegrationTest {
 
     private User demoCustomer(String nickname, String name) {
         String key = UUID.randomUUID().toString().substring(0, 8);
+        String phone = "010" + String.format("%08d", ThreadLocalRandom.current().nextInt(100_000_000));
         User user = User.builder().email(key + "@example.com").password("encoded").name(name)
-                .gender(Gender.FEMALE).age(30).nickname(nickname).phone("01098765432").build();
+                .gender(Gender.FEMALE).age(30).nickname(nickname).phone(phone).build();
         user.approveRandomTable();
         user.markDemo();
         return userRepository.save(user);
@@ -739,6 +856,15 @@ class BotDispatchIntegrationTest {
         body.put("text", text);
         body.put("handoffReason", handoffReason);
         return body;
+    }
+
+    private List<String> textValues(JsonNode node) {
+        List<String> values = new ArrayList<>();
+        if (node.isValueNode()) {
+            values.add(node.asText());
+        }
+        node.forEach(child -> values.addAll(textValues(child)));
+        return values;
     }
 
     private List<ChatMessageResponse> botMessages(UUID roomId, User viewer) {

@@ -46,6 +46,7 @@ public class BotDispatchService {
     public static final String HANDOFF_NOTICE = "담당자에게 연결했어요. 곧 답변드릴게요.";
     static final String TIMEOUT_REASON = "응답 시간 초과";
     static final String LIMIT_REASON = "발송 한도 초과";
+    static final String PAUSED_REASON = "담당자 응대 중";
     private static final int SEND_BATCH = 20;
 
     private final BotDispatchRepository botDispatchRepository;
@@ -116,6 +117,11 @@ public class BotDispatchService {
         }
     }
 
+    /** 서버 마스터 스위치(bot.enabled). 꺼져 있으면 스케줄러가 DB도 보지 않는다. */
+    public boolean isMasterEnabled() {
+        return enabled;
+    }
+
     /** 마스터 스위치·설정(웹훅 주소·키·답변 토큰·답변 주소)·관리자 전역 토글이 모두 켜져 있는지. */
     public boolean isActive() {
         return enabled && replyUrlAllowed && StringUtils.hasText(replyToken) && botWebhookClient.isConfigured()
@@ -170,10 +176,15 @@ public class BotDispatchService {
                 || botDispatchRepository.countByCreatedAtGreaterThanEqual(now.toLocalDate().atStartOfDay()) >= dailyLimit;
     }
 
-    /** 발송할 때가 된 건을 1건씩 별도 트랜잭션(행 잠금 유지)으로 보낸다. */
+    /**
+     * 발송할 때가 된 건을 1건씩 별도 트랜잭션(행 잠금 유지)으로 보낸다.
+     * 한 건이 최대 15초 걸리므로 건마다 now에 경과 시간을 더한 시각을 쓴다(테스트가 넘긴 기준 시각도 유지).
+     */
     public void sendDue(LocalDateTime now) {
+        long startedAt = System.nanoTime();
         for (int i = 0; i < SEND_BATCH; i++) {
-            if (!Boolean.TRUE.equals(transactionTemplate.execute(status -> sendNextDue(now)))) {
+            LocalDateTime at = now.plusNanos(System.nanoTime() - startedAt);
+            if (!Boolean.TRUE.equals(transactionTemplate.execute(status -> sendNextDue(at)))) {
                 return;
             }
         }
@@ -187,6 +198,11 @@ public class BotDispatchService {
             return false;
         }
         BotDispatch dispatch = botDispatchRepository.findById(UUID.fromString(ids.get(0))).orElseThrow();
+        // 큐에 들어간 뒤 담당자가 답했으면 보내지 않고 닫는다(안내 문구 없음).
+        if (chatService.isBotPaused(dispatch.getConversationId())) {
+            dispatch.markHandedOff(PAUSED_REASON);
+            return true;
+        }
         try {
             botWebhookClient.send(botPayloadBuilder.build(dispatch));
             dispatch.markSent(now);
@@ -208,11 +224,18 @@ public class BotDispatchService {
                 : e.getClass().getSimpleName();
     }
 
-    /** 답 없이 reply-timeout-minutes가 지난 SENT를 이관한다. 같은 방에 더 새 dispatch가 있으면 건너뛴다. */
+    /**
+     * 답 없이 reply-timeout-minutes가 지난 SENT를 이관한다. 같은 방에 더 새 dispatch가 있으면 건너뛴다.
+     * 담당자가 이미 응대 중(botPaused)인 방은 이관·안내 없이 닫기만 한다.
+     */
     @Transactional
     public void handOffTimedOut(LocalDateTime now) {
         for (String id : botDispatchRepository.lockTimedOutIds(now.minusMinutes(replyTimeoutMinutes))) {
             BotDispatch dispatch = botDispatchRepository.findById(UUID.fromString(id)).orElseThrow();
+            if (chatService.isBotPaused(dispatch.getConversationId())) {
+                dispatch.markHandedOff(PAUSED_REASON);
+                continue;
+            }
             dispatch.markHandedOff(TIMEOUT_REASON);
             handOff(dispatch, TIMEOUT_REASON, true);
         }
@@ -220,7 +243,8 @@ public class BotDispatchService {
 
     /**
      * 담당자 이관(공통): 방 needsHuman, 이 방의 열린 CS 예외가 없으면 새로 연다.
-     * notifyCustomer(웹훅 실패·무응답·한도 초과)면 고정 안내를 봇 이름으로 남긴다. 이미 이관 중인 방엔 반복하지 않는다.
+     * notifyCustomer(웹훅 실패·무응답·한도 초과)면 고정 안내를 봇 이름으로 남긴다.
+     * 이미 이관 중인 방, 담당자가 응대 중(botPaused)인 방엔 남기지 않는다.
      * dispatch 상태는 호출 측이 정한다.
      */
     @Transactional
@@ -231,7 +255,7 @@ public class BotDispatchService {
         if (exceptionCaseService.listOpen(ExceptionCaseType.CS, null, prefix).isEmpty()) {
             exceptionCaseService.open(ExceptionCaseType.CS, null, null, null, prefix + " " + reason);
         }
-        if (notifyCustomer && !alreadyNeedsHuman) {
+        if (notifyCustomer && !alreadyNeedsHuman && !chatService.isBotPaused(roomId)) {
             chatService.postBotMessage(roomId, HANDOFF_NOTICE);
         }
     }

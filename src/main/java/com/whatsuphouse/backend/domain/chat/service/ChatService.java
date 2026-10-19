@@ -245,6 +245,12 @@ public class ChatService {
         return already;
     }
 
+    /** 담당자가 답해 봇 자동응답이 멈춘 문의방인지. 큐에 들어간 뒤 멈춘 경우를 발송·답변·이관 시점에 다시 본다. */
+    @Transactional(readOnly = true)
+    public boolean isBotPaused(UUID roomId) {
+        return findRoom(roomId).isBotPaused();
+    }
+
     /** 서버가 남기는 안내문(발신자 없음, SYSTEM_NOTICE). 본문은 system_params.text 평문. (KAN-346 확정 안내) */
     public void postSystemNotice(UUID roomId, String text) {
         findRoom(roomId);
