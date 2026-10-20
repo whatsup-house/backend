@@ -138,32 +138,56 @@ class AdminDiningServiceTest {
     }
 
     @Test
-    @DisplayName("숨김 종류(심사용) 회차는 대시보드 타일·카드·미해결 예외 수에 들어가지 않는다")
-    void getDashboard_excludesHiddenKindSessions() {
+    @DisplayName("숨김 종류(심사용) 회차는 타일 집계에서 빠지고, 카드에는 hidden=true로 나온다 (KAN-407, KAN-416)")
+    void getDashboard_hiddenKindSession_excludedFromTilesButCarded() {
         GatheringSession visible = session(3);
         Gathering hiddenKind = Gathering.builder().title("심사용").gatheringType(GatheringType.RANDOM_TABLE).build();
         ReflectionTestUtils.setField(hiddenKind, "hidden", true);
         GatheringSession hidden = GatheringSession.builder()
                 .gathering(hiddenKind).eventDate(LocalDate.now().plusDays(4)).maxAttendees(12).build();
         ReflectionTestUtils.setField(hidden, "id", UUID.randomUUID());
+        // 숨김 회차의 결제 완료 데모 신청: 카드에는 세고 타일에는 넣지 않는다
+        User demo = member(28, null);
+        demo.markDemo();
+        Application demoPaid = application(demo);
+        demoPaid.confirm();
+        List<UUID> ids = List.of(visible.getId(), hidden.getId());
 
         given(gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE)).willReturn(List.of(visible, hidden));
         given(adminApplicationService.listSessionApplications(visible.getId())).willReturn(List.of());
-        given(matchingService.countTablesBySessionIds(List.of(visible.getId())))
-                .willReturn(Map.of(visible.getId(), Map.of(DiningTableStatus.PROPOSED, 1L)));
-        given(matchingService.findSessionIdsWithMatchRun(List.of(visible.getId()))).willReturn(Set.of());
-        given(exceptionCaseRepository.countBySessionIdsAndStatus(any(), eq(ExceptionCaseStatus.OPEN))).willReturn(List.of());
+        given(adminApplicationService.listSessionApplications(hidden.getId())).willReturn(List.of(demoPaid));
+        given(matchingService.countTablesBySessionIds(ids)).willReturn(Map.of(
+                visible.getId(), Map.of(DiningTableStatus.PROPOSED, 1L),
+                hidden.getId(), Map.of(DiningTableStatus.PROPOSED, 4L, DiningTableStatus.CONFIRMED, 2L)));
+        given(matchingService.findSessionIdsWithMatchRun(ids)).willReturn(Set.of(hidden.getId()));
+        given(exceptionCaseRepository.countBySessionIdsAndStatus(any(), eq(ExceptionCaseStatus.OPEN)))
+                .willReturn(List.of(new ExceptionCaseRepository.SessionCountProjection() {
+                    public UUID getSessionId() { return hidden.getId(); }
+                    public Long getCount() { return 2L; }
+                }));
         // 전체 미해결 7건 중 2건이 숨김 종류 회차의 건
         given(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN)).willReturn(7L);
         given(exceptionCaseRepository.countByStatusOnHiddenGatherings(ExceptionCaseStatus.OPEN)).willReturn(2L);
 
         DiningDashboardResponse dashboard = adminDiningService.getDashboard();
 
+        // 타일: 숨김 회차가 없을 때와 같다
         assertThat(dashboard.getUpcomingSessionCount()).isEqualTo(1);
-        assertThat(dashboard.getSessions()).hasSize(1);
+        assertThat(dashboard.getWaitingApplicantCount()).isZero();
+        assertThat(dashboard.getPaidApplicantCount()).isZero();
         assertThat(dashboard.getProposedTableCount()).isEqualTo(1);
         assertThat(dashboard.getConfirmedTableCount()).isZero();
         assertThat(dashboard.getOpenExceptionCount()).isEqualTo(5);
+        // 카드: 숨김 회차도 나오고 hidden=true, 자기 회차 수치를 그대로 보여 준다
+        assertThat(dashboard.getSessions()).extracting(DiningDashboardResponse.SessionCard::getSessionId)
+                .containsExactly(visible.getId(), hidden.getId());
+        assertThat(dashboard.getSessions().get(0).isHidden()).isFalse();
+        DiningDashboardResponse.SessionCard hiddenCard = dashboard.getSessions().get(1);
+        assertThat(hiddenCard.isHidden()).isTrue();
+        assertThat(hiddenCard.getPaidCount()).isEqualTo(1);
+        assertThat(hiddenCard.getTableCount()).isEqualTo(6);
+        assertThat(hiddenCard.getIsMatchRunDone()).isTrue();
+        assertThat(hiddenCard.getOpenExceptionCount()).isEqualTo(2);
     }
 
     private User member(Integer age, LocalDate birthDate) {
