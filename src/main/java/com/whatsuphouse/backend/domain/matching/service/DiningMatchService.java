@@ -367,7 +367,6 @@ public class DiningMatchService {
                 sizeOverride != null ? sizeOverride : Objects.requireNonNullElse(session.getTableSizeMin(), setting.getTableSizeMin()),
                 sizeOverride != null ? sizeOverride : Objects.requireNonNullElse(session.getTableSizeMax(), setting.getTableSizeMax()),
                 Objects.requireNonNullElse(session.getMaxAgeGap(), setting.getMaxAgeGap()),
-                Objects.requireNonNullElse(session.getMinGroupScore(), setting.getMinGroupScore()).doubleValue(),
                 setting.getWeights(),
                 List.copyOf(customFields.values()));
     }

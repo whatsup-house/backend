@@ -82,7 +82,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 취소 환불 정책(KAN-418) 통합 테스트: 시점(마감 전·후·당일 앉음/안 앉음) × 이용권(1회권·멤버십·무료) × 보증금(없음·입금)마다
+ * 취소 환불 정책(KAN-418, KAN-420) 통합 테스트: 시점(마감 전·후·당일) × 테이블 앉음/안 앉음 × 이용권(1회권·멤버십·무료) × 보증금(없음·입금)마다
  * 미리보기 금액과 실제 송금 요청(금액·계좌·상태), 차감 기록·보증금 상태가 같은지 실제 DB(H2)로 확인한다. 끝나면 공유 H2를 비운다.
  */
 @SpringBootTest
@@ -97,15 +97,25 @@ class DiningCancelRefundIntegrationTest {
     private static final RefundAccount REQUEST_ACCOUNT = new RefundAccount("신한", "110123456789", "김철수");
     private static final RefundAccount DEPOSIT_ACCOUNT = new RefundAccount("국민", "12345678901", "김철수");
 
+    // 테이블에 앉지 않은 신청은 시점과 상관없이 100% (KAN-420)
     enum When {
-        BEFORE_DEADLINE(3, 100), AFTER_DEADLINE(1, 50), SAME_DAY_UNSEATED(0, 50), SAME_DAY_SEATED(0, 0);
+        BEFORE_DEADLINE_UNSEATED(3, 100, false, CancelWindow.BEFORE_DEADLINE),
+        BEFORE_DEADLINE_SEATED(3, 100, true, CancelWindow.BEFORE_DEADLINE),
+        AFTER_DEADLINE_UNSEATED(1, 100, false, CancelWindow.AFTER_DEADLINE),
+        AFTER_DEADLINE_SEATED(1, 50, true, CancelWindow.AFTER_DEADLINE),
+        SAME_DAY_UNSEATED(0, 100, false, CancelWindow.SAME_DAY),
+        SAME_DAY_SEATED(0, 0, true, CancelWindow.SAME_DAY);
 
         final int days;
         final int percent;
+        final boolean seated;
+        final CancelWindow window;
 
-        When(int days, int percent) {
+        When(int days, int percent, boolean seated, CancelWindow window) {
             this.days = days;
             this.percent = percent;
+            this.seated = seated;
+            this.window = window;
         }
     }
 
@@ -163,7 +173,7 @@ class DiningCancelRefundIntegrationTest {
         Fixture f = fixture(when, passType, depositPaid, false);
         int expectedTicket = passType == Pass.COUNT ? COUNT_PRICE * when.percent / 100 : 0;
         int expectedDeposit = depositPaid ? Deposit.AMOUNT * when.percent / 100 : 0;
-        boolean seated = when == When.SAME_DAY_SEATED;
+        boolean noShow = when == When.SAME_DAY_SEATED;
 
         // when
         DiningCancelPreviewResponse preview = diningApplicationService.previewCancel(f.application.getId(), f.user.getId());
@@ -175,9 +185,7 @@ class DiningCancelRefundIntegrationTest {
                 : when.percent == 100 ? DepositOutcome.RETURN
                 : when.percent == 50 ? DepositOutcome.PARTIAL : DepositOutcome.FORFEIT;
         assertThat(preview).isEqualTo(new DiningCancelPreviewResponse(
-                when == When.BEFORE_DEADLINE ? CancelWindow.BEFORE_DEADLINE
-                        : when == When.AFTER_DEADLINE ? CancelWindow.AFTER_DEADLINE : CancelWindow.SAME_DAY,
-                false, expectedTicket > 0, expectedOutcome, seated,
+                when.window, false, expectedTicket > 0, expectedOutcome, noShow,
                 expectedTicket, expectedDeposit, expectedTicket > 0));
 
         // then: 실제 송금 요청 = 미리보기 금액
@@ -208,17 +216,17 @@ class DiningCancelRefundIntegrationTest {
         // then: 보증금·제재
         if (depositPaid) {
             Deposit deposit = depositRepository.findByApplication_Id(f.application.getId()).orElseThrow();
-            assertThat(deposit.getStatus()).isEqualTo(seated ? DepositStatus.FORFEITED : DepositStatus.RETURN_PENDING);
-            assertThat(deposit.getReturnAmount()).isEqualTo(seated ? null : expectedDeposit);
+            assertThat(deposit.getStatus()).isEqualTo(noShow ? DepositStatus.FORFEITED : DepositStatus.RETURN_PENDING);
+            assertThat(deposit.getReturnAmount()).isEqualTo(noShow ? null : expectedDeposit);
         }
-        assertThat(userRepository.findById(f.user.getId()).orElseThrow().isDepositRequired()).isEqualTo(seated);
+        assertThat(userRepository.findById(f.user.getId()).orElseThrow().isDepositRequired()).isEqualTo(noShow);
     }
 
     @Test
     @DisplayName("이용권 환불이 있는데 계좌가 없으면 REFUND_ACCOUNT_REQUIRED, 신청·차감·보증금·송금 모두 그대로")
     void cancel_refundDue_withoutAccount_rejected() {
         // given
-        Fixture f = fixture(When.AFTER_DEADLINE, Pass.COUNT, true, false);
+        Fixture f = fixture(When.AFTER_DEADLINE_SEATED, Pass.COUNT, true, false);
 
         // when & then
         assertThatThrownBy(() -> diningApplicationService.cancelApplication(f.application.getId(), f.user.getId(), null))
@@ -236,7 +244,7 @@ class DiningCancelRefundIntegrationTest {
     @DisplayName("데모 회원(마감 후, 1회권, 보증금 입금): 송금 요청이 바로 SENT, 차감 REFUNDED, 보증금 RETURNED(25,000원)")
     void cancel_demoUser_autoSent() {
         // given
-        Fixture f = fixture(When.AFTER_DEADLINE, Pass.COUNT, true, true);
+        Fixture f = fixture(When.AFTER_DEADLINE_SEATED, Pass.COUNT, true, true);
 
         // when
         diningApplicationService.cancelApplication(f.application.getId(), f.user.getId(), REQUEST_ACCOUNT);
@@ -283,14 +291,14 @@ class DiningCancelRefundIntegrationTest {
     }
 
     static Stream<When> sessionCancelledWindows() {
-        return Stream.of(When.AFTER_DEADLINE, When.SAME_DAY_SEATED);
+        return Stream.of(When.AFTER_DEADLINE_SEATED, When.SAME_DAY_SEATED);
     }
 
     @Test
     @DisplayName("동시 취소: 신청 행을 잠가 하나만 취소되고 다른 요청은 APPLICATION_ALREADY_CANCELLED, 송금 요청은 한 벌만")
     void cancel_concurrent_secondGets409() throws Exception {
         // given
-        Fixture f = fixture(When.BEFORE_DEADLINE, Pass.COUNT, true, false);
+        Fixture f = fixture(When.BEFORE_DEADLINE_UNSEATED, Pass.COUNT, true, false);
         java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         java.util.concurrent.Callable<Object> cancel = () -> {
@@ -322,7 +330,7 @@ class DiningCancelRefundIntegrationTest {
     @DisplayName("HTTP: 미리보기 필드 이름, 본문 없이 취소하면 REFUND_ACCOUNT_REQUIRED, 계좌 길이 초과는 400, 계좌를 주면 취소")
     void http_previewAndCancelContract() throws Exception {
         // given
-        Fixture f = fixture(When.AFTER_DEADLINE, Pass.COUNT, true, false);
+        Fixture f = fixture(When.AFTER_DEADLINE_SEATED, Pass.COUNT, true, false);
         UserPrincipal principal = new UserPrincipal(f.user.getId(), f.user.getEmail(), false);
         String base = "/api/dining/applications/" + f.application.getId();
 
@@ -357,7 +365,7 @@ class DiningCancelRefundIntegrationTest {
     @DisplayName("HTTP: 환불할 이용권이 없으면(무료) 본문 없이 취소된다")
     void http_cancelWithoutBody_whenNothingToRefund() throws Exception {
         // given
-        Fixture f = fixture(When.BEFORE_DEADLINE, Pass.FREE, false, false);
+        Fixture f = fixture(When.BEFORE_DEADLINE_UNSEATED, Pass.FREE, false, false);
 
         // when & then
         mockMvc.perform(post("/api/dining/applications/" + f.application.getId() + "/cancel")
@@ -400,7 +408,7 @@ class DiningCancelRefundIntegrationTest {
             depositService.createPending(application, DEPOSIT_ACCOUNT);
             depositService.markPaid(application.getId());
         }
-        if (when == When.SAME_DAY_SEATED) {
+        if (when.seated) {
             DiningTable table = diningTableRepository.save(DiningTable.builder().session(session)
                     .eventDate(session.getEventDate()).groupSize(4).algorithmVersion(MatchingEngine.ALGORITHM_VERSION).build());
             diningTableMemberRepository.save(DiningTableMember.builder().application(application)

@@ -68,7 +68,7 @@ class DiningTableServiceTest {
 
     // 테이블 인원 3~5명, 출생연도 차 8년 이하. 답변이 없어 점수는 0이다.
     private static final MatchingEngine.Rules RULES =
-            new MatchingEngine.Rules(3, 5, 8, 0, MatchingWeights.defaults(), List.of());
+            new MatchingEngine.Rules(3, 5, 8, MatchingWeights.defaults(), List.of());
 
     @Mock
     private DiningTableRepository diningTableRepository;
@@ -266,7 +266,7 @@ class DiningTableServiceTest {
     @Test
     @DisplayName("재조정 (3) 확정 테이블 해체: 남은 3명(최소 4명)을 충원·이동 못 하면 해체 + 단체방 공지 + 각자 해결 선택(보증금은 선택 결과가 정함), 예외함 없음. 다시 불러도 중복 제안 없음")
     void rebalance_threeLeftNoFill_dissolvesAndOffersResolutions() {
-        rules = new MatchingEngine.Rules(4, 5, 8, 0, MatchingWeights.defaults(), List.of());
+        rules = new MatchingEngine.Rules(4, 5, 8, MatchingWeights.defaults(), List.of());
         DiningTable table = table(session, DiningTableStatus.CONFIRMED);
         UUID roomId = UUID.randomUUID();
         ReflectionTestUtils.setField(table, "chatRoomId", roomId);
@@ -304,7 +304,7 @@ class DiningTableServiceTest {
 
     // 최소 4명 규칙에서 4명 중 1명 취소, 대기자·다른 테이블 없음 → 확정 테이블 해체 경로.
     private DiningTable shortageTable(UUID roomId) {
-        rules = new MatchingEngine.Rules(4, 5, 8, 0, MatchingWeights.defaults(), List.of());
+        rules = new MatchingEngine.Rules(4, 5, 8, MatchingWeights.defaults(), List.of());
         DiningTable table = table(session, DiningTableStatus.CONFIRMED);
         ReflectionTestUtils.setField(table, "chatRoomId", roomId);
         List<DiningTableMember> seated = members(table, 4);
@@ -347,7 +347,7 @@ class DiningTableServiceTest {
     @Test
     @DisplayName("재조정 (1) 확정 테이블 남은 3명(최소 4명): 대기자로 충원되면 해체·해결 선택 없이 그대로 진행")
     void rebalance_threeLeft_refillFromWaiting() {
-        rules = new MatchingEngine.Rules(4, 5, 8, 0, MatchingWeights.defaults(), List.of());
+        rules = new MatchingEngine.Rules(4, 5, 8, MatchingWeights.defaults(), List.of());
         DiningTable table = table(session, DiningTableStatus.CONFIRMED);
         List<DiningTableMember> seated = members(table, 4);
         seated.get(3).getApplication().cancel();

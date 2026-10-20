@@ -21,7 +21,7 @@ public class MatchingRuleResponse {
     @Schema(description = "테이블 최대 인원", example = "6")
     private int tableSizeMax;
 
-    @Schema(description = "그룹 최소 점수", example = "0.3500")
+    @Schema(description = "[미사용] 그룹 최소 점수. 매칭에 반영되지 않는다", example = "0.3500", deprecated = true)
     private BigDecimal minGroupScore;
 
     @Schema(description = "자동 확정 유예(분)", example = "120")

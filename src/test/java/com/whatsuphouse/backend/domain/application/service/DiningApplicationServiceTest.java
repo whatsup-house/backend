@@ -170,14 +170,14 @@ class DiningApplicationServiceTest {
     void cancel_waiting_usesEarliestUpcomingCandidate() {
         Application application = confirmedApplication(null);
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
-        // 1순위는 다음 주, 2순위는 내일: 내일 회차가 기준이라 마감이 지나 50%만 환불한다.
+        // 1순위는 다음 주, 2순위는 내일: 내일 회차가 기준이라 마감 후(CANCELED_LATE)다. 테이블에 앉지 않아 환불은 100%. (KAN-420)
         given(applicationCandidateSessionRepository.findByApplicationIdsWithSession(List.of(applicationId)))
                 .willReturn(List.of(candidate(application, sessionOn(7), 1), candidate(application, sessionOn(1), 2)));
 
         diningApplicationService.cancelApplication(applicationId, userId, null);
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
-        then(ticketService).should().refundableAmount(applicationId, 50);
+        then(ticketService).should().refundableAmount(applicationId, 100);
         then(diningAttendanceService).should().cancelAttendance(applicationId, true);
     }
 

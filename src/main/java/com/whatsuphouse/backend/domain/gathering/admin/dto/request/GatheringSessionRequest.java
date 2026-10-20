@@ -71,7 +71,7 @@ public class GatheringSessionRequest {
     @Max(8)
     private Integer tableSizeMax;
 
-    @Schema(example = "0.35", description = "그룹 최소 점수. 미달 테이블은 해체 후 재배치 (우연한 식탁 전용)")
+    @Schema(example = "0.35", description = "[미사용] 그룹 최소 점수. 매칭에 반영되지 않는다(점수 미달로 테이블을 해체하지 않음). 화면에서 숨겨도 된다", deprecated = true)
     @DecimalMin("0.0")
     @DecimalMax("1.0")
     @Digits(integer = 1, fraction = 4)

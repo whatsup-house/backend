@@ -117,10 +117,11 @@ class DiningApplicationServiceCancelTest {
     }
 
     @Test
-    @DisplayName("마감 후(전날) 취소(1회권): 50% 환불 송금, 참석 CANCELED_LATE, 보증금 50% 반환, 제재 없음")
+    @DisplayName("마감 후(전날) 취소(1회권, 테이블에 앉은 신청): 50% 환불 송금, 참석 CANCELED_LATE, 보증금 50% 반환, 제재 없음")
     void cancel_afterDeadline_halfRefund() {
         Application application = confirmedApplication(sessionOn(1, null));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        seatedTable(application.getSession());
         given(ticketService.refundableAmount(applicationId, 50)).willReturn(7_500);
 
         diningApplicationService.cancelApplication(applicationId, userId, ACCOUNT);
@@ -153,17 +154,33 @@ class DiningApplicationServiceCancelTest {
     }
 
     @Test
-    @DisplayName("당일 취소(테이블에 앉지 않은 신청): 마감 후 취소와 같다 — 50% 환불·보증금 50% 반환, 제재 없음 (R18)")
-    void cancel_sameDayUnseated_treatedAsAfterDeadline() {
-        Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
+    @DisplayName("마감 후(전날) 취소(테이블에 앉지 않은 신청): 매칭 안 된 건 서비스 책임이라 100% 환불·보증금 100% 반환 (KAN-420)")
+    void cancel_afterDeadlineUnseated_fullRefund() {
+        Application application = confirmedApplication(sessionOn(1, null));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
-        given(ticketService.refundableAmount(applicationId, 50)).willReturn(7_500);
+        given(ticketService.refundableAmount(applicationId, 100)).willReturn(15_000);
 
         diningApplicationService.cancelApplication(applicationId, userId, ACCOUNT);
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
-        then(ticketService).should().refundPurchase(application, ACCOUNT, 50);
-        then(depositService).should().requestReturn(applicationId, 50);
+        then(ticketService).should().refundPurchase(application, ACCOUNT, 100);
+        then(depositService).should().requestReturn(applicationId, 100);
+        then(depositService).should(never()).forfeit(any());
+        assertThat(user.isDepositRequired()).isFalse();
+    }
+
+    @Test
+    @DisplayName("당일 취소(테이블에 앉지 않은 신청): 100% 환불·보증금 100% 반환, 제재 없음 (KAN-420)")
+    void cancel_sameDayUnseated_fullRefundNoSanction() {
+        Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        given(ticketService.refundableAmount(applicationId, 100)).willReturn(15_000);
+
+        diningApplicationService.cancelApplication(applicationId, userId, ACCOUNT);
+
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        then(ticketService).should().refundPurchase(application, ACCOUNT, 100);
+        then(depositService).should().requestReturn(applicationId, 100);
         then(depositService).should(never()).forfeit(any());
         assertThat(user.isDepositRequired()).isFalse();
     }
@@ -235,10 +252,11 @@ class DiningApplicationServiceCancelTest {
     }
 
     @Test
-    @DisplayName("미리보기(마감 후, 1회권, 보증금 입금): 7,500원 환불, 보증금 PARTIAL 25,000원, 제재 없음")
+    @DisplayName("미리보기(마감 후, 테이블에 앉음, 1회권, 보증금 입금): 7,500원 환불, 보증금 PARTIAL 25,000원, 제재 없음")
     void preview_afterDeadline_partial() {
         Application application = confirmedApplication(sessionOn(1, null));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        seatedTable(application.getSession());
         given(ticketService.refundableAmount(applicationId, 50)).willReturn(7_500);
         given(depositService.findByApplicationIds(List.of(applicationId)))
                 .willReturn(Map.of(applicationId, paidDeposit(application)));
@@ -294,18 +312,18 @@ class DiningApplicationServiceCancelTest {
     }
 
     @Test
-    @DisplayName("미리보기(당일, 테이블에 앉지 않음, 보증금 입금): 창은 SAME_DAY지만 마감 후와 같이 50%, 제재 없음 (R18)")
-    void preview_sameDayUnseated_partialNoSanction() {
+    @DisplayName("미리보기(당일, 테이블에 앉지 않음, 보증금 입금): 창은 SAME_DAY지만 100% 환불·보증금 전액, 제재 없음 (KAN-420)")
+    void preview_sameDayUnseated_fullRefundNoSanction() {
         Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
-        given(ticketService.refundableAmount(applicationId, 50)).willReturn(7_500);
+        given(ticketService.refundableAmount(applicationId, 100)).willReturn(15_000);
         given(depositService.findByApplicationIds(List.of(applicationId)))
                 .willReturn(Map.of(applicationId, paidDeposit(application)));
 
         DiningCancelPreviewResponse preview = diningApplicationService.previewCancel(applicationId, userId);
 
         assertThat(preview).isEqualTo(new DiningCancelPreviewResponse(
-                CancelWindow.SAME_DAY, false, true, DepositOutcome.PARTIAL, false, 7_500, 25_000, true));
+                CancelWindow.SAME_DAY, false, true, DepositOutcome.RETURN, false, 15_000, 50_000, true));
     }
 
     @Test
