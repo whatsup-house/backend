@@ -40,6 +40,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -249,11 +250,11 @@ class DiningApplicationServiceTest {
 
     // ── helpers ────────────────────────────────────────────────────────────
 
-    // 오늘 기준 days일 뒤(음수면 전) 회차. 시작 시간이 없으니 그날 0시 시작.
+    // 오늘(한국 시간, 서비스와 같은 기준) 기준 days일 뒤(음수면 전) 회차. 시작 시간이 없으니 그날 0시 시작.
     private GatheringSession sessionOn(int days) {
         GatheringSession session = GatheringSession.builder()
                 .gathering(randomTable)
-                .eventDate(LocalDate.now().plusDays(days))
+                .eventDate(LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(days))
                 .maxAttendees(6)
                 .build();
         ReflectionTestUtils.setField(session, "id", UUID.randomUUID());
