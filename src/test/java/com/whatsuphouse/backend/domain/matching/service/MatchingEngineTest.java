@@ -83,8 +83,8 @@ class MatchingEngineTest {
     }
 
     @ParameterizedTest(name = "{0}명 → 테이블 {1}개, 미배정 {2}명")
-    @CsvSource({"7, 1, 1", "11, 2, 0", "13, 3, 0"})
-    @DisplayName("7명 이상 덩어리는 max 이하로 나눈다. 고르게 나눌 수 있으면 모두 앉힌다(13 → 5·4·4)")
+    @CsvSource({"7, 1, 1", "11, 2, 0", "13, 3, 0", "14, 3, 0"})
+    @DisplayName("7명 이상 덩어리는 [4, 6] 테이블로 나눈다. 나눠지면 모두 앉히고(13 → 5·4·4, 14 → 3개), 7명은 6 + 1")
     void match_splitsLargePool(int count, int tableCount, int unassignedCount) {
         List<MatchingEngine.Applicant> people = sameAge(count);
 
@@ -226,5 +226,117 @@ class MatchingEngineTest {
         assertThat(MatchingEngine.mbtiCompatibility("INFP", "ENFJ")).isEqualTo(1.0);
         assertThat(MatchingEngine.mbtiCompatibility("INFP", "ESTJ")).isEqualTo(0.0);
         assertThat(MatchingEngine.mbtiCompatibility("INFP", null)).isNull();
+    }
+
+    // ── 분할: 4~6명 조합 중 최저·전체 점수가 가장 높은 구성 (KAN-420) ─────────────────
+
+    // 관심사가 같은 무리 count개(무리당 size명)를 번갈아 입력한다. 성별은 모름(성별 페널티 없음).
+    // 같은 무리끼리 페어 1점, 다른 무리끼리 0점이라 무리 그대로 앉으면 그룹 점수 1.
+    private static List<MatchingEngine.Applicant> groups(int size, int count) {
+        return IntStream.range(0, size * count)
+                .mapToObj(i -> person(i, 1995, null, "관심사" + (i % count)))
+                .toList();
+    }
+
+    private static Set<String> interestsOf(MatchingEngine.TableResult table, List<MatchingEngine.Applicant> people) {
+        Set<UUID> seated = ids(table);
+        return people.stream().filter(a -> seated.contains(a.applicationId()))
+                .flatMap(a -> a.interests().stream()).collect(Collectors.toSet());
+    }
+
+    @Test
+    @DisplayName("12명: 4·4·4의 최저 점수가 6·6보다 높으면 테이블 3개로 나눈다")
+    void match_prefersFourFourFour_whenItScoresHigher() {
+        List<MatchingEngine.Applicant> people = groups(4, 3);
+
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
+
+        assertThat(result.tables()).hasSize(3).allSatisfy(table -> {
+            assertThat(table.seats()).hasSize(4);
+            assertThat(table.score().value()).isEqualByComparingTo("1");
+            assertThat(interestsOf(table, people)).hasSize(1);
+        });
+        assertThat(result.unassigned()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("12명: 6·6의 최저 점수가 더 높으면 테이블 2개로 나눈다")
+    void match_prefersSixSix_whenItScoresHigher() {
+        List<MatchingEngine.Applicant> people = groups(6, 2);
+
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
+
+        assertThat(result.tables()).hasSize(2).allSatisfy(table -> {
+            assertThat(table.seats()).hasSize(6);
+            assertThat(table.score().value()).isEqualByComparingTo("1");
+            assertThat(interestsOf(table, people)).hasSize(1);
+        });
+        assertThat(result.unassigned()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("7명: 6명 테이블 하나 + 1명 NOT_ENOUGH_PEOPLE. 남길 사람은 점수를 가장 덜 깎는 사람이다")
+    void match_sevenPeople_leavesOutWorstFit() {
+        // 0~5는 관심사가 같고, 입력 중간의 3번만 관심사가 다르다 → 3번을 남겨야 최저 점수가 가장 높다.
+        List<MatchingEngine.Applicant> people = new ArrayList<>(IntStream.range(0, 7)
+                .mapToObj(i -> person(i, 1995, i % 2 == 0 ? "MALE" : "FEMALE", i == 3 ? "등산" : "영화")).toList());
+
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
+
+        assertThat(result.tables()).singleElement().satisfies(table -> {
+            assertThat(table.seats()).hasSize(6);
+            assertThat(ids(table)).doesNotContain(new UUID(0, 3));
+        });
+        assertThat(unassigned(result)).containsExactlyEntriesOf(Map.of(new UUID(0, 3), UnassignedReason.NOT_ENOUGH_PEOPLE));
+    }
+
+    @Test
+    @DisplayName("나이·제외 관계가 섞여도 모든 테이블은 4~6명·나이 차·제외 관계를 지키고, LOW_SCORE는 없다. 같은 입력이면 같은 결과")
+    void match_mixedPool_keepsHardConditionsAndIsDeterministic() {
+        List<MatchingEngine.Applicant> people = IntStream.range(0, 30)
+                .mapToObj(i -> person(i, 1985 + (i * 7) % 20, i % 3 == 0 ? "FEMALE" : "MALE",
+                        "관심사" + (i % 4), "취미" + (i % 5)))
+                .toList();
+        Map<UUID, Set<UUID>> blocked = Map.of(
+                people.get(0).userId(), Set.of(people.get(1).userId(), people.get(2).userId(), people.get(10).userId()),
+                people.get(5).userId(), Set.of(people.get(6).userId(), people.get(15).userId()));
+        MatchingEngine.Relations relations = new MatchingEngine.Relations(blocked, Map.of());
+
+        MatchingEngine.Result result = engine.match(people, rules(), relations);
+
+        assertHardConditions(result, people);
+        for (MatchingEngine.TableResult table : result.tables()) {
+            Set<UUID> users = ids(table).stream().map(id -> new UUID(1, id.getLeastSignificantBits()))
+                    .collect(Collectors.toSet());
+            blocked.forEach((from, to) -> {
+                if (users.contains(from)) {
+                    assertThat(users).doesNotContainAnyElementsOf(to);
+                }
+            });
+        }
+        assertThat(result.unassigned()).noneMatch(u -> u.reason() == UnassignedReason.LOW_SCORE);
+        assertThat(engine.match(people, rules(), relations)).isEqualTo(result);
+    }
+
+    @Test
+    @DisplayName("60명 한 덩어리도 2초 안에 끝나고(JIT 예열 후) 전원 4~6명 테이블에 앉는다")
+    void match_sixtyPeople_finishesQuickly() {
+        List<MatchingEngine.Applicant> people = IntStream.range(0, 60)
+                .mapToObj(i -> new MatchingEngine.Applicant(new UUID(0, i), new UUID(1, i), 1993 + i % 6,
+                        i % 2 == 0 ? "MALE" : "FEMALE", MatchingEngine.MBTI_TYPES.get((i * 5) % 16),
+                        Set.of("관심사" + (i % 7), "취미" + (i * 3 % 5)), Set.of("스타일" + (i % 3)),
+                        Set.of("스타일" + (i * 2 % 3)), "직군" + (i % 4), Map.of()))
+                .toList();
+
+        // 첫 실행은 JIT·커버리지 계측 때문에 느리다(이 PC에서 약 1초). 탐색량 폭증을 잡는 게 목적이라 예열 후 잰다(약 0.2초).
+        engine.match(people, rules(), MatchingEngine.Relations.none());
+        long started = System.nanoTime();
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
+        long elapsedMillis = (System.nanoTime() - started) / 1_000_000;
+
+        assertThat(elapsedMillis).isLessThan(2_000);
+        assertThat(result.unassigned()).isEmpty();
+        assertThat(result.tables().stream().mapToInt(t -> t.seats().size()).sum()).isEqualTo(60);
+        assertHardConditions(result, people);
     }
 }

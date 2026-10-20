@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -23,12 +24,17 @@ import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 
 /**
  * 우연한 식탁 자동매칭 rule-v2 엔진 (설계 4.3~4.5). 계산만 하고 저장은 DiningMatchService가 한다.
  * - 하드 조건(완화 없음): 인원 [min, max], 출생연도 최대-최소 ≤ maxAgeGap, 제외 관계 쌍 없음.
  *   출생연도를 모르는 사람은 나이 차 계산에서 빠진다.
+ * - 분할(KAN-420): 서로 하드 조건이 맞는 덩어리마다 가능한 테이블 수별로 [min, max] 크기 조합(12 → 6·6, 4·4·4)을 시도한다.
+ *   조합마다 그리디로 채운 뒤 한 명 옮기기·두 명 맞바꾸기 국소 탐색으로 다듬고, 목적함수
+ *   (최저 테이블 점수 ↑, 점수 합 ↑, 테이블 수 ↓ 순)가 가장 좋은 구성을 고른다. 딱 나눠지지 않으면(7명 → 6 + 1)
+ *   가장 적은 인원을 남기고, 누구를 남길지도 같은 목적함수로 정한다. 남은 사람은 병합·재배치로 간다.
  * - 페어 점수 = Σ(weight × 항목) / Σweight. 답이 없어 계산할 수 없는 항목은 분자·분모에서 뺀다. Σweight = 0이면 0.
  * - 그룹 점수 = 0.7·pairAvg + 0.3·pairMin − 페널티, 0 미만은 0.
  *   점수는 조합을 고르는 데만 쓰고 테이블을 거절하지 않는다. 점수 미달로 미배정되는 사람은 없다. (KAN-420)
@@ -47,6 +53,9 @@ public class MatchingEngine {
     static final double PENALTY_SAME_JOB_CATEGORY = 0.05;
     static final double PENALTY_SAME_MBTI = 0.05;
     private static final int CROWD_SIZE = 3;
+    // ponytail: 국소 탐색 바퀴 상한. 회차 60명 안팎을 가정한 값. 수백 명이 되면 시간 상한을 두거나 탐색 이웃을 줄인다.
+    private static final int MAX_SEARCH_PASSES = 200;
+    private static final double EPS = 1e-9;
 
     static final List<String> MBTI_TYPES = List.of("INFP", "ENFP", "INFJ", "ENFJ", "INTJ", "ENTJ", "INTP", "ENTP",
             "ISFP", "ESFP", "ISTP", "ESTP", "ISFJ", "ESFJ", "ISTJ", "ESTJ");
@@ -157,6 +166,10 @@ public class MatchingEngine {
         private final double[][] pair;
         private final boolean[][] blocked;
         private final boolean[][] met;
+        // 성별·직군·MBTI를 사람별 정수 ID로(-1 = 모름). 국소 탐색에서 그룹 점수를 맵 없이 빠르게 계산하려고 둔다.
+        private final int[] genderId;
+        private final int[] jobId;
+        private final int[] mbtiId;
         private int splitCount;
         private int mergeCount;
         private int reallocatedCount;
@@ -168,6 +181,9 @@ public class MatchingEngine {
             this.pair = new double[n][n];
             this.blocked = new boolean[n][n];
             this.met = new boolean[n][n];
+            this.genderId = ids(people, Applicant::gender);
+            this.jobId = ids(people, Applicant::jobCategory);
+            this.mbtiId = ids(people, Applicant::mbti);
             for (int i = 0; i < n; i++) {
                 for (int j = i + 1; j < n; j++) {
                     Applicant a = people.get(i);
@@ -183,15 +199,16 @@ public class MatchingEngine {
             List<Draft> tables = new ArrayList<>();
             List<Draft> incomplete = new ArrayList<>();
 
-            // 1~2. 하드 조건을 함께 만족하는 덩어리를 그리디로 만들고 tableSizeMax 이하로 자른다. min 미만 조각은 보류.
+            // 1~2. 하드 조건을 함께 만족하는 덩어리를 그리디로 만들고 [min, max] 테이블로 나눈다. 남는 사람은 보류.
             List<Integer> pool = new ArrayList<>(IntStream.range(0, people.size()).boxed().toList());
             while (!pool.isEmpty()) {
-                List<List<Integer>> pieces = split(growChunk(pool));
-                if (pieces.size() > 1) {
+                Partition part = partition(growChunk(pool));
+                if (part.tables().size() + (part.bench().isEmpty() ? 0 : 1) > 1) {
                     splitCount++;
                 }
-                for (List<Integer> piece : pieces) {
-                    (piece.size() >= rules.tableSizeMin() ? tables : incomplete).add(new Draft(piece, AssignReason.INITIAL));
+                part.tables().forEach(t -> tables.add(new Draft(t, AssignReason.INITIAL)));
+                if (!part.bench().isEmpty()) {
+                    incomplete.add(new Draft(part.bench(), AssignReason.INITIAL));
                 }
             }
 
@@ -231,40 +248,202 @@ public class MatchingEngine {
             return chunk;
         }
 
-        // 덩어리를 max 이하 조각으로 나눈다. 모두 min 이상으로 고르게 나눌 수 있으면 그렇게(13명 → 5·4·4),
-        // 안 되면 max씩 자르고 나머지(min 미만)를 따로 둔다(7명 → 6 + 1).
-        private List<List<Integer>> split(List<Integer> chunk) {
-            int n = chunk.size();
-            int min = rules.tableSizeMin();
+        // ── 분할 (KAN-420) ────────────────────────────────────────────────────
+
+        /** 덩어리 분할 결과. tables는 모두 [min, max] 크기, bench는 테이블에 못 넣은 사람(가장 적게). */
+        private record Partition(List<List<Integer>> tables, List<Integer> bench, double minScore, double sumScore) {
+
+            // 최저 테이블 점수 ↑ → 점수 합 ↑ → 테이블 수 ↓
+            boolean betterThan(Partition other) {
+                if (Math.abs(minScore - other.minScore) > EPS) {
+                    return minScore > other.minScore;
+                }
+                if (Math.abs(sumScore - other.sumScore) > EPS) {
+                    return sumScore > other.sumScore;
+                }
+                return tables.size() < other.tables.size();
+            }
+        }
+
+        // 덩어리를 [min, max] 크기 조합마다 나눠 보고 목적함수가 가장 좋은 구성을 고른다. 동점이면 먼저 시도한 조합.
+        // 덩어리는 growChunk가 서로 하드 조건이 맞는 사람만 모은 것이라 어떻게 나눠도 나이 차·제외 관계를 지킨다.
+        private Partition partition(List<Integer> chunk) {
+            Partition best = null;
+            for (List<Integer> sizes : sizeCombinations(chunk.size())) {
+                Partition candidate = improve(build(chunk, sizes));
+                if (best == null || candidate.betterThan(best)) {
+                    best = candidate;
+                }
+            }
+            return best != null ? best : new Partition(List.of(), chunk, 0, 0);
+        }
+
+        // 남는 인원이 가장 적은 착석 인원에서, 가능한 테이블 수마다 가장 고른 크기 조합(14명 → 5·5·4, 6·4·4가 아니라).
+        // 같은 테이블 수의 다른 크기 조합은 국소 탐색의 한 명 옮기기로 닿으므로 출발점은 테이블 수마다 하나면 된다.
+        // 7명(4~6) → [6] + 1명. 앉힐 수 없으면 빈 목록.
+        private List<List<Integer>> sizeCombinations(int n) {
+            int min = Math.max(1, rules.tableSizeMin());
             int max = rules.tableSizeMax();
-            int k = (n + max - 1) / max;
-            List<Integer> sizes = new ArrayList<>();
-            if (k * min <= n) {
-                for (int i = 0; i < k; i++) {
-                    sizes.add(n / k + (i < n % k ? 1 : 0));
+            for (int seated = n; seated >= min; seated--) {
+                List<List<Integer>> found = new ArrayList<>();
+                for (int count = (seated + max - 1) / max; count * min <= seated; count++) {
+                    int tables = count;
+                    int total = seated;
+                    found.add(IntStream.range(0, tables).mapToObj(i -> total / tables + (i < total % tables ? 1 : 0)).toList());
                 }
-            } else {
-                for (int i = 0; i < k - 1; i++) {
-                    sizes.add(max);
+                if (!found.isEmpty()) {
+                    return found;
                 }
+            }
+            return List.of();
+        }
+
+        // 크기마다 시드(가장 배치하기 어려운 사람)에서 시작해 평균 페어 점수가 가장 높은 사람으로 채운다. 남는 사람은 bench.
+        private Partition build(List<Integer> chunk, List<Integer> sizes) {
+            List<Integer> rest = new ArrayList<>(chunk);
+            List<List<Integer>> tables = new ArrayList<>();
+            for (int size : sizes) {
+                List<Integer> table = new ArrayList<>();
+                int next = hardestToPlace(rest);
+                while (next >= 0 && table.size() < size) {
+                    table.add(next);
+                    rest.remove(Integer.valueOf(next));
+                    next = bestCandidate(table, rest);
+                }
+                tables.add(table);
+            }
+            return evaluate(tables, rest);
+        }
+
+        // 결정적 국소 탐색: 사람 순서대로 한 명 옮기기(크기는 [min, max] 유지), 두 명 맞바꾸기(bench와도)를 시도해
+        // 목적함수가 엄격히 좋아질 때만 받아들인다. 한 바퀴 동안 개선이 없거나 MAX_SEARCH_PASSES에 닿으면 멈춘다.
+        // 옮기기·맞바꾸기는 테이블 수와 bench 인원을 바꾸지 않는다.
+        private Partition improve(Partition start) {
+            List<List<Integer>> tables = new ArrayList<>();
+            start.tables().forEach(t -> tables.add(new ArrayList<>(t)));
+            List<Integer> bench = new ArrayList<>(start.bench());
+            Search search = new Search(tables, tables.stream().mapToDouble(this::rawScore).toArray(),
+                    start.minScore(), start.sumScore());
+            // 사람 → 앉은 테이블 번호(bench는 −1)
+            int[] where = new int[people.size()];
+            List<Integer> everyone = new ArrayList<>(bench);
+            bench.forEach(p -> where[p] = -1);
+            for (int t = 0; t < tables.size(); t++) {
+                for (int p : tables.get(t)) {
+                    where[p] = t;
+                    everyone.add(p);
+                }
+            }
+            everyone.sort(null);
+
+            for (int pass = 0; pass < MAX_SEARCH_PASSES; pass++) {
+                boolean improved = false;
+                for (int pi = 0; pi < everyone.size(); pi++) {
+                    int p = everyone.get(pi);
+                    // 한 명 옮기기
+                    int a = where[p];
+                    if (a >= 0 && tables.get(a).size() > rules.tableSizeMin()) {
+                        for (int b = 0; b < tables.size(); b++) {
+                            if (b == a || tables.get(b).size() >= rules.tableSizeMax()) {
+                                continue;
+                            }
+                            List<Integer> newA = new ArrayList<>(tables.get(a));
+                            newA.remove(Integer.valueOf(p));
+                            List<Integer> newB = new ArrayList<>(tables.get(b));
+                            newB.add(p);
+                            if (search.tryApply(a, newA, b, newB)) {
+                                where[p] = b;
+                                improved = true;
+                                break;
+                            }
+                        }
+                    }
+                    // 두 명 맞바꾸기(뒤 순번 상대만 — 같은 쌍을 두 번 보지 않는다)
+                    for (int qi = pi + 1; qi < everyone.size(); qi++) {
+                        int q = everyone.get(qi);
+                        a = where[p];
+                        int b = where[q];
+                        if (a == b) {
+                            continue;
+                        }
+                        if (search.tryApply(a, a >= 0 ? replaced(tables.get(a), p, q) : null,
+                                b, b >= 0 ? replaced(tables.get(b), q, p) : null)) {
+                            if (a < 0) {
+                                bench.set(bench.indexOf(p), q);
+                            }
+                            if (b < 0) {
+                                bench.set(bench.indexOf(q), p);
+                            }
+                            where[p] = b;
+                            where[q] = a;
+                            improved = true;
+                        }
+                    }
+                }
+                if (!improved) {
+                    break;
+                }
+            }
+            return evaluate(tables, bench);
+        }
+
+        /** 국소 탐색 상태: 테이블 구성과 테이블별 점수, 현재 목적함수 값. */
+        private final class Search {
+            private final List<List<Integer>> tables;
+            private final double[] scores;
+            private double min;
+            private double sum;
+
+            Search(List<List<Integer>> tables, double[] scores, double min, double sum) {
+                this.tables = tables;
+                this.scores = scores;
+                this.min = min;
+                this.sum = sum;
             }
 
-            List<Integer> rest = new ArrayList<>(chunk);
-            List<List<Integer>> pieces = new ArrayList<>();
-            for (int size : sizes) {
-                List<Integer> piece = new ArrayList<>();
-                int next = hardestToPlace(rest);
-                while (next >= 0 && piece.size() < size) {
-                    piece.add(next);
-                    rest.remove(Integer.valueOf(next));
-                    next = bestCandidate(piece, rest);
+            // 테이블 a·b(−1이면 bench라 점수와 무관)를 newA·newB로 바꿨을 때 목적함수가 엄격히 좋아지면 반영한다.
+            boolean tryApply(int a, List<Integer> newA, int b, List<Integer> newB) {
+                double scoreA = a >= 0 ? rawScore(newA) : 0;
+                double scoreB = b >= 0 ? rawScore(newB) : 0;
+                double newMin = Double.MAX_VALUE;
+                double newSum = 0;
+                for (int t = 0; t < scores.length; t++) {
+                    double value = t == a ? scoreA : t == b ? scoreB : scores[t];
+                    newMin = Math.min(newMin, value);
+                    newSum += value;
                 }
-                pieces.add(piece);
+                boolean better = Math.abs(newMin - min) > EPS ? newMin > min : newSum > sum + EPS;
+                if (!better) {
+                    return false;
+                }
+                if (a >= 0) {
+                    tables.set(a, newA);
+                    scores[a] = scoreA;
+                }
+                if (b >= 0) {
+                    tables.set(b, newB);
+                    scores[b] = scoreB;
+                }
+                min = newMin;
+                sum = newSum;
+                return true;
             }
-            if (!rest.isEmpty()) {
-                pieces.add(rest);
+        }
+
+        private Partition evaluate(List<List<Integer>> tables, List<Integer> bench) {
+            double[] scores = tables.stream().mapToDouble(this::rawScore).toArray();
+            double sum = 0;
+            for (double score : scores) {
+                sum += score;
             }
-            return pieces;
+            return new Partition(tables.stream().map(List::copyOf).toList(), List.copyOf(bench),
+                    Arrays.stream(scores).min().orElse(0), sum);
+        }
+
+        private static List<Integer> replaced(List<Integer> group, int out, int in) {
+            List<Integer> result = new ArrayList<>(group);
+            result.set(result.indexOf(out), in);
+            return result;
         }
 
         // 보류 조각 둘을 합쳐 max 이하이고 하드 조건을 통과하면 병합한다. 큰 결과·높은 점수 순. min에 들면 테이블로 올린다.
@@ -456,56 +635,109 @@ public class MatchingEngine {
         }
 
         Score score(List<Integer> group) {
+            Parts parts = parts(group);
+            Map<String, Double> penalties = new LinkedHashMap<>();
+            penalties.put("allSameGender", parts.allSameGender());
+            penalties.put("singleMinorityGender", parts.singleMinorityGender());
+            penalties.put("metBefore", parts.metBefore());
+            penalties.put("sameJobCategory", parts.sameJobCategory());
+            penalties.put("sameMbti", parts.sameMbti());
+            return new Score(BigDecimal.valueOf(parts.value()).setScale(4, RoundingMode.HALF_UP),
+                    new ScoreDetail(round(parts.pairAvg()), round(parts.pairMin()), penalties));
+        }
+
+        // 반올림하지 않은 그룹 점수. 국소 탐색은 BigDecimal 없이 이걸로 비교한다.
+        private double rawScore(List<Integer> group) {
+            return parts(group).value();
+        }
+
+        private record Parts(double pairAvg, double pairMin, double allSameGender, double singleMinorityGender,
+                             double metBefore, double sameJobCategory, double sameMbti) {
+            double value() {
+                double penalty = DoubleStream.of(allSameGender, singleMinorityGender, metBefore, sameJobCategory, sameMbti)
+                        .sum();
+                return Math.max(0, AVG_WEIGHT * pairAvg + MIN_WEIGHT * pairMin - penalty);
+            }
+        }
+
+        // 그룹 점수 = 0.7·pairAvg + 0.3·pairMin − 페널티. score()와 rawScore()가 같이 쓴다.
+        private Parts parts(List<Integer> group) {
+            int size = group.size();
+            int[] members = new int[size];
+            for (int i = 0; i < size; i++) {
+                members[i] = group.get(i);
+            }
             double sum = 0;
             double pairMin = Double.MAX_VALUE;
-            int pairs = 0;
             int metPairs = 0;
-            for (int i = 0; i < group.size(); i++) {
-                for (int j = i + 1; j < group.size(); j++) {
-                    int a = group.get(i);
-                    int b = group.get(j);
-                    sum += pair[a][b];
-                    pairMin = Math.min(pairMin, pair[a][b]);
-                    pairs++;
-                    if (met[a][b]) {
+            for (int i = 0; i < size; i++) {
+                for (int j = i + 1; j < size; j++) {
+                    double value = pair[members[i]][members[j]];
+                    sum += value;
+                    pairMin = Math.min(pairMin, value);
+                    if (met[members[i]][members[j]]) {
                         metPairs++;
                     }
                 }
             }
+            int pairs = size * (size - 1) / 2;
             double pairAvg = pairs == 0 ? 0 : sum / pairs;
             pairMin = pairs == 0 ? 0 : pairMin;
 
-            Map<String, Long> genders = countBy(group, Applicant::gender);
-            boolean gendersKnown = genders.values().stream().mapToLong(Long::longValue).sum() == group.size();
-            Map<String, Double> penalties = new LinkedHashMap<>();
-            penalties.put("allSameGender", gendersKnown && group.size() > 1 && genders.size() == 1
-                    ? PENALTY_ALL_SAME_GENDER : 0);
-            penalties.put("singleMinorityGender", gendersKnown && genders.size() > 1 && genders.containsValue(1L)
-                    ? PENALTY_SINGLE_MINORITY_GENDER : 0);
-            penalties.put("metBefore", round(metPairs * PENALTY_MET_BEFORE_PER_PAIR));
-            penalties.put("sameJobCategory", maxCount(group, Applicant::jobCategory) >= CROWD_SIZE
-                    ? PENALTY_SAME_JOB_CATEGORY : 0);
-            penalties.put("sameMbti", maxCount(group, Applicant::mbti) >= CROWD_SIZE ? PENALTY_SAME_MBTI : 0);
-
-            double penalty = penalties.values().stream().mapToDouble(Double::doubleValue).sum();
-            double value = Math.max(0, AVG_WEIGHT * pairAvg + MIN_WEIGHT * pairMin - penalty);
-            return new Score(BigDecimal.valueOf(value).setScale(4, RoundingMode.HALF_UP),
-                    new ScoreDetail(round(pairAvg), round(pairMin), penalties));
+            boolean gendersKnown = true;
+            for (int member : members) {
+                gendersKnown &= genderId[member] >= 0;
+            }
+            int genderKinds = 0;
+            boolean singleGender = false;
+            for (int count : counts(members, genderId)) {
+                genderKinds += count > 0 ? 1 : 0;
+                singleGender |= count == 1;
+            }
+            return new Parts(pairAvg, pairMin,
+                    gendersKnown && size > 1 && genderKinds == 1 ? PENALTY_ALL_SAME_GENDER : 0,
+                    gendersKnown && genderKinds > 1 && singleGender ? PENALTY_SINGLE_MINORITY_GENDER : 0,
+                    metPairs == 0 ? 0 : round(metPairs * PENALTY_MET_BEFORE_PER_PAIR),
+                    max(counts(members, jobId)) >= CROWD_SIZE ? PENALTY_SAME_JOB_CATEGORY : 0,
+                    max(counts(members, mbtiId)) >= CROWD_SIZE ? PENALTY_SAME_MBTI : 0);
         }
 
-        private Map<String, Long> countBy(List<Integer> group, Function<Applicant, String> key) {
-            Map<String, Long> counts = new HashMap<>();
-            for (int i : group) {
-                String value = key.apply(people.get(i));
-                if (value != null) {
-                    counts.merge(value, 1L, Long::sum);
+        // 값(ID)별 인원(값이 나온 순서). 모름(−1)은 세지 않는다.
+        private static int[] counts(int[] members, int[] ids) {
+            int[] counts = new int[members.length];
+            int[] seen = new int[members.length];
+            int kinds = 0;
+            for (int member : members) {
+                int id = ids[member];
+                if (id < 0) {
+                    continue;
                 }
+                int k = 0;
+                while (k < kinds && seen[k] != id) {
+                    k++;
+                }
+                if (k == kinds) {
+                    seen[kinds++] = id;
+                }
+                counts[k]++;
             }
             return counts;
         }
 
-        private long maxCount(List<Integer> group, Function<Applicant, String> key) {
-            return countBy(group, key).values().stream().mapToLong(Long::longValue).max().orElse(0);
+        private static int max(int[] values) {
+            int max = 0;
+            for (int value : values) {
+                max = Math.max(max, value);
+            }
+            return max;
+        }
+
+        private static int[] ids(List<Applicant> people, Function<Applicant, String> key) {
+            Map<String, Integer> index = new HashMap<>();
+            return people.stream().mapToInt(a -> {
+                String value = key.apply(a);
+                return value == null ? -1 : index.computeIfAbsent(value, v -> index.size());
+            }).toArray();
         }
 
         private double pairScore(Applicant a, Applicant b) {
