@@ -28,4 +28,7 @@ public interface DepositRepository extends JpaRepository<Deposit, UUID> {
     // 입금 대사 후보: 취소되지 않은 신청의 입금 대기 보증금.
     @EntityGraph(attributePaths = {"application", "application.user"})
     List<Deposit> findByStatusAndApplication_DeletedAtIsNullOrderByCreatedAtAsc(DepositStatus status);
+
+    // 심사용 입금 시뮬레이터: 요청자 본인 신청의 보증금인가.
+    boolean existsByApplication_IdAndApplication_User_IdAndStatus(UUID applicationId, UUID userId, DepositStatus status);
 }

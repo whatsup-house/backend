@@ -165,6 +165,16 @@ public enum ErrorCode {
     TICKET_PRODUCT_NOT_FOUND("존재하지 않는 이용권 상품입니다.", HttpStatus.NOT_FOUND),
     INVALID_REFUND_TRANSITION("환불을 진행할 수 없는 이용권 차감 기록입니다.", HttpStatus.CONFLICT),
 
+    // Payment (입금 대사, KAN-403)
+    DEPOSIT_WEBHOOK_UNAUTHORIZED("입금 알림 인증에 실패했습니다.", HttpStatus.UNAUTHORIZED),
+    DEPOSIT_WEBHOOK_TOO_LARGE("입금 알림 본문이 너무 큽니다.", HttpStatus.PAYLOAD_TOO_LARGE),
+    INVALID_DEPOSIT_WEBHOOK("입금 알림 형식이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
+    DEMO_DEPOSIT_FORBIDDEN("체험 계정만 입금 시뮬레이터를 쓸 수 있습니다.", HttpStatus.FORBIDDEN),
+    DEMO_DEPOSIT_TARGET_INVALID("이용권 또는 신청 중 하나만 지정해주세요.", HttpStatus.BAD_REQUEST),
+    PAYMENT_TARGET_NOT_FOUND("입금 대기 중인 결제 건이 아닙니다.", HttpStatus.NOT_FOUND),
+    DEPOSIT_NOTIFICATION_NOT_FOUND("존재하지 않는 입금 알림입니다.", HttpStatus.NOT_FOUND),
+    DEPOSIT_NOTIFICATION_ALREADY_MATCHED("이미 결제 건에 연결된 입금 알림입니다.", HttpStatus.CONFLICT),
+
     // Rate Limit
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
 

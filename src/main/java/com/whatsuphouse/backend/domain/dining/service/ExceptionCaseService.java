@@ -31,6 +31,14 @@ public class ExceptionCaseService {
                 .toList();
     }
 
+    /** 이 건이 OPEN이면 처리 완료로 닫는다. 없거나 이미 닫힌 건은 무시한다(입금 알림 수동 연결 등). */
+    @Transactional
+    public void resolveIfOpen(UUID id, UUID resolvedBy, String note) {
+        exceptionCaseRepository.findById(id)
+                .filter(exceptionCase -> exceptionCase.getStatus() == ExceptionCaseStatus.OPEN)
+                .ifPresent(exceptionCase -> exceptionCase.resolve(resolvedBy, note, null));
+    }
+
     /** listOpen과 같은 조건의 건을 처리 완료로 닫는다. 재시도 성공 등 자동 해소용. */
     @Transactional
     public void resolveOpen(ExceptionCaseType type, UUID tableId, String reasonPrefix, UUID resolvedBy, String note) {
