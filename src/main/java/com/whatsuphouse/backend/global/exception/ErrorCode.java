@@ -85,7 +85,7 @@ public enum ErrorCode {
     INVALID_TABLE_SIZE_RANGE("테이블 최소 인원은 최대 인원보다 클 수 없습니다.", HttpStatus.BAD_REQUEST),
     VENUE_NOT_FOUND("존재하지 않는 식당입니다.", HttpStatus.NOT_FOUND),
     VENUE_INACTIVE("비활성 식당은 배정할 수 없습니다.", HttpStatus.BAD_REQUEST),
-    VENUE_NOT_IN_SESSION("회차 식당 풀에 없는 식당입니다.", HttpStatus.BAD_REQUEST),
+    VENUE_NOT_IN_SESSION("이번 회차 식당으로 고르지 않은 식당입니다.", HttpStatus.BAD_REQUEST),
     DUPLICATE_SESSION_VENUE("같은 식당을 중복으로 설정할 수 없습니다.", HttpStatus.BAD_REQUEST),
     VENUE_CAPACITY_EXCEEDED("식당의 수용 테이블 수를 넘을 수 없습니다.", HttpStatus.CONFLICT),
     TABLE_NOT_PROPOSED("제안(PROPOSED) 상태 테이블만 확정할 수 있습니다.", HttpStatus.CONFLICT),
