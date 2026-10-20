@@ -49,6 +49,8 @@ public class BotDispatchService {
     static final String LIMIT_REASON = "발송 한도 초과";
     static final String PAUSED_REASON = "담당자 응대 중";
     static final String NOT_TARGET_REASON = "자동응답 대상 아님";
+    static final String SUPERSEDED_REASON = "대체됨";
+    static final String PAYLOAD_FAILED_REASON = "문의 내용 조회 실패";
     static final int MAX_PENDING_LIMIT = 20;
     private static final Duration LEASE = Duration.ofMinutes(5);
     private static final Duration UNCLAIMED_TIMEOUT = Duration.ofMinutes(5);
@@ -135,7 +137,9 @@ public class BotDispatchService {
             handOff(limited, LIMIT_REASON, true);
             return;
         }
-        botDispatchRepository.save(BotDispatch.pending(message.roomId(), messageId, message.customerId(), sendAfter));
+        // 방당 PENDING 1건 부분 유니크와 겹치면(만료 처리가 같은 방 LEASED를 되돌린 순간) 여기서 바로 터지게 flush한다.
+        // BotDispatchListener가 새 트랜잭션으로 한 번 더 부르면 그 PENDING을 찾아 디바운스로 묶는다.
+        botDispatchRepository.saveAndFlush(BotDispatch.pending(message.roomId(), messageId, message.customerId(), sendAfter));
     }
 
     private boolean isTargetCustomer(UUID customerId) {
@@ -166,8 +170,9 @@ public class BotDispatchService {
             try {
                 items.add(botPayloadBuilder.build(dispatch));
             } catch (RuntimeException e) {
-                // LEASED로 남아 만료 → 다시 PENDING → 3회면 FAILED + 이관. 한 건 때문에 나머지를 막지 않는다.
+                // 고객이 메시지를 지운 경우 등. 다시 가져가도 같으니 바로 FAILED + 이관(한 건 때문에 나머지를 막지 않는다).
                 log.warn("그록봇 대기 문의 본문 생성 실패: dispatchId={}, error={}", dispatch.getId(), e.getClass().getSimpleName());
+                failLeased(dispatch.getId());
             }
         }
         return new BotPendingResponse(items);
@@ -197,15 +202,29 @@ public class BotDispatchService {
         return leased == null ? List.of() : leased;
     }
 
+    private void failLeased(UUID dispatchId) {
+        transactionTemplate.executeWithoutResult(status -> {
+            BotDispatch dispatch = botDispatchRepository.findById(dispatchId).orElseThrow();
+            if (dispatch.getStatus() != BotDispatchStatus.LEASED) {
+                return;
+            }
+            dispatch.markFailed(PAYLOAD_FAILED_REASON);
+            handOff(dispatch, PAYLOAD_FAILED_REASON, true);
+        });
+    }
+
     /**
-     * 기한 지난 LEASED: 담당자 응대 중이면 닫기만, lease 3회 소진이면 FAILED + 이관, 아니면 다시 PENDING.
-     * 같은 방에 더 새 dispatch가 있는(대체된) LEASED는 건드리지 않는다(방당 PENDING 1건 유지, 그 답변은 어차피 409).
+     * 기한 지난 LEASED: 같은 방에 더 새 dispatch가 있으면(대체됨, 그 답변은 어차피 409) 안내 없이 닫고,
+     * 담당자 응대 중이면 닫기만, lease 3회 소진이면 FAILED + 이관, 아니면 다시 PENDING.
      */
     @Transactional
     public void expireLeases(LocalDateTime now) {
         for (String id : botDispatchRepository.lockExpiredLeaseIds(now)) {
             BotDispatch dispatch = botDispatchRepository.findById(UUID.fromString(id)).orElseThrow();
-            if (chatService.isBotPaused(dispatch.getConversationId())) {
+            if (botDispatchRepository.existsByConversationIdAndCreatedAtAfter(
+                    dispatch.getConversationId(), dispatch.getCreatedAt())) {
+                dispatch.markHandedOff(SUPERSEDED_REASON);
+            } else if (chatService.isBotPaused(dispatch.getConversationId())) {
                 dispatch.markHandedOff(PAUSED_REASON);
             } else if (dispatch.isLeaseExhausted()) {
                 dispatch.markFailed(BotDispatch.LEASE_EXHAUSTED_REASON);

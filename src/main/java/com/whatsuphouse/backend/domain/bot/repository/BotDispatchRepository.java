@@ -54,12 +54,10 @@ public interface BotDispatchRepository extends JpaRepository<BotDispatch, UUID> 
             """, nativeQuery = true)
     List<String> lockDueIds(@Param("now") LocalDateTime now, @Param("limit") int limit);
 
-    /** lease 기한이 지난 LEASED. 같은 방에 더 새 dispatch가 있으면(대체됨, 답변은 어차피 409) 제외. */
+    /** lease 기한이 지난 LEASED. 대체 여부(같은 방 더 새 dispatch)는 호출 측이 본다. */
     @Query(value = """
             SELECT CAST(d.id AS VARCHAR(36)) FROM bot_dispatch d
             WHERE d.status = 'LEASED' AND d.leased_until <= :now
-              AND NOT EXISTS (SELECT 1 FROM bot_dispatch n
-                              WHERE n.conversation_id = d.conversation_id AND n.created_at > d.created_at)
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     List<String> lockExpiredLeaseIds(@Param("now") LocalDateTime now);

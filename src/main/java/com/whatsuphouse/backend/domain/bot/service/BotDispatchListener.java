@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.bot.service;
 
 import com.whatsuphouse.backend.domain.chat.event.ChatMessageCreatedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -20,6 +21,12 @@ public class BotDispatchListener {
     @Async("botExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMessageCreated(ChatMessageCreatedEvent event) {
-        botDispatchService.enqueue(event.getMessageId());
+        try {
+            botDispatchService.enqueue(event.getMessageId());
+        } catch (DataIntegrityViolationException e) {
+            // 방당 PENDING 1건 유니크와 겹침(만료 처리가 같은 방 LEASED를 PENDING으로 되돌린 순간).
+            // 새 트랜잭션으로 한 번 더: 이번엔 그 PENDING을 찾아 디바운스로 묶는다.
+            botDispatchService.enqueue(event.getMessageId());
+        }
     }
 }

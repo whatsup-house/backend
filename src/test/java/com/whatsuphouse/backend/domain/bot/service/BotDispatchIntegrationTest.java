@@ -56,6 +56,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
@@ -86,6 +87,8 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -293,6 +296,83 @@ class BotDispatchIntegrationTest {
     }
 
     @Test
+    @DisplayName("대기 문의가 없으면 본문은 래핑 없이 정확히 {\"items\":[]}")
+    void pending_empty_bareItemsBody() throws Exception {
+        mockMvc.perform(get("/api/bot/pending").header(HttpHeaders.AUTHORIZATION, "Bearer " + REPLY_TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"items\":[]}", true));
+    }
+
+    @Test
+    @DisplayName("lease 직전 다시 확인: 데모에서 빠지거나 허용 목록에서 빠진 고객 건은 반환하지 않고 이관 + 고정 안내")
+    void pending_customerNoLongerTarget_handedOffWithNotice() throws Exception {
+        // given
+        User demo = demoCustomer("고객A", "김에이");
+        User listed = user("목록고객", false);
+        ReflectionTestUtils.setField(botDispatchService, "allowedUserIds", Set.of(listed.getId()));
+        UUID demoRoom = openRoom(demo);
+        UUID listedRoom = openRoom(listed);
+        say(demoRoom, demo, "문의");
+        say(listedRoom, listed, "문의");
+        awaitDispatch(demoRoom);
+        awaitDispatch(listedRoom);
+        makeDue(demoRoom);
+        makeDue(listedRoom);
+        jdbcTemplate.update("UPDATE users SET is_demo = false WHERE id = ?", demo.getId());
+        ReflectionTestUtils.setField(botDispatchService, "allowedUserIds", Set.of());
+
+        // when
+        JsonNode items = pending(null);
+
+        // then
+        assertThat(items).isEmpty();
+        for (UUID room : List.of(demoRoom, listedRoom)) {
+            BotDispatch dispatch = dispatchOf(room);
+            assertThat(dispatch.getStatus()).isEqualTo(BotDispatchStatus.HANDED_OFF);
+            assertThat(dispatch.getHandoffReason()).isEqualTo("자동응답 대상 아님");
+            assertThat(dispatch.getAttempts()).isZero();
+            assertThat(room(room).isNeedsHuman()).isTrue();
+            assertThat(openCsCases(room)).hasSize(1);
+        }
+        assertThat(botMessages(demoRoom, demo)).extracting(ChatMessageResponse::getContent)
+                .containsExactly(BotDispatchService.HANDOFF_NOTICE);
+        assertThat(botMessages(listedRoom, listed)).extracting(ChatMessageResponse::getContent)
+                .containsExactly(BotDispatchService.HANDOFF_NOTICE);
+    }
+
+    @Test
+    @DisplayName("본문을 만들 수 없는 건(고객이 메시지 삭제)은 반환하지 않고 바로 FAILED + 이관, 나머지는 정상 반환")
+    void pending_payloadBuildFails_failedAndHandedOffImmediately() throws Exception {
+        // given
+        User a = demoCustomer("고객A", "김에이");
+        User b = demoCustomer("고객B", "박비");
+        UUID aRoom = openRoom(a);
+        UUID bRoom = openRoom(b);
+        UUID deleted = say(aRoom, a, "지울 문의");
+        say(bRoom, b, "B 문의");
+        awaitDispatch(aRoom);
+        awaitDispatch(bRoom);
+        chatService.deleteMessage(deleted, a.getId(), false);
+        makeDue(aRoom);
+        makeDue(bRoom);
+
+        // when
+        JsonNode items = pending(null);
+
+        // then
+        assertThat(items).singleElement()
+                .satisfies(item -> assertThat(item.path("conversationId").asText()).isEqualTo(bRoom.toString()));
+        BotDispatch failed = dispatchOf(aRoom);
+        assertThat(failed.getStatus()).isEqualTo(BotDispatchStatus.FAILED);
+        assertThat(failed.getHandoffReason()).isEqualTo("문의 내용 조회 실패");
+        assertThat(room(aRoom).isNeedsHuman()).isTrue();
+        assertThat(openCsCases(aRoom)).hasSize(1);
+        assertThat(botMessages(aRoom, a)).extracting(ChatMessageResponse::getContent)
+                .containsExactly(BotDispatchService.HANDOFF_NOTICE);
+        assertThat(dispatchOf(bRoom).getStatus()).isEqualTo(BotDispatchStatus.LEASED);
+    }
+
+    @Test
     @DisplayName("lease 기한이 지나면 PENDING으로 돌아가 다시 조회되고 attempts가 늘어난다")
     void leaseExpired_returnsToPending_refetchable_attemptsIncremented() throws Exception {
         // given
@@ -435,7 +515,8 @@ class BotDispatchIntegrationTest {
 
         // when & then
         mockMvc.perform(get("/api/bot/pending").header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false));
         mockMvc.perform(get("/api/bot/pending")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/bot/pending").header(HttpHeaders.AUTHORIZATION, "Bearer " + adminJwt))
                 .andExpect(status().isUnauthorized());
@@ -728,7 +809,7 @@ class BotDispatchIntegrationTest {
         BotDispatch dispatch = leasedDispatch(aRoom, a, "문의");
 
         // when & then
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/bot/replies")
+        mockMvc.perform(replyRequest()
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + REPLY_TOKEN)
                         .header("Idempotency-Key", dispatch.getEventId().toString())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -748,7 +829,7 @@ class BotDispatchIntegrationTest {
         BotDispatch dispatch = leasedDispatch(room, a, "문의");
 
         // when & then
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/bot/replies")
+        mockMvc.perform(replyRequest()
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + REPLY_TOKEN)
                         .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -854,7 +935,7 @@ class BotDispatchIntegrationTest {
     }
 
     @Test
-    @DisplayName("LEASED 중 고객이 새로 보내면 새 PENDING이 생기고 이전 LEASED 답변은 409, 만료돼도 다시 PENDING이 되지 않는다")
+    @DisplayName("LEASED 중 고객이 새로 보내면 새 PENDING이 생기고 이전 LEASED 답변은 409, 만료되면 '대체됨'으로 안내 없이 닫는다")
     void reply_staleDispatch_409() throws Exception {
         // given
         User a = demoCustomer("고객A", "김에이");
@@ -870,13 +951,18 @@ class BotDispatchIntegrationTest {
         assertThat(botDispatchRepository.findAll()).filteredOn(d -> d.getMessageId().equals(newer))
                 .singleElement().satisfies(d -> assertThat(d.getStatus()).isEqualTo(BotDispatchStatus.PENDING));
         assertThat(botMessages(room, a)).isEmpty();
-        // 대체된 LEASED는 만료돼도 PENDING으로 돌리거나 이관하지 않는다(방당 PENDING 1건 유지)
+        // 대체된 LEASED는 만료되면 PENDING으로 돌리지 않고(방당 PENDING 1건 유지) 안내·이관 없이 닫는다
         jdbcTemplate.update("UPDATE bot_dispatch SET leased_until = ? WHERE event_id = ?",
                 Timestamp.valueOf(LocalDateTime.now().minusSeconds(1)), old.getEventId());
         botDispatchService.expireLeases(LocalDateTime.now());
-        assertThat(botDispatchRepository.findByEventId(old.getEventId()).orElseThrow().getStatus())
-                .isEqualTo(BotDispatchStatus.LEASED);
+        BotDispatch closed = botDispatchRepository.findByEventId(old.getEventId()).orElseThrow();
+        assertThat(closed.getStatus()).isEqualTo(BotDispatchStatus.HANDED_OFF);
+        assertThat(closed.getHandoffReason()).isEqualTo("대체됨");
+        assertThat(botDispatchRepository.findAll()).filteredOn(d -> d.getMessageId().equals(newer))
+                .singleElement().satisfies(d -> assertThat(d.getStatus()).isEqualTo(BotDispatchStatus.PENDING));
         assertThat(room(room).isNeedsHuman()).isFalse();
+        assertThat(openCsCases(room)).isEmpty();
+        assertThat(botMessages(room, a)).isEmpty();
     }
 
     // ── 발송 큐(기존 규칙 유지) ──
@@ -1089,6 +1175,7 @@ class BotDispatchIntegrationTest {
         return dispatch;
     }
 
+    // 본문은 래핑 없는 {"items":[...]}(R20). 최상위 키가 items 하나뿐인지 매번 확인한다.
     private JsonNode pending(Integer limit) throws Exception {
         MockHttpServletRequestBuilder request = get("/api/bot/pending")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + REPLY_TOKEN);
@@ -1097,7 +1184,16 @@ class BotDispatchIntegrationTest {
         }
         String body = mockMvc.perform(request).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        return objectMapper.readTree(body).path("data").path("items");
+        JsonNode root = objectMapper.readTree(body);
+        List<String> keys = new ArrayList<>();
+        root.fieldNames().forEachRemaining(keys::add);
+        assertThat(keys).containsExactly("items");
+        assertThat(root.path("items").isArray()).isTrue();
+        return root.path("items");
+    }
+
+    private static MockHttpServletRequestBuilder replyRequest() {
+        return MockMvcRequestBuilders.post("/api/bot/replies");
     }
 
     private JsonNode itemOf(JsonNode items, UUID customerId) {
@@ -1111,7 +1207,7 @@ class BotDispatchIntegrationTest {
 
     private ResultActions reply(BotDispatch dispatch, String action, String text, String handoffReason, String token)
             throws Exception {
-        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/bot/replies")
+        var request = replyRequest()
                 .header("Idempotency-Key", dispatch.getEventId().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(replyBody(dispatch.getEventId(), dispatch.getConversationId(),
