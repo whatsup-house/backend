@@ -120,15 +120,16 @@ class DiningApplicationServiceTest {
     // ── cancelApplication() ────────────────────────────────────────────────
 
     @Test
-    @DisplayName("마감(전날 0시) 전이면 취소되고 이용권이 복원된다")
-    void cancel_assignedSessionBeforeWindow_cancelsAndRestoresTicket() {
+    @DisplayName("마감(전날 0시) 전이면 취소되고 1회분 100% 기준으로 환불을 계산한다(이용권은 복원하지 않는다)")
+    void cancel_assignedSessionBeforeWindow_cancelsWithFullRefundRate() {
         Application application = confirmedApplication(sessionOn(3));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
 
-        diningApplicationService.cancelApplication(applicationId, userId);
+        diningApplicationService.cancelApplication(applicationId, userId, null);
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
-        then(ticketService).should().refundOneTicket(application);
+        then(ticketService).should().refundableAmount(applicationId, 100);
+        then(ticketService).should(never()).refundOneTicket(any());
         then(diningAttendanceService).should().cancelAttendance(applicationId, false);
         then(eventPublisher).should().publishEvent(any(ApplicationCancelledEvent.class));
     }
@@ -144,7 +145,7 @@ class DiningApplicationServiceTest {
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
         given(matchingService.findTablesByApplicationIds(List.of(applicationId))).willReturn(Map.of(applicationId, table));
 
-        diningApplicationService.cancelApplication(applicationId, userId);
+        diningApplicationService.cancelApplication(applicationId, userId, null);
 
         // 재조정이 멤버 행에 removed_at을 채우면 cancelAttendance가 좌석을 못 찾으므로 순서가 중요하다.
         InOrder order = inOrder(diningAttendanceService, diningTableService);
@@ -157,11 +158,11 @@ class DiningApplicationServiceTest {
         Application application = confirmedApplication(sessionOn(-1));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
 
-        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId))
+        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId, null))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CANCEL_WINDOW_CLOSED);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
-        then(ticketService).should(never()).refundOneTicket(any());
+        then(ticketService).shouldHaveNoInteractions();
     }
 
     @Test
@@ -169,14 +170,14 @@ class DiningApplicationServiceTest {
     void cancel_waiting_usesEarliestUpcomingCandidate() {
         Application application = confirmedApplication(null);
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
-        // 1순위는 다음 주, 2순위는 내일: 내일 회차가 기준이라 마감이 지나 이용권은 복원하지 않는다.
+        // 1순위는 다음 주, 2순위는 내일: 내일 회차가 기준이라 마감이 지나 50%만 환불한다.
         given(applicationCandidateSessionRepository.findByApplicationIdsWithSession(List.of(applicationId)))
                 .willReturn(List.of(candidate(application, sessionOn(7), 1), candidate(application, sessionOn(1), 2)));
 
-        diningApplicationService.cancelApplication(applicationId, userId);
+        diningApplicationService.cancelApplication(applicationId, userId, null);
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
-        then(ticketService).should(never()).refundOneTicket(any());
+        then(ticketService).should().refundableAmount(applicationId, 50);
         then(diningAttendanceService).should().cancelAttendance(applicationId, true);
     }
 
@@ -188,10 +189,10 @@ class DiningApplicationServiceTest {
         given(applicationCandidateSessionRepository.findByApplicationIdsWithSession(List.of(applicationId)))
                 .willReturn(List.of(candidate(application, sessionOn(-1), 1), candidate(application, sessionOn(5), 2)));
 
-        diningApplicationService.cancelApplication(applicationId, userId);
+        diningApplicationService.cancelApplication(applicationId, userId, null);
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
-        then(ticketService).should().refundOneTicket(application);
+        then(ticketService).should().refundableAmount(applicationId, 100);
     }
 
     @Test
@@ -200,7 +201,7 @@ class DiningApplicationServiceTest {
         Application application = confirmedApplication(sessionOn(5));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
 
-        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, UUID.randomUUID()))
+        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, UUID.randomUUID(), null))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.APPLICATION_FORBIDDEN);
     }
@@ -212,7 +213,7 @@ class DiningApplicationServiceTest {
         application.cancel();
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
 
-        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId))
+        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId, null))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.APPLICATION_ALREADY_CANCELLED);
         then(ticketService).should(never()).refundOneTicket(any());

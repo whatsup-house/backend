@@ -77,7 +77,7 @@ public class DiningApplicationListResponse {
                     .ticketStatus(ticketStatus)
                     .table(table != null ? TableInfo.from(table) : null)
                     .resolutionId(resolutionId)
-                    .deposit(deposit != null ? new DepositInfo(deposit.getStatus(), deposit.getAmount()) : null)
+                    .deposit(deposit != null ? new DepositInfo(deposit.getStatus(), deposit.getAmount(), deposit.getReturnAmount()) : null)
                     .build();
         }
     }
@@ -85,7 +85,9 @@ public class DiningApplicationListResponse {
     /** 신청의 노쇼 보증금 요약. (KAN-402) */
     public record DepositInfo(
             @Schema(description = "보증금 상태", example = "PAID") DepositStatus status,
-            @Schema(description = "보증금 금액(원)", example = "50000") int amount) {
+            @Schema(description = "보증금 금액(원)", example = "50000") int amount,
+            @Schema(description = "반환(예정) 금액(원). 마감 후 취소면 50%. 반환 전·몰수면 null", example = "25000", nullable = true)
+            Integer returnAmount) {
     }
 
     @Getter

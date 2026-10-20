@@ -52,6 +52,10 @@ public class Deposit {
     @Column(nullable = false, length = 20)
     private DepositStatus status;
 
+    // 반환(예정) 금액. 반환 요청 때 정한다. amount보다 작으면 나머지는 몰수(마감 후 취소 50%). 반환 전이면 null. (KAN-418)
+    @Column(name = "return_amount")
+    private Integer returnAmount;
+
     // 모든 컬럼이 NULL이면 Hibernate가 null로 읽는다.
     @Embedded
     @AttributeOverrides({
@@ -85,11 +89,22 @@ public class Deposit {
         }
     }
 
-    /** 반환 요청. 받은 돈(PAID)만 돌려준다. 미입금·이미 처리된 건은 그대로. */
+    /** 전액 반환 요청. */
     public void requestReturn() {
+        requestReturn(100);
+    }
+
+    /** percent%만 반환 요청(원 단위 버림). 받은 돈(PAID)만 돌려준다. 미입금·이미 처리된 건은 그대로. (KAN-418) */
+    public void requestReturn(int percent) {
         if (status == DepositStatus.PAID) {
             status = DepositStatus.RETURN_PENDING;
+            returnAmount = returnAmountFor(percent);
         }
+    }
+
+    /** percent%를 돌려줄 때의 금액(원 단위 버림). */
+    public int returnAmountFor(int percent) {
+        return amount * percent / 100;
     }
 
     /** 운영자 송금 완료(RETURN_PENDING → RETURNED). 그 외는 그대로. (KAN-404) */
@@ -110,6 +125,7 @@ public class Deposit {
     public void forfeit() {
         if (status == DepositStatus.PAID || status == DepositStatus.RETURN_PENDING) {
             status = DepositStatus.FORFEITED;
+            returnAmount = null;
         }
     }
 
