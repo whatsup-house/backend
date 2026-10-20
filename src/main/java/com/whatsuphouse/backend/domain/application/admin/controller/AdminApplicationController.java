@@ -31,7 +31,7 @@ public class AdminApplicationController {
     @Operation(summary = "전체 신청 목록 조회")
     @GetMapping
     public ResponseEntity<ApiResult<List<AdminApplicationResponse>>> getAllApplications(
-            @Parameter(description = "게더링 ID로 필터링") @RequestParam(required = false) UUID gatheringId,
+            @Parameter(description = "회차 ID로 필터링. 회차 ID가 아니면 모임 종류 ID로 보고 그 종류의 신청 전체(심사용 숨김 종류 포함)") @RequestParam(required = false) UUID gatheringId,
             @Parameter(description = "상태로 필터링") @RequestParam(required = false) ApplicationStatus status
     ) {
         return ResponseEntity.ok(ApiResult.success(adminApplicationService.getAllApplications(gatheringId, status)));

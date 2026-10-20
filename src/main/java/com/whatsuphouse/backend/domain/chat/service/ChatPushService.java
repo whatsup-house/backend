@@ -25,6 +25,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.net.URI;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -108,6 +109,22 @@ public class ChatPushService {
             return;
         }
         send(room.get(), message, subscriptions);
+    }
+
+    /**
+     * 채팅이 아닌 알림(관리자 입금 대사 결과 등)을 지정 회원의 구독 기기로 보낸다. 대상 선정은 호출 측이 한다.
+     * 비동기: 웹훅 응답이 외부 푸시 서비스를 기다리지 않게. 만료된 구독은 지운다. (KAN-416)
+     */
+    @Async("chatPushExecutor")
+    public void pushToUsers(Collection<UUID> userIds, Payload payload) {
+        if (!webPushSender.isEnabled() || userIds.isEmpty()) {
+            return;
+        }
+        for (PushSubscription subscription : pushSubscriptionRepository.findAllByUserIdIn(userIds)) {
+            if (webPushSender.send(subscription, payload)) {
+                pushSubscriptionRepository.delete(subscription);
+            }
+        }
     }
 
     private void send(ChatRoom room, ChatMessage message, List<PushSubscription> subscriptions) {

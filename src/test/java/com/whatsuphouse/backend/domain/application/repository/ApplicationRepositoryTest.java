@@ -260,6 +260,31 @@ class ApplicationRepositoryTest {
     }
 
     @Test
+    @DisplayName("관리자 신청 목록: 회차 ID가 아닌 모임 종류 ID면 그 종류의 신청 전체(심사용 숨김 종류 포함) (KAN-416)")
+    void findApplications_gatheringKindId_returnsAllOfKindIncludingHidden() {
+        // given
+        Gathering hiddenKind = Gathering.builder().title("우연한 식탁 (심사용)").gatheringType(GatheringType.RANDOM_TABLE).build();
+        ReflectionTestUtils.setField(hiddenKind, "hidden", true);
+        hiddenKind = gatheringRepository.save(hiddenKind);
+        GatheringSession week1 = saveSession(hiddenKind, LocalDate.now().plusDays(7));
+        GatheringSession week2 = saveSession(hiddenKind, LocalDate.now().plusDays(14));
+        Application assigned = saveApplication("WH-HD-0001", week1, null, "01011111111");
+        Application unassigned = saveUnassigned("WH-HD-0002", hiddenKind, week2);
+        saveApplication("WH-HD-0003", session, null, "01022222222"); // 다른 종류
+        em.flush();
+        em.clear();
+
+        // when
+        List<Application> byKind = applicationRepository.findApplications(hiddenKind.getId(), null);
+        List<Application> bySession = applicationRepository.findApplications(week1.getId(), null);
+
+        // then
+        assertThat(byKind).extracting(Application::getId)
+                .containsExactlyInAnyOrder(assigned.getId(), unassigned.getId());
+        assertThat(bySession).extracting(Application::getId).containsExactly(assigned.getId());
+    }
+
+    @Test
     @DisplayName("희망 회차 중복 검사·신청 존재 검사는 취소(soft delete)된 신청을 제외한다")
     void candidateExistsQueries_excludeCancelledApplications() {
         // given

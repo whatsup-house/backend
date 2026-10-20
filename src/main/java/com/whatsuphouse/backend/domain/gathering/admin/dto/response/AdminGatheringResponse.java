@@ -58,6 +58,10 @@ public class AdminGatheringResponse {
     @Schema(description = "출석 신청자 수", example = "2")
     private long attendedCount;
 
+    // 관리자 목록에는 심사용 숨김 종류의 회차도 나온다. 화면이 "심사용"으로 표시한다. (KAN-416)
+    @Schema(description = "심사용 숨김 종류의 회차 여부", example = "false")
+    private boolean hidden;
+
     // 관리자 목록 항목 하나 = 회차 하나. id는 회차 ID. (KAN-337)
     public static AdminGatheringResponse from(GatheringSession session, Map<ApplicationStatus, Long> countMap) {
         long pendingCount = countMap.getOrDefault(ApplicationStatus.PENDING, 0L);
@@ -83,6 +87,7 @@ public class AdminGatheringResponse {
                 .pendingCount(pendingCount)
                 .confirmedCount(confirmedCount)
                 .attendedCount(attendedCount)
+                .hidden(session.getGathering().isHidden())
                 .build();
     }
 }
