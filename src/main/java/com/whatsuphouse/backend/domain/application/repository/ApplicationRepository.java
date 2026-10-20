@@ -119,4 +119,8 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
             @Param("excludedType") GatheringType excludedType,
             @Param("statuses") List<ApplicationStatus> statuses,
             @Param("since") LocalDate since);
+
+    // 입금 알림·후보 목록의 대상 이름(모임 제목) 일괄 조회. (KAN-426)
+    @EntityGraph(attributePaths = {"gathering"})
+    List<Application> findByIdInAndDeletedAtIsNull(Collection<UUID> ids);
 }

@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -55,4 +56,7 @@ public interface TicketPassRepository extends JpaRepository<TicketPass, UUID>, L
     // 만료 대상: 만료일이 기준일 이전인 활성 멤버십.
     List<TicketPass> findByStatusAndProductOption_KindAndValidUntilBeforeAndDeletedAtIsNull(
             TicketPassStatus status, TicketProductKind kind, LocalDate date);
+
+    // 입금 알림·후보 목록의 대상 이름 일괄 조회. (KAN-426)
+    List<TicketPass> findByIdInAndDeletedAtIsNull(Collection<UUID> ids);
 }

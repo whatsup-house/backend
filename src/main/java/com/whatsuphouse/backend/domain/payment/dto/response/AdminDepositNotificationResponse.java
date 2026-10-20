@@ -34,6 +34,8 @@ public class AdminDepositNotificationResponse {
     private PaymentTargetType targetType;
     @Schema(description = "연결된 결제 대상 ID(이용권·보증금·신청)")
     private UUID targetId;
+    @Schema(description = "연결된 결제 대상 이름(이용권 상품명 또는 모임 제목). 대상이 없거나 삭제됐으면 null", example = "1회권")
+    private String targetName;
     @Schema(description = "연결된 신청 ID")
     private UUID applicationId;
     @Schema(description = "대사 실패로 연 예외함 건 ID")
@@ -41,7 +43,7 @@ public class AdminDepositNotificationResponse {
     @Schema(description = "기록 시각")
     private LocalDateTime createdAt;
 
-    public static AdminDepositNotificationResponse from(DepositNotification notification) {
+    public static AdminDepositNotificationResponse from(DepositNotification notification, String targetName) {
         return AdminDepositNotificationResponse.builder()
                 .id(notification.getId())
                 .rawText(notification.getRawText())
@@ -52,6 +54,7 @@ public class AdminDepositNotificationResponse {
                 .result(notification.getResult())
                 .targetType(notification.getTargetType())
                 .targetId(notification.getTargetId())
+                .targetName(targetName)
                 .applicationId(notification.getApplicationId())
                 .exceptionCaseId(notification.getExceptionCaseId())
                 .createdAt(notification.getCreatedAt())
