@@ -15,8 +15,10 @@ public final class DepositTextParser {
     private static final Pattern WOORI_PUSH = Pattern.compile("^\\[입금\\]\\s+(.+?)\\s+([\\d,]+)원\\s");
     // ponytail: 은행 문자(아이폰 단축어) 정규식은 문자 원문 샘플을 받으면 여기에 추가한다. 그전까지 문자는 PARSE_FAILED로 예외함에 간다.
     private static final List<Pattern> PATTERNS = List.of(WOORI_PUSH);
-    // 회원 실명 컬럼(users.name) 길이. 이보다 길면 이름이 아니다.
+    // 회원 실명 컬럼(users.name) 길이. 이보다 길면 이름이 아니다. 빈 이름(공백만)도 파싱 실패.
     private static final int MAX_NAME_LENGTH = 50;
+    // 이름 자리가 비면 정규식이 금액 칸을 건너뛰어 "9,900원 … 잔액"을 이름으로, 잔액을 금액으로 잡는다. 이름에 금액이 섞이면 실패.
+    private static final Pattern AMOUNT_TOKEN = Pattern.compile("[\\d,]+원");
 
     private DepositTextParser() {
     }
@@ -37,7 +39,7 @@ public final class DepositTextParser {
             Matcher matcher = pattern.matcher(raw);
             if (matcher.find()) {
                 String name = matcher.group(1).trim();
-                if (name.length() > MAX_NAME_LENGTH) {
+                if (name.isEmpty() || name.length() > MAX_NAME_LENGTH || AMOUNT_TOKEN.matcher(name).find()) {
                     return Optional.empty();
                 }
                 try {

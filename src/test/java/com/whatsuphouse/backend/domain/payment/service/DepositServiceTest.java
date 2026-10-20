@@ -81,8 +81,9 @@ class DepositServiceTest {
         given(ticketServiceProvider.getObject()).willReturn(ticketService);
         given(ticketService.hasTicketUse(application.getId())).willReturn(true);
 
-        depositService.markPaid(application.getId());
+        boolean marked = depositService.markPaid(application.getId());
 
+        assertThat(marked).isTrue();
         assertThat(deposit.getStatus()).isEqualTo(DepositStatus.PAID);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
@@ -103,12 +104,15 @@ class DepositServiceTest {
     }
 
     @Test
-    @DisplayName("이미 처리된 보증금을 다시 입금 확인해도 아무것도 바꾸지 않는다(멱등)")
+    @DisplayName("이미 처리된 보증금을 다시 입금 확인해도 아무것도 바꾸지 않고 false(입금 대사는 중복 입금으로 본다)")
     void markPaid_alreadyPaid_noop() {
         Deposit deposit = pendingLocked();
         deposit.markPaid();
 
-        depositService.markPaid(application.getId());
+        boolean marked = depositService.markPaid(application.getId());
+
+        assertThat(marked).isFalse();
+        assertThat(deposit.getStatus()).isEqualTo(DepositStatus.PAID);
 
         then(ticketServiceProvider).shouldHaveNoInteractions();
         then(eventPublisher).shouldHaveNoInteractions();

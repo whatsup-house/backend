@@ -460,17 +460,19 @@ public class ApplicationService {
     /**
      * 시스템(입금 웹훅·시뮬레이터)이 일반 모임 입금을 확인한다. 관리자 입금 확인(changePayment confirmed=true)과 같은 효과:
      * 처음 확인되는 순간에만 입금 완료 안내 이벤트를 낸다. 신청 상태(status)는 건드리지 않는다.
+     * 행을 잠그고, 이미 입금 확인된 신청이면 아무것도 바꾸지 않고 false(같은 입금의 중복 정산 방지, KAN-403).
      */
     @Transactional
     // 같은 입금 확인 규칙 - AdminApplicationService.changePayment와 함께 수정
-    public void confirmRegularPaymentBySystem(UUID applicationId) {
-        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
+    public boolean confirmRegularPaymentBySystem(UUID applicationId) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNullForUpdate(applicationId)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
-        boolean alreadyConfirmed = application.isPaymentConfirmed();
-        application.confirmPayment();
-        if (!alreadyConfirmed) {
-            eventPublisher.publishEvent(new ApplicationPaymentConfirmedEvent(application));
+        if (application.isPaymentConfirmed()) {
+            return false;
         }
+        application.confirmPayment();
+        eventPublisher.publishEvent(new ApplicationPaymentConfirmedEvent(application));
+        return true;
     }
 
     /** 입금 대사 후보: 입금 확인 전인 유료 일반 모임 신청(PENDING·CONFIRMED). */

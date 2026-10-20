@@ -173,7 +173,9 @@ public enum ErrorCode {
     DEMO_DEPOSIT_TARGET_INVALID("이용권 또는 신청 중 하나만 지정해주세요.", HttpStatus.BAD_REQUEST),
     PAYMENT_TARGET_NOT_FOUND("입금 대기 중인 결제 건이 아닙니다.", HttpStatus.NOT_FOUND),
     DEPOSIT_NOTIFICATION_NOT_FOUND("존재하지 않는 입금 알림입니다.", HttpStatus.NOT_FOUND),
-    DEPOSIT_NOTIFICATION_ALREADY_MATCHED("이미 결제 건에 연결된 입금 알림입니다.", HttpStatus.CONFLICT),
+    DEPOSIT_NOTIFICATION_NOT_LINKABLE("이미 연결됐거나 입금 알림이 아니어서 연결할 수 없습니다.", HttpStatus.CONFLICT),
+    DEPOSIT_AMOUNT_MISMATCH("입금액과 결제 대상 금액이 다릅니다. 확인 후 강제 연결해주세요.", HttpStatus.CONFLICT),
+    PAYMENT_ALREADY_SETTLED("이미 입금 확인된 결제 건입니다.", HttpStatus.CONFLICT),
 
     // Rate Limit
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),

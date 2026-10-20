@@ -31,6 +31,13 @@ public class ExceptionCaseService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public boolean isOpen(UUID id) {
+        return exceptionCaseRepository.findById(id)
+                .map(exceptionCase -> exceptionCase.getStatus() == ExceptionCaseStatus.OPEN)
+                .orElse(false);
+    }
+
     /** 이 건이 OPEN이면 처리 완료로 닫는다. 없거나 이미 닫힌 건은 무시한다(입금 알림 수동 연결 등). */
     @Transactional
     public void resolveIfOpen(UUID id, UUID resolvedBy, String note) {

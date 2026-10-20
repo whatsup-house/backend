@@ -76,6 +76,8 @@ public class DepositReconciliationService {
     private static final String CASE_PREFIX = "입금 대사 실패: ";
     private static final DateTimeFormatter ALERT_TIME = DateTimeFormatter.ofPattern("MM/dd HH:mm:ss");
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    // 이보다 짧은 입금자명(한 글자)은 앞부분 비교로 여러 사람에 걸리기 쉬워 자동 처리하지 않는다.
+    private static final int MIN_AUTO_NAME_LENGTH = 2;
 
     private final DepositNotificationRepository depositNotificationRepository;
     private final DepositRepository depositRepository;
@@ -122,12 +124,14 @@ public class DepositReconciliationService {
         DepositNotification notification;
         try {
             notification = transaction.execute(status -> reconcile(raw, hash, source, receivedAt, actor, attempted));
-        } catch (DataIntegrityViolationException e) {
-            // 같은 원문이 동시에 들어와 다른 요청이 먼저 저장했다(UNIQUE text_hash).
-            return depositNotificationRepository.findByTextHash(hash)
-                    .map(DepositNotificationResponse::from)
-                    .orElseThrow(() -> e);
         } catch (RuntimeException e) {
+            // 같은 원문이 동시에 들어와 다른 요청이 먼저 저장했으면(UNIQUE text_hash) 그 결과를 돌려준다.
+            Optional<DepositNotification> winner = e instanceof DataIntegrityViolationException
+                    ? depositNotificationRepository.findByTextHash(hash) : Optional.empty();
+            if (winner.isPresent()) {
+                return DepositNotificationResponse.from(winner.get());
+            }
+            // 그 외(정산 실패, 저장 행이 없는 무결성 오류)는 알림과 예외 건을 새 트랜잭션으로 반드시 남긴다.
             log.warn("입금 자동 정산 실패, 예외함으로 넘김: {}", reasonOf(e));
             notification = transaction.execute(status -> recordSettleFailure(raw, hash, source, receivedAt, attempted.get(), e));
         }
@@ -149,6 +153,15 @@ public class DepositReconciliationService {
         PendingPayment target = request.getPassId() != null
                 ? findOwnPassTarget(userId, request.getPassId())
                 : findOwnDepositTarget(userId, request.getApplicationId());
+        // 같은 건을 다시 눌러도 예외함이 쌓이지 않게, 아직 열린 예외 건이 있으면 그 결과를 돌려준다.
+        Optional<DepositNotification> openFailure = depositNotificationRepository
+                .findFirstBySourceAndParsedNameAndParsedAmountAndExceptionCaseIdIsNotNullOrderByCreatedAtDesc(
+                        DepositSource.SIMULATOR, target.payerName(), target.amount())
+                .filter(notification -> notification.getResult() != DepositMatchResult.MATCHED
+                        && exceptionCaseService.isOpen(notification.getExceptionCaseId()));
+        if (openFailure.isPresent()) {
+            return DepositNotificationResponse.from(openFailure.get());
+        }
         LocalDateTime now = LocalDateTime.now();
         // 잔액은 매번 달라 원문(해시)이 겹치지 않는다.
         String raw = String.format(Locale.ROOT, "[입금] %s        %,d원 1002-000-000***계좌 잔액 %,d원 %s",
@@ -176,19 +189,26 @@ public class DepositReconciliationService {
         return AdminDepositNotificationPageResponse.from(rows.map(AdminDepositNotificationResponse::from));
     }
 
-    /** 예외 건 알림을 결제 대기 건에 수동 연결. 자동 대사와 같은 정산 후 예외 건을 처리 완료로 닫는다. */
+    /**
+     * 예외 건 알림을 결제 대기 건에 수동 연결. 자동 대사와 같은 정산 후 예외 건을 처리 완료로 닫는다.
+     * 이미 연결됐거나 입금 알림이 아닌(IGNORED) 행은 409. 입금액이 대상 금액과 다르면 force 없이는 409.
+     */
     @Transactional
     public AdminDepositNotificationResponse linkNotification(UUID id, DepositNotificationLinkRequest request, UUID adminId) {
         DepositNotification notification = depositNotificationRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.DEPOSIT_NOTIFICATION_NOT_FOUND));
-        if (notification.getResult() == DepositMatchResult.MATCHED) {
-            throw new CustomException(ErrorCode.DEPOSIT_NOTIFICATION_ALREADY_MATCHED);
+        if (notification.getResult() == DepositMatchResult.MATCHED || notification.getResult() == DepositMatchResult.IGNORED) {
+            throw new CustomException(ErrorCode.DEPOSIT_NOTIFICATION_NOT_LINKABLE);
         }
         Target target = buildTargets().stream()
                 .filter(candidate -> candidate.payment().type() == request.getTargetType()
                         && candidate.payment().targetId().equals(request.getTargetId()))
                 .findFirst()
                 .orElseThrow(() -> new CustomException(ErrorCode.PAYMENT_TARGET_NOT_FOUND));
+        if (notification.getParsedAmount() != null && notification.getParsedAmount() != target.payment().amount()
+                && !request.isForce()) {
+            throw new CustomException(ErrorCode.DEPOSIT_AMOUNT_MISMATCH);
+        }
         settle(target, "ADMIN:" + adminId);
         notification.match(target.payment());
         if (notification.getExceptionCaseId() != null) {
@@ -223,6 +243,11 @@ public class DepositReconciliationService {
         String name = parsed.get().name();
         int amount = parsed.get().amount();
         notification.parsed(name, amount);
+        if (name.length() < MIN_AUTO_NAME_LENGTH) {
+            notification.fail(DepositMatchResult.NO_CANDIDATE,
+                    openCase(null, "입금자명이 너무 짧아 자동 처리하지 않습니다 (" + name + " " + won(amount) + ")"));
+            return notification;
+        }
         List<Target> matches = buildTargets().stream()
                 .filter(target -> isMatch(target.payment(), name, amount))
                 .toList();
@@ -251,19 +276,26 @@ public class DepositReconciliationService {
         return notification;
     }
 
-    /** 결제 완료 처리. 운영자 버튼과 같은 서비스 메서드를 쓴다. */
+    /**
+     * 결제 완료 처리. 운영자 버튼과 같은 서비스 메서드를 쓴다. 대상이 이미 입금 확인됐으면(동시 입금 등) 던져서
+     * 같은 돈이 두 번 정산되지 않게 한다. 이용권은 settlePass가 PENDING이 아니면 던진다.
+     */
     private void settle(Target target, String actor) {
         PendingPayment payment = target.payment();
-        switch (payment.type()) {
+        boolean settled = switch (payment.type()) {
             case TICKET_PASS -> {
                 // 보증금 먼저: settlePass가 보증금 입금 여부로 신청 확정을 정한다.
-                if (target.withDeposit()) {
-                    depositService.markPaid(payment.applicationId());
+                boolean depositPaid = !target.withDeposit() || depositService.markPaid(payment.applicationId());
+                if (depositPaid) {
+                    ticketService.settlePass(payment.targetId(), actor);
                 }
-                ticketService.settlePass(payment.targetId(), actor);
+                yield depositPaid;
             }
             case DEPOSIT -> depositService.markPaid(payment.applicationId());
             case REGULAR_APPLICATION -> applicationService.confirmRegularPaymentBySystem(payment.applicationId());
+        };
+        if (!settled) {
+            throw new CustomException(ErrorCode.PAYMENT_ALREADY_SETTLED);
         }
     }
 

@@ -20,4 +20,7 @@ public class DepositNotificationLinkRequest {
     @NotNull
     @Schema(description = "결제 대상 ID(pending-targets의 targetId)", example = "b3f1c2d4-...")
     private UUID targetId;
+
+    @Schema(description = "입금액과 대상 금액이 달라도 연결(운영자 확인 후). 기본 false", example = "false")
+    private boolean force;
 }

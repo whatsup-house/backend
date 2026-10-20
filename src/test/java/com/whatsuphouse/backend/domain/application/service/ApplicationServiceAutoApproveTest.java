@@ -149,15 +149,19 @@ class ApplicationServiceAutoApproveTest {
     }
 
     @Test
-    @DisplayName("시스템 입금 확인은 처음엔 입금 완료 이벤트를 내고, 재확인에는 내지 않는다")
+    @DisplayName("시스템 입금 확인은 처음엔 입금 완료 이벤트를 내고 true, 재확인은 아무것도 바꾸지 않고 false(중복 정산 방지)")
     void confirmRegularPaymentBySystem_firstTimeOnlyPublishes() {
         Application application = regularApplication(15000);
-        given(applicationRepository.findByIdAndDeletedAtIsNull(application.getId()))
+        given(applicationRepository.findByIdAndDeletedAtIsNullForUpdate(application.getId()))
                 .willReturn(Optional.of(application));
 
-        applicationService.confirmRegularPaymentBySystem(application.getId());
-        applicationService.confirmRegularPaymentBySystem(application.getId());
+        boolean first = applicationService.confirmRegularPaymentBySystem(application.getId());
+        var confirmedAt = application.getPaymentConfirmedAt();
+        boolean second = applicationService.confirmRegularPaymentBySystem(application.getId());
 
+        assertThat(first).isTrue();
+        assertThat(second).isFalse();
+        assertThat(application.getPaymentConfirmedAt()).isEqualTo(confirmedAt);
         assertThat(application.isPaymentConfirmed()).isTrue();
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.PENDING);
         then(eventPublisher).should(times(1)).publishEvent(any(ApplicationPaymentConfirmedEvent.class));
@@ -167,7 +171,7 @@ class ApplicationServiceAutoApproveTest {
     @DisplayName("존재하지 않는 신청의 시스템 입금 확인은 APPLICATION_NOT_FOUND")
     void confirmRegularPaymentBySystem_notFound_throws() {
         UUID id = UUID.randomUUID();
-        given(applicationRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.empty());
+        given(applicationRepository.findByIdAndDeletedAtIsNullForUpdate(id)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> applicationService.confirmRegularPaymentBySystem(id))
                 .isInstanceOf(CustomException.class)

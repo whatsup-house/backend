@@ -5,8 +5,10 @@ import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -43,6 +45,11 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
     // session은 @Async 메일 발송에서 날짜·시간을 읽으므로 함께 로드한다.
     @EntityGraph(attributePaths = {"gathering", "session", "user"})
     Optional<Application> findByIdAndDeletedAtIsNull(UUID id);
+
+    // 시스템 입금 확인처럼 결제 상태를 바꾸는 처리용. 같은 신청의 동시 확인을 직렬화한다. (KAN-403)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from Application a where a.id = :id and a.deletedAt is null")
+    Optional<Application> findByIdAndDeletedAtIsNullForUpdate(@Param("id") UUID id);
 
     Optional<Application> findByPhoneAndBookingNumberAndDeletedAtIsNull(String phone, String bookingNumber);
 

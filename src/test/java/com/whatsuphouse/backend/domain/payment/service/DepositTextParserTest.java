@@ -45,6 +45,17 @@ class DepositTextParserTest {
     }
 
     @Test
+    @DisplayName("입금자명이 비면(공백만) 파싱 실패 — 빈 이름은 모든 후보에 앞부분 일치하므로")
+    void parse_blankName_empty() {
+        // given
+        String raw = "[입금]   9,900원 1002-157-849***계좌 잔액 17,163,887원 09/18 13:19:30";
+
+        // when & then
+        assertThat(DepositTextParser.isDepositAlert(raw)).isTrue();
+        assertThat(DepositTextParser.parse(raw)).isEmpty();
+    }
+
+    @Test
     @DisplayName("int 범위를 넘는 금액은 파싱 실패")
     void parse_hugeAmount_empty() {
         assertThat(DepositTextParser.parse("[입금] 한지형 99,999,999,999원 1002")).isEmpty();
