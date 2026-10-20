@@ -51,6 +51,7 @@ import java.time.Year;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -491,6 +492,16 @@ public class ApplicationService {
                 .map(a -> new PendingPayment(PaymentTargetType.REGULAR_APPLICATION, a.getId(), a.getId(),
                         a.getName(), a.getSession().getEffectivePrice()))
                 .toList();
+    }
+
+    /** 신청 ID → 모임 제목. 삭제됐거나 없는 ID는 빠진다. (KAN-426) */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> findGatheringTitles(Collection<UUID> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        return applicationRepository.findByIdInAndDeletedAtIsNull(applicationIds).stream()
+                .collect(Collectors.toMap(Application::getId, a -> a.getGathering().getTitle()));
     }
 
     /** 회차별 정원을 차지한 인원(승인+출석). 신청이 없는 회차는 결과에 없다. (KAN-338) */

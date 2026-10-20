@@ -208,6 +208,17 @@ public class TicketService {
                 .toList();
     }
 
+    /** 이용권 ID → 상품명(예: "1회권"). 삭제됐거나 없는 ID는 빠진다. (KAN-426) */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> findProductNames(Collection<UUID> passIds) {
+        if (passIds.isEmpty()) {
+            return Map.of();
+        }
+        return ticketPassRepository.findByIdInAndDeletedAtIsNull(passIds).stream()
+                .filter(pass -> pass.getProductName() != null)
+                .collect(Collectors.toMap(TicketPass::getId, TicketPass::getProductName));
+    }
+
     @Transactional(readOnly = true)
     public MyTicketsResponse getMyTickets(UUID userId) {
         return getMyTickets(userId, null);
