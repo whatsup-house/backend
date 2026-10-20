@@ -126,13 +126,14 @@ public class DiningApplicationService {
      * - 마감 후: 1회권 1회분 50%(원 단위 버림) 환불, 보증금 50% 반환(나머지 몰수), 참석 CANCELED_LATE. 제재 없음.
      * - 당일: 테이블(제안·확정)에 앉은 신청이면 노쇼와 동일 취급(환불 없음, 보증금 몰수 + 보증금 대상 지정).
      *   앉지 않은 신청(결제 대기·매칭 전)은 마감 후와 같다. (R18)
+     * - 배정 회차가 운영 사정으로 취소됐으면 시점과 상관없이 보증금 100% 반환, 제재 없음(이용권은 회차 취소 때 복원됨).
      * 멤버십·무료 신청은 이용권 환불이 없다. 이용권 환불이 있으면 refundAccount 필수(REFUND_ACCOUNT_REQUIRED).
      * 보증금은 신청 때 받은 반환 계좌로 돌려준다. 환불 차감 기록은 REFUND_PROCESSING → 송금 완료 시 REFUNDED.
      * 회차가 이미 시작했으면 CANCEL_WINDOW_CLOSED. 테이블에 앉아 있었으면 빼고 재조정한다(설계 4.7).
      */
     @Transactional
     public void cancelApplication(UUID applicationId, UUID userId, RefundAccount refundAccount) {
-        Application application = findCancellable(applicationId, userId);
+        Application application = findCancellable(applicationId, userId, true);
         DiningTable table = matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId);
         Settlement settlement = settle(application, table);
         // 아무것도 바꾸기 전에 확인한다.
@@ -161,7 +162,7 @@ public class DiningApplicationService {
 
     /** 지금 취소하면 적용되는 결과(PAY-02). 취소와 같은 검증·계산을 하고 아무것도 바꾸지 않는다. */
     public DiningCancelPreviewResponse previewCancel(UUID applicationId, UUID userId) {
-        Application application = findCancellable(applicationId, userId);
+        Application application = findCancellable(applicationId, userId, false);
         Settlement settlement = settle(application,
                 matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId));
         int ticketRefund = settlement.ticketRefundAmount();
@@ -177,8 +178,10 @@ public class DiningApplicationService {
 
     private Settlement settle(Application application, DiningTable table) {
         CancelWindow window = evaluateWindow(application);
-        boolean noShow = isNoShowCancel(window, table);
-        int percent = noShow ? 0 : window == CancelWindow.BEFORE_DEADLINE ? 100 : 50;
+        // 운영 사정으로 회차가 취소됐으면 시점과 상관없이 보증금 전액 반환·제재 없음. 이용권은 회차 취소 때 이미 복원됐다.
+        boolean sessionCancelled = application.isSessionCancelled();
+        boolean noShow = !sessionCancelled && isNoShowCancel(window, table);
+        int percent = sessionCancelled || window == CancelWindow.BEFORE_DEADLINE ? 100 : noShow ? 0 : 50;
         int ticketRefund = percent > 0 ? ticketService.refundableAmount(application.getId(), percent) : 0;
         Deposit deposit = depositService.findByApplicationIds(List.of(application.getId())).get(application.getId());
         if (deposit == null || deposit.getStatus() != DepositStatus.PAID) {
@@ -195,12 +198,17 @@ public class DiningApplicationService {
         return window == CancelWindow.SAME_DAY && table != null;
     }
 
-    private Application findCancellable(UUID applicationId, UUID userId) {
+    // lock: 취소는 신청 행을 잠그고 DB 최신 상태로 판단한다. 동시 취소의 뒤 요청은 409(이미 취소됨)가 된다.
+    // 미리보기는 읽기 전용 트랜잭션이라 잠그지 않는다.
+    private Application findCancellable(UUID applicationId, UUID userId, boolean lock) {
         // 취소하면 soft delete되므로 삭제된 신청까지 찾아야 "이미 취소됨(409)"을 구분할 수 있다.
         Application application = applicationRepository.findIncludingDeletedById(applicationId)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
         if (application.getUser() == null || !application.getUser().getId().equals(userId)) {
             throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
+        }
+        if (lock) {
+            applicationRepository.refreshForUpdate(application);
         }
         if (application.getStatus() == ApplicationStatus.CANCELLED) {
             throw new CustomException(ErrorCode.APPLICATION_ALREADY_CANCELLED);

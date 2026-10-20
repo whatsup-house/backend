@@ -13,6 +13,7 @@ import com.whatsuphouse.backend.domain.application.repository.ApplicationReposit
 import com.whatsuphouse.backend.domain.form.client.service.FormService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
@@ -302,6 +303,58 @@ class DiningApplicationServiceCancelTest {
 
         assertThat(preview).isEqualTo(new DiningCancelPreviewResponse(
                 CancelWindow.SAME_DAY, false, true, DepositOutcome.PARTIAL, false, 7_500, 25_000, true));
+    }
+
+    @Test
+    @DisplayName("회차 취소됨 + 마감 후 + 보증금 입금: 미리보기 RETURN 50,000, 취소는 보증금 100% 반환, 제재 없음")
+    void sessionCancelled_afterDeadline_fullDepositReturn() {
+        Application application = confirmedApplication(sessionOn(1, null));
+        application.getSession().changeStatus(GatheringSessionStatus.CANCELLED);
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        given(depositService.findByApplicationIds(List.of(applicationId)))
+                .willReturn(Map.of(applicationId, paidDeposit(application)));
+
+        DiningCancelPreviewResponse preview = diningApplicationService.previewCancel(applicationId, userId);
+        diningApplicationService.cancelApplication(applicationId, userId, null);
+
+        assertThat(preview).isEqualTo(new DiningCancelPreviewResponse(
+                CancelWindow.AFTER_DEADLINE, false, false, DepositOutcome.RETURN, false, 0, 50_000, false));
+        then(depositService).should().requestReturn(applicationId, 100);
+        then(depositService).should(never()).forfeit(any());
+        assertThat(user.isDepositRequired()).isFalse();
+    }
+
+    @Test
+    @DisplayName("회차 취소됨 + 당일 + 테이블에 앉음: 노쇼로 보지 않는다 — RETURN 50,000, 몰수·보증금 대상 지정 없음")
+    void sessionCancelled_sameDaySeated_noSanction() {
+        Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
+        application.getSession().changeStatus(GatheringSessionStatus.CANCELLED);
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        seatedTable(application.getSession());
+        given(depositService.findByApplicationIds(List.of(applicationId)))
+                .willReturn(Map.of(applicationId, paidDeposit(application)));
+
+        DiningCancelPreviewResponse preview = diningApplicationService.previewCancel(applicationId, userId);
+        diningApplicationService.cancelApplication(applicationId, userId, null);
+
+        assertThat(preview).isEqualTo(new DiningCancelPreviewResponse(
+                CancelWindow.SAME_DAY, false, false, DepositOutcome.RETURN, false, 0, 50_000, false));
+        then(depositService).should().requestReturn(applicationId, 100);
+        then(depositService).should(never()).forfeit(any());
+        assertThat(user.isDepositRequired()).isFalse();
+    }
+
+    @Test
+    @DisplayName("취소는 신청 행을 잠가 최신 상태로 판단한다(동시 취소의 뒤 요청은 409), 미리보기는 잠그지 않는다")
+    void cancel_locksApplicationRow_previewDoesNot() {
+        Application application = confirmedApplication(sessionOn(3, null));
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+
+        diningApplicationService.previewCancel(applicationId, userId);
+        then(applicationRepository).should(never()).refreshForUpdate(any());
+
+        diningApplicationService.cancelApplication(applicationId, userId, null);
+        then(applicationRepository).should().refreshForUpdate(application);
     }
 
     @Test

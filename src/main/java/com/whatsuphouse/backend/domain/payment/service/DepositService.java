@@ -86,9 +86,16 @@ public class DepositService {
 
     /** {@link #requestReturn(UUID)}과 같되 보증금의 percent%만 돌려준다(원 단위 버림, 나머지는 몰수). 마감 후 취소 50%. (KAN-418) */
     public void requestReturn(UUID applicationId, int percent) {
+        // 0% 반환은 몰수다. 0원 송금 요청을 만들지 않는다.
         lockFresh(applicationId)
                 .filter(deposit -> deposit.getStatus() == DepositStatus.PAID)
-                .ifPresent(deposit -> startReturn(deposit, percent));
+                .ifPresent(deposit -> {
+                    if (percent > 0) {
+                        startReturn(deposit, percent);
+                    } else {
+                        deposit.forfeit();
+                    }
+                });
     }
 
     /** 몰수(PAID·RETURN_PENDING → FORFEITED). 반환 대기였으면 아직 송금 전인 반환 요청을 거둔다. 그 외는 무시한다. */

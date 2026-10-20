@@ -10,6 +10,7 @@ import com.whatsuphouse.backend.domain.application.enums.CancelWindow;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
@@ -250,6 +251,71 @@ class DiningCancelRefundIntegrationTest {
         Deposit deposit = depositRepository.findByApplication_Id(f.application.getId()).orElseThrow();
         assertThat(deposit.getStatus()).isEqualTo(DepositStatus.RETURNED);
         assertThat(deposit.getReturnAmount()).isEqualTo(25_000);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sessionCancelledWindows")
+    @DisplayName("운영자가 회차를 취소한 뒤 취소: 이용권은 이미 복원돼 환불 0, 보증금 50,000원 전액 반환, 제재 없음")
+    void cancel_afterSessionCancelled_fullDepositReturn(When when) {
+        // given: 회차 취소 일괄 처리처럼 회차를 CANCELLED로 바꾸고 차감을 복원한다.
+        Fixture f = fixture(when, Pass.COUNT, true, false);
+        GatheringSession session = gatheringSessionRepository.findById(f.application.getSession().getId()).orElseThrow();
+        session.changeStatus(GatheringSessionStatus.CANCELLED);
+        gatheringSessionRepository.save(session);
+        ticketService.refundOneTicket(f.application);
+
+        // when
+        DiningCancelPreviewResponse preview = diningApplicationService.previewCancel(f.application.getId(), f.user.getId());
+        diningApplicationService.cancelApplication(f.application.getId(), f.user.getId(), null);
+
+        // then
+        assertThat(preview.depositOutcome()).isEqualTo(DepositOutcome.RETURN);
+        assertThat(preview.depositReturnAmount()).isEqualTo(50_000);
+        assertThat(preview.ticketRefundAmount()).isZero();
+        assertThat(preview.requiresRefundAccount()).isFalse();
+        assertThat(preview.sanction()).isFalse();
+        assertThat(payouts(f.application.getId())).extracting(PayoutRequest::getType, PayoutRequest::getAmount)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(PayoutType.DEPOSIT_RETURN, 50_000));
+        Deposit deposit = depositRepository.findByApplication_Id(f.application.getId()).orElseThrow();
+        assertThat(deposit.getStatus()).isEqualTo(DepositStatus.RETURN_PENDING);
+        assertThat(deposit.getReturnAmount()).isEqualTo(50_000);
+        assertThat(userRepository.findById(f.user.getId()).orElseThrow().isDepositRequired()).isFalse();
+    }
+
+    static Stream<When> sessionCancelledWindows() {
+        return Stream.of(When.AFTER_DEADLINE, When.SAME_DAY_SEATED);
+    }
+
+    @Test
+    @DisplayName("동시 취소: 신청 행을 잠가 하나만 취소되고 다른 요청은 APPLICATION_ALREADY_CANCELLED, 송금 요청은 한 벌만")
+    void cancel_concurrent_secondGets409() throws Exception {
+        // given
+        Fixture f = fixture(When.BEFORE_DEADLINE, Pass.COUNT, true, false);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.Callable<Object> cancel = () -> {
+            start.await();
+            try {
+                diningApplicationService.cancelApplication(f.application.getId(), f.user.getId(), REQUEST_ACCOUNT);
+                return "OK";
+            } catch (CustomException e) {
+                return e.getErrorCode();
+            }
+        };
+
+        // when
+        java.util.concurrent.Future<Object> first = pool.submit(cancel);
+        java.util.concurrent.Future<Object> second = pool.submit(cancel);
+        start.countDown();
+        List<Object> results = List.of(first.get(30, java.util.concurrent.TimeUnit.SECONDS),
+                second.get(30, java.util.concurrent.TimeUnit.SECONDS));
+        pool.shutdown();
+
+        // then
+        assertThat(results).containsExactlyInAnyOrder("OK", ErrorCode.APPLICATION_ALREADY_CANCELLED);
+        assertThat(payouts(f.application.getId())).extracting(PayoutRequest::getType, PayoutRequest::getAmount)
+                .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple(PayoutType.REFUND, COUNT_PRICE),
+                        org.assertj.core.groups.Tuple.tuple(PayoutType.DEPOSIT_RETURN, 50_000));
     }
 
     @Test

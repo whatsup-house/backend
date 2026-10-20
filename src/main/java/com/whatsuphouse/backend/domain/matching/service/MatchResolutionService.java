@@ -91,7 +91,7 @@ public class MatchResolutionService {
                 .orElseThrow(() -> new CustomException(ErrorCode.RESOLUTION_NOT_FOUND));
         checkOwner(resolution, userId);
         Application application = resolution.getApplication();
-        // 신청을 따로 취소(사전 취소)했으면 이미 이용권이 복원돼 더 처리할 것이 없다.
+        // 신청을 따로 취소(사전 취소)했으면 취소 환불 정책대로 이미 정산돼 더 처리할 것이 없다. (KAN-418)
         if (!resolution.isOffered() || application.getStatus() == ApplicationStatus.CANCELLED) {
             throw new CustomException(ErrorCode.RESOLUTION_ALREADY_HANDLED);
         }
