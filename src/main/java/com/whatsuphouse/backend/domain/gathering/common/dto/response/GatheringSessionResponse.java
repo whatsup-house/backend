@@ -62,7 +62,7 @@ public class GatheringSessionResponse {
     @Schema(description = "테이블 최대 인원", example = "6")
     private Integer tableSizeMax;
 
-    @Schema(description = "그룹 최소 점수", example = "0.35")
+    @Schema(description = "[미사용] 그룹 최소 점수. 매칭에 반영되지 않는다", example = "0.35", deprecated = true)
     private BigDecimal minGroupScore;
 
     @Schema(description = "테이블 내 최대 나이 차(출생연도 기준)", example = "8")

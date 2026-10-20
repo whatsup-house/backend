@@ -5,6 +5,8 @@ public enum UnassignedReason {
     AGE_GAP,
     BLOCKED_PAIR,
     NOT_ENOUGH_PEOPLE,
+    /** 더 이상 만들지 않는다(KAN-420). 기존 match_runs.unassigned_reasons JSON 역직렬화용으로만 남긴다. */
+    @Deprecated
     LOW_SCORE,
     NEXT_SESSION_WAITING
 }
