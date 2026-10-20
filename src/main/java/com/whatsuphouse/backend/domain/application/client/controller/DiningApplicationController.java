@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.client.controller;
 
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningApplicationListResponse;
+import com.whatsuphouse.backend.domain.application.client.dto.response.DiningCancelPreviewResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningPrefillResponse;
 import com.whatsuphouse.backend.domain.application.client.service.DiningApplicationService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
@@ -29,7 +30,8 @@ public class DiningApplicationController {
     private final DiningApplicationService diningApplicationService;
 
     @Operation(summary = "내 우연한 식탁 신청 목록",
-            description = "희망 회차, 배정 회차, 신청·매칭·이용권 상태, 배정 테이블 요약을 함께 반환합니다. 취소한 신청은 빠집니다.")
+            description = "희망 회차, 배정 회차, 신청·매칭·이용권·보증금 상태, 배정 테이블 요약을 함께 반환합니다. "
+                    + "최근 30일 안에 취소한 신청은 status=CANCELLED로 포함합니다.")
     @GetMapping("/me/applications")
     public ResponseEntity<ApiResult<DiningApplicationListResponse>> listMyApplications(
             @AuthenticationPrincipal UserPrincipal principal
@@ -48,9 +50,21 @@ public class DiningApplicationController {
         return ResponseEntity.ok(ApiResult.success(diningApplicationService.getPrefill(principal.getUserId(), gatheringId)));
     }
 
-    @Operation(summary = "우연한 식탁 신청 사전 취소",
-            description = "회차 시작 2일 전까지 취소할 수 있습니다(배정 전이면 아직 시작하지 않은 희망 회차 중 가장 이른 회차 기준). "
-                    + "차감한 이용권은 복원됩니다. 기한이 지나면 CANCEL_WINDOW_CLOSED, 이미 취소한 신청은 409입니다.")
+    @Operation(summary = "우연한 식탁 취소 미리보기",
+            description = "지금 취소하면 적용되는 결과(시점, 1회권 복원, 환불, 보증금 반환·몰수, 제재)를 반환합니다. 취소와 같은 오류 규칙을 따릅니다.")
+    @GetMapping("/applications/{id}/cancel-preview")
+    public ResponseEntity<ApiResult<DiningCancelPreviewResponse>> cancelPreview(
+            @Parameter(description = "신청 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResult.success(diningApplicationService.previewCancel(id, principal.getUserId())));
+    }
+
+    @Operation(summary = "우연한 식탁 신청 취소",
+            description = "기준 회차(배정 회차, 배정 전이면 아직 시작하지 않은 희망 회차 중 가장 이른 회차) 날짜로 시점을 나눕니다. "
+                    + "마감(전날 0시) 전: 1회권 복원·보증금 반환. 마감 후: 복원 없음·보증금 반환. 당일: 보증금 몰수·보증금 대상 지정. "
+                    + "돈으로 환불하지 않습니다. 회차가 시작했으면 CANCEL_WINDOW_CLOSED, 이미 취소한 신청은 409입니다.")
     @PostMapping("/applications/{id}/cancel")
     public ResponseEntity<ApiResult<Void>> cancel(
             @Parameter(description = "신청 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")

@@ -195,6 +195,7 @@ public class AdminApplicationService {
 
     // 입금 확인/해제 토글. 신청 상태(status)와 독립적으로 동작하며 확정을 자동 트리거하지 않는다. (KAN-242)
     @Transactional
+    // 같은 입금 확인 규칙 - ApplicationService.confirmRegularPaymentBySystem과 함께 수정
     public ApplicationPaymentResponse changePayment(UUID id, ApplicationPaymentRequest request) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));

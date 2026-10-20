@@ -89,6 +89,11 @@ dining:
   system-admin-id: ${DINING_SYSTEM_ADMIN_ID:}
   resolution-respond-hours: 48
 
+# 입금 알림 웹훅 공유 시크릿(KAN-403). 비어 있으면 웹훅은 항상 401. 값은 .env·배포 환경변수로만.
+payment:
+  deposit-webhook:
+    secret: ${DEPOSIT_WEBHOOK_SECRET:}
+
 # 피드 영상 URL 허용 접두사 (KAN-380). 비어 있으면 https URL 이면 허용한다.
 feed:
   video-base-url: ${R2_PUBLIC_BASE_URL:}

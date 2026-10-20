@@ -116,6 +116,7 @@ jobs:
             "BOT_ALLOWED_USER_IDS=${{ secrets.BOT_ALLOWED_USER_IDS }}" \
             "WHATSUP_BOT_TOKEN=${{ secrets.WHATSUP_BOT_TOKEN }}" \
             "SLACK_SIGNAL_WEBHOOK_URL=${{ secrets.SLACK_SIGNAL_WEBHOOK_URL }}" \
+            "DEPOSIT_WEBHOOK_SECRET=${{ secrets.DEPOSIT_WEBHOOK_SECRET }}" \
             | ssh ec2-user@${{ secrets.EC2_HOST }} "cat > ~/whatsup/.env"
 
       - name: Copy docker-compose

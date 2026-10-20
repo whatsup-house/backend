@@ -24,6 +24,7 @@ import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepo
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.notification.event.DiningReallocatingEvent;
 import com.whatsuphouse.backend.domain.matching.repository.MatchRunRepository;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -47,6 +48,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -85,6 +87,9 @@ class DiningMatchServiceTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private MatchResolutionService matchResolutionService;
+
+    @Mock
+    private DepositService depositService;
 
     @InjectMocks
     private DiningMatchService diningMatchService;
@@ -146,6 +151,20 @@ class DiningMatchServiceTest {
             wishes.put(application.getId(), list);
         }
         given(adminApplicationService.findCandidateSessions(anyCollection())).willReturn(wishes);
+    }
+
+    @Test
+    @DisplayName("보증금 대상인데 보증금 입금 전인 신청은 매칭 후보에서 빠진다 (KAN-402)")
+    void matchCandidates_excludeUnpaidDeposit() {
+        givenRun(false);
+        given(depositService.findUnsatisfiedApplicationIds(anyCollection())).willReturn(Set.of(new UUID(0, 0)));
+
+        MatchRunResponse response = diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        assertThat(response.getCandidateCount()).isEqualTo(4);
+        assertThat(response.getUnassignedCount()).isZero();
+        assertThat(applications.get(0).getMatchStatus()).isEqualTo(MatchStatus.WAITING);
+        assertThat(applications.subList(1, 5)).allSatisfy(a -> assertThat(a.getMatchStatus()).isEqualTo(MatchStatus.CONFIRM_PENDING));
     }
 
     @Test
