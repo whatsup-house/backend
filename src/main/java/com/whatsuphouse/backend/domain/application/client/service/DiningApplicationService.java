@@ -121,11 +121,13 @@ public class DiningApplicationService {
     }
 
     /**
-     * 취소(설계 4.1, KAN-402, KAN-418). 기준 회차 날짜로 시점을 나눈다. 이용권은 복원하지 않고 돈으로 환불한다.
+     * 취소(설계 4.1, KAN-402, KAN-418, KAN-420). 기준 회차 날짜로 시점을 나눈다. 이용권은 복원하지 않고 돈으로 환불한다.
+     * - 테이블(제안·확정)에 앉지 않은 신청(결제 대기·매칭 전·미배정)은 시점과 상관없이 1회분 100% 환불, 보증금 100% 반환,
+     *   제재 없음. 매칭되지 않은 건 서비스 책임이다. (KAN-420)
+     * 테이블에 앉은 신청:
      * - 마감 전: 1회권 1회분 100% 환불 송금 요청, 보증금 100% 반환, 참석 CANCELED_EARLY.
      * - 마감 후: 1회권 1회분 50%(원 단위 버림) 환불, 보증금 50% 반환(나머지 몰수), 참석 CANCELED_LATE. 제재 없음.
-     * - 당일: 테이블(제안·확정)에 앉은 신청이면 노쇼와 동일 취급(환불 없음, 보증금 몰수 + 보증금 대상 지정).
-     *   앉지 않은 신청(결제 대기·매칭 전)은 마감 후와 같다. (R18)
+     * - 당일: 노쇼와 동일 취급(환불 없음, 보증금 몰수 + 보증금 대상 지정).
      * - 배정 회차가 운영 사정으로 취소됐으면 시점과 상관없이 보증금 100% 반환, 제재 없음(이용권은 회차 취소 때 복원됨).
      * 멤버십·무료 신청은 이용권 환불이 없다. 이용권 환불이 있으면 refundAccount 필수(REFUND_ACCOUNT_REQUIRED).
      * 보증금은 신청 때 받은 반환 계좌로 돌려준다. 환불 차감 기록은 REFUND_PROCESSING → 송금 완료 시 REFUNDED.
@@ -181,7 +183,7 @@ public class DiningApplicationService {
                 ticketRefund, settlement.depositReturnAmount(), ticketRefund > 0);
     }
 
-    // 취소 시점·노쇼 여부로 정한 환불 비율(100·50·0)과 그 비율로 나갈 돈. 취소와 미리보기가 같이 쓴다.
+    // 취소 시점·착석·노쇼 여부로 정한 환불 비율(100·50·0)과 그 비율로 나갈 돈. 취소와 미리보기가 같이 쓴다.
     private record Settlement(CancelWindow window, boolean noShow, int refundPercent,
                               int ticketRefundAmount, int depositReturnAmount, DepositOutcome depositOutcome) {
     }
@@ -190,8 +192,10 @@ public class DiningApplicationService {
         CancelWindow window = evaluateWindow(application);
         // 운영 사정으로 회차가 취소됐으면 시점과 상관없이 보증금 전액 반환·제재 없음. 이용권은 회차 취소 때 이미 복원됐다.
         boolean sessionCancelled = application.isSessionCancelled();
-        boolean noShow = !sessionCancelled && isNoShowCancel(window, table);
-        int percent = sessionCancelled || window == CancelWindow.BEFORE_DEADLINE ? 100 : noShow ? 0 : 50;
+        // 테이블에 앉지 않은 신청은 매칭되지 않은 게 서비스 책임이라 시점과 상관없이 100%. (KAN-420)
+        boolean seated = table != null;
+        boolean noShow = !sessionCancelled && seated && window == CancelWindow.SAME_DAY;
+        int percent = sessionCancelled || !seated || window == CancelWindow.BEFORE_DEADLINE ? 100 : noShow ? 0 : 50;
         int ticketRefund = percent > 0 ? ticketService.refundableAmount(application.getId(), percent) : 0;
         Deposit deposit = depositService.findByApplicationIds(List.of(application.getId())).get(application.getId());
         if (deposit == null || deposit.getStatus() != DepositStatus.PAID) {
@@ -201,11 +205,6 @@ public class DiningApplicationService {
         DepositOutcome outcome = percent == 100 ? DepositOutcome.RETURN
                 : percent > 0 ? DepositOutcome.PARTIAL : DepositOutcome.FORFEIT;
         return new Settlement(window, noShow, percent, ticketRefund, deposit.returnAmountFor(percent), outcome);
-    }
-
-    // 당일 취소는 테이블(제안·확정)에 앉은 신청만 노쇼로 본다. 앉지 않은 신청은 마감 후 취소와 같다. (R18)
-    private static boolean isNoShowCancel(CancelWindow window, DiningTable table) {
-        return window == CancelWindow.SAME_DAY && table != null;
     }
 
     // 잠그지 않고 읽는다(미리보기는 읽기 전용 트랜잭션). 취소는 잠근 뒤 checkCancellableStatus를 다시 부른다.
