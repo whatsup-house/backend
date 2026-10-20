@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.application.client.controller;
 
+import com.whatsuphouse.backend.domain.application.client.dto.request.DiningCancelRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningCancelPreviewResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningPrefillResponse;
@@ -9,12 +10,14 @@ import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,7 +54,8 @@ public class DiningApplicationController {
     }
 
     @Operation(summary = "우연한 식탁 취소 미리보기",
-            description = "지금 취소하면 적용되는 결과(시점, 1회권 복원, 환불, 보증금 반환·몰수, 제재)를 반환합니다. 취소와 같은 오류 규칙을 따릅니다.")
+            description = "지금 취소하면 적용되는 결과(시점, 이용권 환불 금액, 보증금 반환 금액·처리, 환불 계좌 필요 여부, 제재)를 반환합니다. "
+                    + "취소와 같은 계산·오류 규칙을 따릅니다.")
     @GetMapping("/applications/{id}/cancel-preview")
     public ResponseEntity<ApiResult<DiningCancelPreviewResponse>> cancelPreview(
             @Parameter(description = "신청 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
@@ -63,15 +67,19 @@ public class DiningApplicationController {
 
     @Operation(summary = "우연한 식탁 신청 취소",
             description = "기준 회차(배정 회차, 배정 전이면 아직 시작하지 않은 희망 회차 중 가장 이른 회차) 날짜로 시점을 나눕니다. "
-                    + "마감(전날 0시) 전: 1회권 복원·보증금 반환. 마감 후: 복원 없음·보증금 반환. 당일: 보증금 몰수·보증금 대상 지정. "
-                    + "돈으로 환불하지 않습니다. 회차가 시작했으면 CANCEL_WINDOW_CLOSED, 이미 취소한 신청은 409입니다.")
+                    + "마감(전날 0시) 전: 1회권 1회분 전액 환불·보증금 전액 반환. 마감 후: 1회권 50% 환불·보증금 50% 반환. "
+                    + "당일(테이블에 앉은 신청): 환불 없음·보증금 몰수·보증금 대상 지정. 이용권은 복원하지 않습니다. "
+                    + "이용권 환불이 있으면 refundAccount 필수(없으면 REFUND_ACCOUNT_REQUIRED), 보증금은 신청 때 받은 계좌로 반환합니다. "
+                    + "회차가 시작했으면 CANCEL_WINDOW_CLOSED, 이미 취소한 신청은 409입니다.")
     @PostMapping("/applications/{id}/cancel")
     public ResponseEntity<ApiResult<Void>> cancel(
             @Parameter(description = "신청 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
             @PathVariable UUID id,
+            @Valid @RequestBody(required = false) DiningCancelRequest request,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        diningApplicationService.cancelApplication(id, principal.getUserId());
+        diningApplicationService.cancelApplication(id, principal.getUserId(),
+                request != null ? request.getRefundAccount() : null);
         return ResponseEntity.ok(ApiResult.success(null));
     }
 }

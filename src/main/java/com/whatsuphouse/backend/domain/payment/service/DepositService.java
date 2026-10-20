@@ -58,7 +58,7 @@ public class DepositService {
             deposit.markPaid();
             Application application = deposit.getApplication();
             if (application.getStatus() == ApplicationStatus.CANCELLED) {
-                startReturn(deposit);
+                startReturn(deposit, 100);
             } else if (application.getStatus() == ApplicationStatus.PAYMENT_PENDING
                     && ticketServiceProvider.getObject().hasTicketUse(applicationId)) {
                 application.confirm();
@@ -81,9 +81,26 @@ public class DepositService {
      * 미입금·이미 처리된 보증금·보증금 없는 신청은 무시한다. 잠근 뒤 최신 상태로 판단해 송금 요청이 두 번 생기지 않는다. (KAN-404)
      */
     public void requestReturn(UUID applicationId) {
+        requestReturn(applicationId, 100);
+    }
+
+    /** {@link #requestReturn(UUID)}과 같되 보증금의 percent%만 돌려준다(원 단위 버림, 나머지는 몰수). 마감 후 취소 50%. (KAN-418) */
+    public void requestReturn(UUID applicationId, int percent) {
+        // 0% 반환은 몰수다. 0원 송금 요청을 만들지 않는다.
         lockFresh(applicationId)
                 .filter(deposit -> deposit.getStatus() == DepositStatus.PAID)
-                .ifPresent(this::startReturn);
+                .ifPresent(deposit -> {
+                    if (percent > 0) {
+                        startReturn(deposit, percent);
+                    } else {
+                        deposit.forfeit();
+                    }
+                });
+    }
+
+    /** 이 신청의 보증금 행을 잠그고 최신 상태로 읽는다(없으면 무시). 신청 취소가 신청보다 먼저 잡는다. 잠금 순서: 회차 → 테이블 → 보증금 → 신청. */
+    public void lockForUpdate(UUID applicationId) {
+        lockFresh(applicationId);
     }
 
     /** 몰수(PAID·RETURN_PENDING → FORFEITED). 반환 대기였으면 아직 송금 전인 반환 요청을 거둔다. 그 외는 무시한다. */
@@ -115,10 +132,10 @@ public class DepositService {
         return locked;
     }
 
-    private void startReturn(Deposit deposit) {
-        deposit.requestReturn();
+    private void startReturn(Deposit deposit, int percent) {
+        deposit.requestReturn(percent);
         Application application = deposit.getApplication();
-        payoutService.request(PayoutType.DEPOSIT_RETURN, application.getUser().getId(), deposit.getAmount(),
+        payoutService.request(PayoutType.DEPOSIT_RETURN, application.getUser().getId(), deposit.getReturnAmount(),
                 deposit.getReturnAccount(), application.getId(), null, deposit.getId());
     }
 

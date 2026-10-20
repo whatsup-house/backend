@@ -31,7 +31,7 @@ public class DiningTableDetailResponse {
     private UUID chatRoomId;
     @Schema(description = "멤버(본인 포함), 좌석 순")
     private List<MemberView> members;
-    @Schema(description = "취소 정책 안내 문구", example = "회차 시작 2일 전까지 취소하면 이용권이 복원돼요.")
+    @Schema(description = "취소 정책 안내 문구", example = "회차 전전날 23:59까지 취소하면 전액, 그 뒤 전날까지는 50% 환불돼요. 당일 취소와 노쇼는 환불되지 않아요.")
     private String cancelPolicy;
     @Schema(description = "내 참석. 참석 기록이 없으면 null")
     private AttendanceView myAttendance;

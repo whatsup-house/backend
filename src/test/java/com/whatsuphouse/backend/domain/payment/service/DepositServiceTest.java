@@ -171,6 +171,33 @@ class DepositServiceTest {
     }
 
     @Test
+    @DisplayName("부분 반환(50%): RETURN_PENDING + 반환 금액 25,000원으로 송금 요청 (KAN-418)")
+    void requestReturn_halfPercent_partialPayout() {
+        Deposit deposit = pendingLocked();
+        deposit.markPaid();
+
+        depositService.requestReturn(application.getId(), 50);
+
+        assertThat(deposit.getStatus()).isEqualTo(DepositStatus.RETURN_PENDING);
+        assertThat(deposit.getReturnAmount()).isEqualTo(25_000);
+        then(payoutService).should().request(PayoutType.DEPOSIT_RETURN, application.getUser().getId(), 25_000,
+                deposit.getReturnAccount(), application.getId(), null, deposit.getId());
+    }
+
+    @Test
+    @DisplayName("0% 반환은 몰수: FORFEITED, 0원 송금 요청을 만들지 않는다 (KAN-418)")
+    void requestReturn_zeroPercent_forfeitsWithoutPayout() {
+        Deposit deposit = pendingLocked();
+        deposit.markPaid();
+
+        depositService.requestReturn(application.getId(), 0);
+
+        assertThat(deposit.getStatus()).isEqualTo(DepositStatus.FORFEITED);
+        assertThat(deposit.getReturnAmount()).isNull();
+        then(payoutService).shouldHaveNoInteractions();
+    }
+
+    @Test
     @DisplayName("몰수는 아직 돌려주지 않은 보증금(PAID·RETURN_PENDING)만 FORFEITED로, 반환 대기였으면 송금 전 반환 요청을 거둔다")
     void forfeit_paidOrReturnPending() {
         Deposit deposit = pendingLocked();
