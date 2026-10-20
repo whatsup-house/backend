@@ -155,6 +155,32 @@ class AdminGatheringServiceTest {
     }
 
     @Test
+    @DisplayName("심사용 숨김 종류의 회차도 관리자 목록에 나오고 hidden=true로 표시된다 (KAN-416)")
+    void listGatherings_hiddenKind_includedAndFlagged() {
+        // given
+        Gathering hiddenKind = Gathering.builder().title("우연한 식탁 (심사용)").build();
+        ReflectionTestUtils.setField(hiddenKind, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(hiddenKind, "hidden", true);
+        GatheringSession hiddenSession = GatheringSession.builder()
+                .gathering(hiddenKind)
+                .location(location)
+                .eventDate(LocalDate.now().plusDays(2))
+                .maxAttendees(20)
+                .build();
+        ReflectionTestUtils.setField(hiddenSession, "id", UUID.randomUUID());
+        given(gatheringSessionRepository.findByDeletedAtIsNull()).willReturn(List.of(session, hiddenSession));
+        given(applicationRepository.countBySessionIdsGroupByStatus(List.of(sessionId, hiddenSession.getId())))
+                .willReturn(List.of());
+
+        // when
+        List<AdminGatheringResponse> result = adminGatheringService.listGatherings(null, null, null, null);
+
+        // then
+        assertThat(result).extracting(AdminGatheringResponse::getId).containsExactly(sessionId, hiddenSession.getId());
+        assertThat(result).extracting(AdminGatheringResponse::isHidden).containsExactly(false, true);
+    }
+
+    @Test
     @DisplayName("status 필터로 회차 목록 반환")
     void listGatherings_withStatus_returnsFiltered() {
         // given

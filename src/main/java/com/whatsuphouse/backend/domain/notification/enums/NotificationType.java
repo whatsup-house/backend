@@ -14,5 +14,7 @@ public enum NotificationType {
     DINING_REALLOCATING,      // 우연한 식탁 다음 희망 회차로 재배치 대기 (KAN-349)
     DINING_REMINDER,          // 우연한 식탁 회차 24시간 전 리마인드 (KAN-349)
     DINING_FEEDBACK_REQUEST,  // 우연한 식탁 회차 종료 후 피드백 요청 (KAN-349)
-    DINING_NEXT_SESSIONS      // 우연한 식탁 새 회차 모집 (KAN-349)
+    DINING_NEXT_SESSIONS,     // 우연한 식탁 새 회차 모집 (KAN-349)
+    ADMIN_DEPOSIT_MATCHED,    // 관리자: 입금 알림이 결제 대기 건과 연결됨(자동·수동) (KAN-416)
+    ADMIN_DEPOSIT_EXCEPTION   // 관리자: 입금 알림을 자동 처리하지 못해 예외함에 들어감 (KAN-416)
 }

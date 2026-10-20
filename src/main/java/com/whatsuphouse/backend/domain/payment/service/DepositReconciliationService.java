@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
+import com.whatsuphouse.backend.domain.notification.event.AdminDepositNotifiedEvent;
 import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
 import com.whatsuphouse.backend.domain.payment.dto.request.DemoDepositRequest;
 import com.whatsuphouse.backend.domain.payment.dto.request.DepositNotificationLinkRequest;
@@ -26,6 +27,7 @@ import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -88,6 +90,7 @@ public class DepositReconciliationService {
     private final UserService userService;
     private final PlatformTransactionManager transactionManager;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     // DEPOSIT_WEBHOOK_SECRET. 비어 있으면 웹훅은 항상 401.
     @Value("${payment.deposit-webhook.secret:}")
@@ -123,7 +126,9 @@ public class DepositReconciliationService {
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         DepositNotification notification;
         try {
-            notification = transaction.execute(status -> reconcile(raw, hash, source, receivedAt, actor, attempted));
+            // 관리자 알림 이벤트는 이 트랜잭션이 커밋돼야 나간다(정산이 롤백되면 버려지고 아래 실패 기록이 대신 알린다).
+            notification = transaction.execute(status -> alertAdmins(
+                    reconcile(raw, hash, source, receivedAt, actor, attempted), false));
         } catch (RuntimeException e) {
             // 같은 원문이 동시에 들어와 다른 요청이 먼저 저장했으면(UNIQUE text_hash) 그 결과를 돌려준다.
             Optional<DepositNotification> winner = e instanceof DataIntegrityViolationException
@@ -133,7 +138,8 @@ public class DepositReconciliationService {
             }
             // 그 외(정산 실패, 저장 행이 없는 무결성 오류)는 알림과 예외 건을 새 트랜잭션으로 반드시 남긴다.
             log.warn("입금 자동 정산 실패, 예외함으로 넘김: {}", reasonOf(e));
-            notification = transaction.execute(status -> recordSettleFailure(raw, hash, source, receivedAt, attempted.get(), e));
+            notification = transaction.execute(status -> alertAdmins(
+                    recordSettleFailure(raw, hash, source, receivedAt, attempted.get(), e), false));
         }
         log.info("입금 알림 처리: id={}, source={}, result={}", notification.getId(), source, notification.getResult());
         return DepositNotificationResponse.from(notification);
@@ -215,6 +221,7 @@ public class DepositReconciliationService {
             exceptionCaseService.resolveIfOpen(notification.getExceptionCaseId(), adminId,
                     "입금 알림 수동 연결 (" + describe(target) + ")");
         }
+        alertAdmins(notification, true);
         return AdminDepositNotificationResponse.from(notification);
     }
 
@@ -261,6 +268,19 @@ public class DepositReconciliationService {
         } else {
             notification.fail(DepositMatchResult.MULTIPLE_CANDIDATES, openCase(null, "후보 " + matches.size() + "건 ("
                     + name + " " + won(amount) + ") — " + matches.stream().map(this::describe).collect(Collectors.joining(", "))));
+        }
+        return notification;
+    }
+
+    /**
+     * 기록된 알림을 활성 관리자 전원에게 알린다(커밋 후 인앱 알림). 입금 알림이 아닌 것(IGNORED)은 알리지 않는다.
+     * 같은 원문 재수신(중복)은 ingest가 이 경로 전에 돌려보내므로 알리지 않는다. 원문·계좌는 이벤트에 싣지 않는다. (KAN-416)
+     */
+    private DepositNotification alertAdmins(DepositNotification notification, boolean manual) {
+        if (notification.getResult() != DepositMatchResult.IGNORED) {
+            eventPublisher.publishEvent(new AdminDepositNotifiedEvent(notification.getId(),
+                    notification.getResult() == DepositMatchResult.MATCHED, manual,
+                    notification.getParsedName(), notification.getParsedAmount()));
         }
         return notification;
     }

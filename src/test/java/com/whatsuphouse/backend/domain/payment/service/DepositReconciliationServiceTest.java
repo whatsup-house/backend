@@ -30,6 +30,8 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.whatsuphouse.backend.domain.notification.event.AdminDepositNotifiedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -65,6 +67,7 @@ class DepositReconciliationServiceTest {
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private DepositRepository depositRepository;
     @Mock private UserService userService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private DepositReconciliationService service;
@@ -557,5 +560,111 @@ class DepositReconciliationServiceTest {
         assertThat(result.getResult()).isEqualTo(DepositMatchResult.MULTIPLE_CANDIDATES);
         then(depositNotificationRepository).should(never()).saveAndFlush(any());
         then(exceptionCaseService).should(never()).open(any(), any(), any(), any(), anyString());
+        then(eventPublisher).should(never()).publishEvent(any());
+    }
+
+    // ── 관리자 알림 이벤트 (KAN-416) ─────────────────────────────────────────
+
+    private AdminDepositNotifiedEvent publishedAdminEvent() {
+        ArgumentCaptor<AdminDepositNotifiedEvent> captor = ArgumentCaptor.forClass(AdminDepositNotifiedEvent.class);
+        then(eventPublisher).should(times(1)).publishEvent(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("자동 매칭되면 관리자 알림 이벤트 1건(matched, 입금자명·금액만)")
+    void ingest_matched_publishesAdminEvent() {
+        // given
+        candidates(List.of(new PendingPayment(PaymentTargetType.TICKET_PASS, passId, applicationId, "한지형", 9_900)),
+                List.of(), List.of());
+
+        // when
+        service.ingest(alert("한지형", "9,900"), DepositSource.IOS_SHORTCUT, now);
+
+        // then
+        AdminDepositNotifiedEvent event = publishedAdminEvent();
+        assertThat(event.isMatched()).isTrue();
+        assertThat(event.isManual()).isFalse();
+        assertThat(event.getPayerName()).isEqualTo("한지형");
+        assertThat(event.getAmount()).isEqualTo(9_900);
+    }
+
+    @Test
+    @DisplayName("예외함으로 가면(후보 없음) 관리자 알림 이벤트 1건(matched=false)")
+    void ingest_noCandidate_publishesAdminExceptionEvent() {
+        // given
+        candidates(List.of(), List.of(), List.of());
+        given(exceptionCaseService.open(eq(ExceptionCaseType.PAYMENT), isNull(), isNull(), isNull(),
+                startsWith("입금 대사 실패: "))).willReturn(exceptionCase());
+
+        // when
+        service.ingest(alert("한지형", "9,900"), DepositSource.MACRODROID, now);
+
+        // then
+        AdminDepositNotifiedEvent event = publishedAdminEvent();
+        assertThat(event.isMatched()).isFalse();
+        assertThat(event.getPayerName()).isEqualTo("한지형");
+    }
+
+    @Test
+    @DisplayName("정산 실패로 롤백되면 실패 기록 쪽 예외 이벤트 1건만 나간다")
+    void ingest_settleFails_publishesOnlyExceptionEvent() {
+        // given
+        candidates(List.of(new PendingPayment(PaymentTargetType.TICKET_PASS, passId, applicationId, "한지형", 9_900)),
+                List.of(), List.of());
+        willThrow(new CustomException(ErrorCode.TICKET_ALREADY_PROCESSED)).given(ticketService).settlePass(passId, "WEBHOOK");
+        given(exceptionCaseService.open(eq(ExceptionCaseType.PAYMENT), isNull(), isNull(), eq(applicationId),
+                startsWith("입금 대사 실패: "))).willReturn(exceptionCase());
+
+        // when
+        service.ingest(alert("한지형", "9,900"), DepositSource.MACRODROID, now);
+
+        // then
+        assertThat(publishedAdminEvent().isMatched()).isFalse();
+    }
+
+    @Test
+    @DisplayName("출금(IGNORED)·같은 원문 재수신은 관리자 알림 이벤트를 내지 않는다")
+    void ingest_ignoredOrDuplicate_noAdminEvent() {
+        // given
+        String raw = alert("한지형", "9,900");
+        DepositNotification existing = DepositNotification.receive(raw, DepositReconciliationService.hash(raw),
+                DepositSource.MACRODROID, now);
+        existing.parsed("한지형", 9_900);
+        existing.fail(DepositMatchResult.NO_CANDIDATE, UUID.randomUUID());
+        given(depositNotificationRepository.findByTextHash(DepositReconciliationService.hash(raw)))
+                .willReturn(Optional.of(existing));
+
+        // when
+        service.ingest(raw.replace("[입금]", "[출금]"), DepositSource.MACRODROID, now);
+        service.ingest(raw, DepositSource.MACRODROID, now);
+
+        // then
+        then(eventPublisher).should(never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("수동 연결도 관리자 알림 이벤트 1건(matched, manual)")
+    void linkNotification_publishesManualEvent() {
+        // given
+        UUID notificationId = UUID.randomUUID();
+        DepositNotification notification = DepositNotification.receive("[입금] 한지형 9,900원 ", "h",
+                DepositSource.MACRODROID, now);
+        notification.parsed("한지형", 9_900);
+        notification.fail(DepositMatchResult.NO_CANDIDATE, null);
+        given(depositNotificationRepository.findByIdForUpdate(notificationId)).willReturn(Optional.of(notification));
+        candidates(List.of(new PendingPayment(PaymentTargetType.TICKET_PASS, passId, applicationId, "한지형", 9_900)),
+                List.of(), List.of());
+        DepositNotificationLinkRequest request = new DepositNotificationLinkRequest();
+        ReflectionTestUtils.setField(request, "targetType", PaymentTargetType.TICKET_PASS);
+        ReflectionTestUtils.setField(request, "targetId", passId);
+
+        // when
+        service.linkNotification(notificationId, request, UUID.randomUUID());
+
+        // then
+        AdminDepositNotifiedEvent event = publishedAdminEvent();
+        assertThat(event.isMatched()).isTrue();
+        assertThat(event.isManual()).isTrue();
     }
 }

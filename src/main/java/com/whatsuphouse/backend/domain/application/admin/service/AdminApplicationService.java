@@ -54,7 +54,7 @@ public class AdminApplicationService {
     private final TicketService ticketService;
     private final ApplicationEventPublisher eventPublisher;
 
-    // 기존 API 호환(KAN-338 전까지): gatheringId 필터는 회차 ID다.
+    // gatheringId 필터는 회차 ID(기존 API 호환). 회차가 아닌 ID면 모임 종류 ID로 본다. 숨김 종류도 거르지 않는다. (KAN-416)
     public List<AdminApplicationResponse> getAllApplications(UUID gatheringId, ApplicationStatus status) {
         List<Application> applications = applicationRepository.findApplications(gatheringId, status);
         Map<UUID, List<AnswerView>> answersByApplicationId = loadAnswersByApplicationId(applications);
