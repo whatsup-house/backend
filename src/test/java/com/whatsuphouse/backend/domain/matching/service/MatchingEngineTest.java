@@ -274,6 +274,22 @@ class MatchingEngineTest {
         assertThat(result.unassigned()).isEmpty();
     }
 
+    @ParameterizedTest(name = "{0}명 → 6명 테이블 {1}개")
+    @CsvSource({"12, 2", "60, 10"})
+    @DisplayName("점수가 모두 같으면(최저·평균 동점) 테이블 수가 적은 쪽 — 합이었다면 4명 테이블로 쪼개졌다 (R29)")
+    void match_equalScores_prefersFewerTables_becauseObjectiveUsesAverage(int count, int tableCount) {
+        // 전원 관심사 같음·성별 모름 → 모든 페어 1점, 어떤 구성이든 테이블 점수 1.
+        List<MatchingEngine.Applicant> people = groups(count, 1);
+
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
+
+        assertThat(result.tables()).hasSize(tableCount).allSatisfy(table -> {
+            assertThat(table.seats()).hasSize(6);
+            assertThat(table.score().value()).isEqualByComparingTo("1");
+        });
+        assertThat(result.unassigned()).isEmpty();
+    }
+
     @Test
     @DisplayName("7명: 6명 테이블 하나 + 1명 NOT_ENOUGH_PEOPLE. 남길 사람은 점수를 가장 덜 깎는 사람이다")
     void match_sevenPeople_leavesOutWorstFit() {

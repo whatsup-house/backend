@@ -33,7 +33,7 @@ import java.util.stream.IntStream;
  *   출생연도를 모르는 사람은 나이 차 계산에서 빠진다.
  * - 분할(KAN-420): 서로 하드 조건이 맞는 덩어리마다 가능한 테이블 수별로 [min, max] 크기 조합(12 → 6·6, 4·4·4)을 시도한다.
  *   조합마다 그리디로 채운 뒤 한 명 옮기기·두 명 맞바꾸기 국소 탐색으로 다듬고, 목적함수
- *   (최저 테이블 점수 ↑, 점수 합 ↑, 테이블 수 ↓ 순)가 가장 좋은 구성을 고른다. 딱 나눠지지 않으면(7명 → 6 + 1)
+ *   (최저 테이블 점수 ↑, 평균 테이블 점수 ↑, 테이블 수 ↓ 순)가 가장 좋은 구성을 고른다. 딱 나눠지지 않으면(7명 → 6 + 1)
  *   가장 적은 인원을 남기고, 누구를 남길지도 같은 목적함수로 정한다. 남은 사람은 병합·재배치로 간다.
  * - 페어 점수 = Σ(weight × 항목) / Σweight. 답이 없어 계산할 수 없는 항목은 분자·분모에서 뺀다. Σweight = 0이면 0.
  * - 그룹 점수 = 0.7·pairAvg + 0.3·pairMin − 페널티, 0 미만은 0.
@@ -251,15 +251,15 @@ public class MatchingEngine {
         // ── 분할 (KAN-420) ────────────────────────────────────────────────────
 
         /** 덩어리 분할 결과. tables는 모두 [min, max] 크기, bench는 테이블에 못 넣은 사람(가장 적게). */
-        private record Partition(List<List<Integer>> tables, List<Integer> bench, double minScore, double sumScore) {
+        private record Partition(List<List<Integer>> tables, List<Integer> bench, double minScore, double avgScore) {
 
-            // 최저 테이블 점수 ↑ → 점수 합 ↑ → 테이블 수 ↓
+            // 최저 테이블 점수 ↑ → 평균 테이블 점수 ↑ → 테이블 수 ↓. 합이 아니라 평균이라 테이블 수가 많다고 유리하지 않다(R29).
             boolean betterThan(Partition other) {
                 if (Math.abs(minScore - other.minScore) > EPS) {
                     return minScore > other.minScore;
                 }
-                if (Math.abs(sumScore - other.sumScore) > EPS) {
-                    return sumScore > other.sumScore;
+                if (Math.abs(avgScore - other.avgScore) > EPS) {
+                    return avgScore > other.avgScore;
                 }
                 return tables.size() < other.tables.size();
             }
@@ -323,7 +323,7 @@ public class MatchingEngine {
             start.tables().forEach(t -> tables.add(new ArrayList<>(t)));
             List<Integer> bench = new ArrayList<>(start.bench());
             Search search = new Search(tables, tables.stream().mapToDouble(this::rawScore).toArray(),
-                    start.minScore(), start.sumScore());
+                    start.minScore(), start.avgScore());
             // 사람 → 앉은 테이블 번호(bench는 −1)
             int[] where = new int[people.size()];
             List<Integer> everyone = new ArrayList<>(bench);
@@ -392,13 +392,13 @@ public class MatchingEngine {
             private final List<List<Integer>> tables;
             private final double[] scores;
             private double min;
-            private double sum;
+            private double avg;
 
-            Search(List<List<Integer>> tables, double[] scores, double min, double sum) {
+            Search(List<List<Integer>> tables, double[] scores, double min, double avg) {
                 this.tables = tables;
                 this.scores = scores;
                 this.min = min;
-                this.sum = sum;
+                this.avg = avg;
             }
 
             // 테이블 a·b(−1이면 bench라 점수와 무관)를 newA·newB로 바꿨을 때 목적함수가 엄격히 좋아지면 반영한다.
@@ -412,7 +412,8 @@ public class MatchingEngine {
                     newMin = Math.min(newMin, value);
                     newSum += value;
                 }
-                boolean better = Math.abs(newMin - min) > EPS ? newMin > min : newSum > sum + EPS;
+                double newAvg = newSum / scores.length;
+                boolean better = Math.abs(newMin - min) > EPS ? newMin > min : newAvg > avg + EPS;
                 if (!better) {
                     return false;
                 }
@@ -425,7 +426,7 @@ public class MatchingEngine {
                     scores[b] = scoreB;
                 }
                 min = newMin;
-                sum = newSum;
+                avg = newAvg;
                 return true;
             }
         }
@@ -437,7 +438,7 @@ public class MatchingEngine {
                 sum += score;
             }
             return new Partition(tables.stream().map(List::copyOf).toList(), List.copyOf(bench),
-                    Arrays.stream(scores).min().orElse(0), sum);
+                    Arrays.stream(scores).min().orElse(0), scores.length == 0 ? 0 : sum / scores.length);
         }
 
         private static List<Integer> replaced(List<Integer> group, int out, int in) {
