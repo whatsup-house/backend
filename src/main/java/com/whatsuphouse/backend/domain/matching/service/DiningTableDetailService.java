@@ -29,9 +29,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DiningTableDetailService {
 
-    /** 테이블 상세·확정 채팅 안내에 쓰는 취소 정책. 기한은 DiningApplicationService의 사전 취소 기한(2일)과 같다. */
+    /** 테이블 상세·확정 채팅 안내에 쓰는 취소 정책. 기한은 CancelPolicy(회차 전날 0시 마감)와 같다. (KAN-418) */
     public static final String CANCEL_POLICY =
-            "회차 시작 2일 전까지 취소하면 이용권이 복원돼요. 그 뒤에는 취소할 수 없고, 참석하지 않으면 노쇼로 기록돼요.";
+            "회차 전전날 23:59까지 취소하면 전액, 그 뒤 전날까지는 50% 환불돼요. 당일 취소와 노쇼는 환불되지 않아요.";
 
     private static final Set<DiningTableStatus> VISIBLE_STATUSES = EnumSet.of(DiningTableStatus.CONFIRMED, DiningTableStatus.DONE);
 

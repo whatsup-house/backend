@@ -86,6 +86,7 @@ public class DiningTableService {
      * 해체된 테이블은 비활성이라 다시 불러도 아무것도 하지 않는다.
      */
     public void rebalance(UUID tableId) {
+        // lockForUpdate와 같은 행 잠금. 취소처럼 호출자가 먼저 잡았으면 재진입이다.
         DiningTable table = lockTable(tableId);
         if (!table.isActive()) {
             return;
@@ -505,6 +506,11 @@ public class DiningTableService {
     }
 
     // ── 공통 ────────────────────────────────────────────────────────────────
+
+    /** 테이블 행을 잠근다(rebalance와 같은 잠금). 신청 취소가 보증금·신청보다 먼저 잡는다. 잠금 순서: 회차 → 테이블 → 보증금 → 신청. */
+    public void lockForUpdate(UUID tableId) {
+        lockTable(tableId);
+    }
 
     private DiningTable lockTable(UUID tableId) {
         return diningTableRepository.findByIdForUpdate(tableId)

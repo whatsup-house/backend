@@ -333,14 +333,13 @@ public class TicketService {
                 .anyMatch(TicketTransaction::isDeducted);
     }
 
-    /** 이 신청의 마지막 USE가 아직 차감 상태인 횟수권(1회권) 사용인가. 취소 미리보기의 '1회권 복원' 판단용. (KAN-402) */
+    /**
+     * 이 신청의 횟수권(1회권) 차감을 percent%로 돈 환불하면 나갈 금액(1회분 금액의 percent%, 원 단위 버림).
+     * 환불할 차감이 없거나(결제 대기·무료·이미 복원/환불) 멤버십 사용이면 0. 취소 미리보기·취소가 같이 쓴다. (KAN-418)
+     */
     @Transactional(readOnly = true)
-    public boolean hasCountDeduction(UUID applicationId) {
-        return ticketTransactionRepository
-                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
-                .filter(TicketTransaction::isDeducted)
-                .filter(use -> !use.getTicketPass().isPeriod())
-                .isPresent();
+    public int refundableAmount(UUID applicationId, int percent) {
+        return findRefundableDeduction(applicationId).map(use -> refundAmount(use.getTicketPass(), percent)).orElse(0);
     }
 
     /** 이 회차 날짜를 덮는 활성 멤버십이 있는가. 신청 도메인의 주 1회 검사 진입 조건. */
@@ -423,10 +422,12 @@ public class TicketService {
      * 차감 기록이 없거나 이미 복원·환불됐거나 멤버십 사용(기간 연장으로 보상)이면 빈 값. (설계 3.3, KAN-347, KAN-404)
      */
     public Optional<TicketDeductionStatus> refundPurchase(Application application, RefundAccount account) {
-        Optional<TicketTransaction> deduction = ticketTransactionRepository
-                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(application.getId(), TicketTransactionType.USE)
-                .filter(TicketTransaction::isDeducted)
-                .filter(use -> !use.getTicketPass().isPeriod());
+        return refundPurchase(application, account, 100);
+    }
+
+    /** {@link #refundPurchase(Application, RefundAccount)}과 같되 1회분 금액의 percent%(원 단위 버림)를 돌려준다. 신청 취소용. (KAN-418) */
+    public Optional<TicketDeductionStatus> refundPurchase(Application application, RefundAccount account, int percent) {
+        Optional<TicketTransaction> deduction = findRefundableDeduction(application.getId());
         if (deduction.isEmpty()) {
             return Optional.empty();
         }
@@ -434,11 +435,23 @@ public class TicketService {
         use.advanceRefund(TicketDeductionStatus.REFUND_REQUESTED);
         use.advanceRefund(TicketDeductionStatus.REFUND_PROCESSING);
         TicketPass pass = use.getTicketPass();
-        // 1회권은 구매가 그대로, 옛 다회권은 1회분.
-        int amount = pass.getPurchaseAmount() / Math.max(pass.getTotalCount(), 1);
-        payoutService.request(PayoutType.REFUND, application.getUser().getId(), amount, account,
+        payoutService.request(PayoutType.REFUND, application.getUser().getId(), refundAmount(pass, percent), account,
                 application.getId(), pass.getId(), null);
         return Optional.of(use.getStatus());
+    }
+
+    // 마지막 USE가 아직 차감 상태인 횟수권 사용. 멤버십 사용은 돈으로 돌려줄 1회분이 없다.
+    private Optional<TicketTransaction> findRefundableDeduction(UUID applicationId) {
+        return ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
+                .filter(TicketTransaction::isDeducted)
+                .filter(use -> !use.getTicketPass().isPeriod());
+    }
+
+    // 1회권은 구매가 그대로, 옛 다회권은 1회분. 그 percent%를 원 단위 버림.
+    private static int refundAmount(TicketPass pass, int percent) {
+        long perUse = pass.getPurchaseAmount() / Math.max(pass.getTotalCount(), 1);
+        return (int) (perUse * percent / 100);
     }
 
     /** 운영자 송금 완료 후속(PayoutSentEvent): 송금 대기(REFUND_PROCESSING)인 차감 기록을 REFUNDED로. 그 외는 무시. */
