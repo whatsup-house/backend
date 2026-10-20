@@ -1121,7 +1121,7 @@ class BotDispatchIntegrationTest {
     private void activePass(User user, int sessionCount) {
         TicketProductOption product = ticketProductRepository.save(new TicketProductOption("3회권", sessionCount, 29700));
         TicketPass pass = ticketPassRepository.save(new TicketPass(user, null, product));
-        adminTicketService.confirm(pass.getId());
+        adminTicketService.confirm(pass.getId(), admin.getId());
     }
 
     private UUID openRoom(User user) {
