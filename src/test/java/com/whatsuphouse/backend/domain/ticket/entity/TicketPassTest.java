@@ -1,12 +1,16 @@
 package com.whatsuphouse.backend.domain.ticket.entity;
 
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketProductKind;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -104,5 +108,48 @@ class TicketPassTest {
         pass.activate();    // remaining 4 == total
         pass.refundOne();
         assertThat(pass.getRemainingCount()).isEqualTo(4);
+    }
+
+    private TicketPass membershipPass(int months) {
+        User user = User.builder().email("m@example.com").password("p").name("회원")
+                .gender(Gender.FEMALE).age(25).nickname("m").phone("01012345678").build();
+        return new TicketPass(user, null, new TicketProductOption(
+                "멤버십 " + months + "개월", 0, 35000, TicketProductKind.PERIOD, months));
+    }
+
+    @Test
+    @DisplayName("멤버십은 활성화 날짜부터 N개월 뒤까지 쓸 수 있고, 그 뒤 회차에는 못 쓴다")
+    void activate_period_setsValidUntil() {
+        TicketPass pass = membershipPass(1);
+        pass.activate(LocalDateTime.of(2026, 10, 20, 14, 0));
+
+        assertThat(pass.isPeriod()).isTrue();
+        assertThat(pass.getValidUntil()).isEqualTo(LocalDate.of(2026, 11, 20));
+        assertThat(pass.isUsableOn(LocalDate.of(2026, 11, 20))).isTrue();
+        assertThat(pass.isUsableOn(LocalDate.of(2026, 11, 21))).isFalse();
+    }
+
+    @Test
+    @DisplayName("횟수권은 기간이 없고 isUsableOn은 잔여 기준")
+    void countPass_hasNoValidUntil() {
+        TicketPass pass = newPass();
+        pass.activate();
+        assertThat(pass.isPeriod()).isFalse();
+        assertThat(pass.getValidUntil()).isNull();
+        assertThat(pass.isUsableOn(LocalDate.now().plusYears(5))).isTrue();
+    }
+
+    @Test
+    @DisplayName("멤버십 연장은 만료일과 연장 일수를 함께 늘리고, 환불(refundOne)은 잔여를 바꾸지 않는다")
+    void extend_andRefund_period() {
+        TicketPass pass = membershipPass(3);
+        pass.activate(LocalDateTime.of(2026, 10, 20, 9, 0));
+        pass.extend(7);
+        pass.refundOne();
+
+        assertThat(pass.getValidUntil()).isEqualTo(LocalDate.of(2027, 1, 27));
+        assertThat(pass.getExtendedDays()).isEqualTo(7);
+        assertThat(pass.getRemainingCount()).isZero();
+        assertThat(pass.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
     }
 }

@@ -208,8 +208,8 @@ public class AdminGatheringService {
         List<GatheringSessionResponse> created = gatheringSessionRepository.saveAll(sessions).stream()
                 .map(session -> GatheringSessionResponse.from(session, 0))
                 .toList();
-        // 우연한 식탁 새 회차 → 최근 참석자에게 다음 모집 알림. 반복 생성도 요청 1건에 이벤트 1건(회원당 알림 1건). (KAN-349)
-        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
+        // 우연한 식탁 새 회차 → 최근 참석자에게 다음 모집 알림. 숨김 종류는 알리지 않는다. (KAN-407) 반복 생성도 요청 1건에 이벤트 1건(회원당 알림 1건). (KAN-349)
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE && !gathering.isHidden()) {
             eventPublisher.publishEvent(new DiningSessionsCreatedEvent(
                     gathering.getId(), gathering.getTitle(), location.getId(), location.getName()));
         }

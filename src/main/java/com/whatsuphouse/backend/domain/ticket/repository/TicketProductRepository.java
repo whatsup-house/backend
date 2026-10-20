@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface TicketProductRepository extends JpaRepository<TicketProductOption, UUID> {
 
-    List<TicketProductOption> findAllByDeletedAtIsNullOrderBySessionCountAscPriceAscCreatedAtAsc();
+    List<TicketProductOption> findAllByDeletedAtIsNullOrderByPriceAscCreatedAtAsc();
 
     Optional<TicketProductOption> findByIdAndDeletedAtIsNull(UUID id);
 }

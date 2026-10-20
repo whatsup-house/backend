@@ -21,8 +21,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -328,5 +330,68 @@ class ApplicationRepositoryTest {
                 .name(name)
                 .phone(phoneValue)
                 .build());
+    }
+
+    @Test
+    @DisplayName("내 우연한 식탁 신청: 활성 + 30일 안에 취소한 신청만, 그보다 오래 전 취소·다른 종류는 빠진다 (KAN-402)")
+    void findMyApplicationsIncludingRecentlyCancelled() {
+        Gathering randomTable = gatheringRepository.save(Gathering.builder()
+                .title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
+        GatheringSession thursday = saveSession(randomTable, LocalDate.now().plusDays(7));
+        Application active = saveUnassigned("WH-MY1", randomTable, thursday);
+        Application recentlyCancelled = saveUnassigned("WH-MY2", randomTable, thursday);
+        recentlyCancelled.cancel();
+        Application oldCancelled = saveUnassigned("WH-MY3", randomTable, thursday);
+        oldCancelled.cancel();
+        ReflectionTestUtils.setField(oldCancelled, "deletedAt", LocalDateTime.now().minusDays(31));
+        saveApplication("WH-MY4", session, user, null);   // 일반 모임
+        em.flush();
+        em.clear();
+
+        List<Application> found = applicationRepository.findMyApplicationsIncludingRecentlyCancelled(
+                user.getId(), GatheringType.RANDOM_TABLE, ApplicationStatus.CANCELLED, LocalDateTime.now().minusDays(30));
+
+        assertThat(found).extracting(Application::getId)
+                .containsExactlyInAnyOrder(active.getId(), recentlyCancelled.getId());
+    }
+
+    @Test
+    @DisplayName("입금 대사 후보 조회는 입금 전·미삭제·PENDING/CONFIRMED 일반 모임 신청만 돌려준다")
+    void findUnpaidRegularApplications_filtersPaidCancelledAndRandomTable() {
+        Application unpaid = saveApplication("WH-U1", session, null, "01011111111");
+        Application paid = saveApplication("WH-U2", session, null, "01022222222");
+        paid.confirmPayment();
+        Application cancelled = saveApplication("WH-U3", session, null, "01033333333");
+        cancelled.cancel();
+        Application rejected = saveApplication("WH-U4", session, null, "01044444444");
+        rejected.reject("사유");
+        Gathering randomTable = gatheringRepository.save(Gathering.builder()
+                .title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
+        saveUnassigned("WH-U5", randomTable, saveSession(randomTable, LocalDate.now().plusDays(7)));
+        em.flush();
+        em.clear();
+
+        List<Application> result = applicationRepository.findUnpaidRegularApplications(
+                GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED),
+                LocalDate.now().minusDays(1));
+
+        assertThat(result).extracting(Application::getBookingNumber).containsExactly("WH-U1");
+    }
+
+    @Test
+    @DisplayName("입금 대사 후보는 기준일(어제) 이전 회차의 미입금 신청을 뺀다 — 기준일·다가오는 회차는 포함")
+    void findUnpaidRegularApplications_excludesPastSessions() {
+        LocalDate since = LocalDate.now().minusDays(1);
+        saveApplication("WH-P1", saveSession(since.minusDays(30)), null, "01011111111");
+        saveApplication("WH-P2", saveSession(since.minusDays(1)), null, "01022222222");
+        saveApplication("WH-P3", saveSession(since), null, "01033333333");
+        saveApplication("WH-P4", session, null, "01044444444");   // 7일 뒤
+        em.flush();
+        em.clear();
+
+        List<Application> result = applicationRepository.findUnpaidRegularApplications(
+                GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED), since);
+
+        assertThat(result).extracting(Application::getBookingNumber).containsExactlyInAnyOrder("WH-P3", "WH-P4");
     }
 }

@@ -8,11 +8,13 @@ import com.whatsuphouse.backend.domain.ticket.admin.dto.response.TicketTransacti
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketProductResponse;
 import com.whatsuphouse.backend.domain.ticket.admin.service.AdminTicketService;
 import com.whatsuphouse.backend.global.common.ApiResult;
+import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -87,9 +89,10 @@ public class AdminTicketController {
     @Operation(summary = "이용권 입금 확인(활성화)")
     @PatchMapping("/{id}/confirm")
     public ResponseEntity<ApiResult<AdminTicketPassResponse>> confirm(
-            @Parameter(description = "이용권 ID", example = "b3f1c2d4-...") @PathVariable UUID id
+            @Parameter(description = "이용권 ID", example = "b3f1c2d4-...") @PathVariable UUID id,
+            @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.ok(ApiResult.success(adminTicketService.confirm(id)));
+        return ResponseEntity.ok(ApiResult.success(adminTicketService.confirm(id, principal.getUserId())));
     }
 
     @Operation(summary = "이용권 잔여 횟수 수동 추가·회수")

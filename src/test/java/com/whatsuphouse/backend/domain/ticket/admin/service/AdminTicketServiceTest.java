@@ -8,19 +8,14 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketPassRepository;
 import com.whatsuphouse.backend.domain.ticket.repository.TicketTransactionRepository;
-import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
-import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
-import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
-import org.springframework.context.ApplicationEventPublisher;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
-import com.whatsuphouse.backend.global.exception.CustomException;
-import com.whatsuphouse.backend.global.exception.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,18 +31,14 @@ import java.util.UUID;
 import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
-import static org.mockito.ArgumentMatchers.any;
 
 @ExtendWith(MockitoExtension.class)
 class AdminTicketServiceTest {
 
     @Mock private TicketPassRepository ticketPassRepository;
     @Mock private TicketTransactionRepository ticketTransactionRepository;
-    @Mock private ApplicationRepository applicationRepository;
-    @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private TicketService ticketService;
 
     @InjectMocks private AdminTicketService adminTicketService;
 
@@ -67,76 +58,18 @@ class AdminTicketServiceTest {
     }
 
     @Test
-    @DisplayName("입금 확인하면 이용권이 활성화된다")
-    void confirm_activates() {
+    @DisplayName("입금 확인은 TicketService.settlePass에 관리자 actor로 위임한다")
+    void confirm_delegatesToSettlePass() {
         UUID id = UUID.randomUUID();
-        TicketPass pass = pendingPass();
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
-
-        AdminTicketPassResponse response = adminTicketService.confirm(id);
-
-        assertThat(pass.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
-        assertThat(response.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
-        assertThat(response.getTotalCount()).isEqualTo(4);
-    }
-
-    @Test
-    @DisplayName("입금 확인 시 결제 대기 신청에 1회를 사용하고 자동 확정한다")
-    void confirm_paymentPendingApplication_autoConfirms() {
-        UUID id = UUID.randomUUID();
-        TicketPass pass = pendingPass();
-        ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
-        Gathering gathering = Gathering.builder().title("우연한 식탁")
-                .gatheringType(GatheringType.RANDOM_TABLE).build();
-        ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
-        GatheringSession session = GatheringSession.builder().gathering(gathering)
-                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(4).build();
-        ReflectionTestUtils.setField(session, "id", UUID.randomUUID());
-        Application application = Application.builder().bookingNumber("WH-PAY-001")
-                .session(session).user(user).name("홍길동")
-                .phone("01012345678").build();
-        ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
-        application.awaitPayment();
-        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
-
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
-        given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                user.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
-        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(
-                session.getId(), ApplicationStatus.SEAT_OCCUPYING)).willReturn(0);
-
-        adminTicketService.confirm(id);
-
-        assertThat(pass.getRemainingCount()).isEqualTo(3);
-        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
-        assertThat(application.isPaymentConfirmed()).isTrue();
-        // 결제 후 차감이 끝나는 경로에서도 매칭 대기가 유지된다. (KAN-342)
-        assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.WAITING);
-        then(eventPublisher).should().publishEvent(any(ApplicationConfirmedEvent.class));
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 이용권 확인 시 예외")
-    void confirm_notFound_throws() {
-        UUID id = UUID.randomUUID();
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.empty());
-
-        assertThatThrownBy(() -> adminTicketService.confirm(id))
-                .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_PASS_NOT_FOUND);
-    }
-
-    @Test
-    @DisplayName("이미 활성화된 이용권을 다시 확인하면 예외")
-    void confirm_alreadyActive_throws() {
-        UUID id = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
         TicketPass pass = pendingPass();
         pass.activate();
-        given(ticketPassRepository.findByIdAndDeletedAtIsNull(id)).willReturn(Optional.of(pass));
+        given(ticketService.settlePass(id, "ADMIN:" + adminId)).willReturn(pass);
 
-        assertThatThrownBy(() -> adminTicketService.confirm(id))
-                .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_ALREADY_PROCESSED);
+        AdminTicketPassResponse response = adminTicketService.confirm(id, adminId);
+
+        assertThat(response.getStatus()).isEqualTo(TicketPassStatus.ACTIVE);
+        assertThat(response.getTotalCount()).isEqualTo(4);
     }
 
     @Test
@@ -187,8 +120,7 @@ class AdminTicketServiceTest {
 
         given(ticketPassRepository.findByStatusAndDeletedAtIsNullOrderByCreatedAtAsc(TicketPassStatus.PENDING))
                 .willReturn(List.of(pass));
-        given(applicationRepository.findFirstByUser_IdAndStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
-                user.getId(), ApplicationStatus.PAYMENT_PENDING)).willReturn(Optional.of(application));
+        given(ticketService.resolvePaymentPendingApplication(pass)).willReturn(application);
 
         List<AdminPendingDepositResponse> result = adminTicketService.listPendingDeposits();
 

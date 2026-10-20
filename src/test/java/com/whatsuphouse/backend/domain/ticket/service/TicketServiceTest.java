@@ -4,6 +4,9 @@ import com.whatsuphouse.backend.domain.ticket.dto.response.MyTicketsResponse;
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
+import com.whatsuphouse.backend.domain.payment.enums.PayoutType;
+import com.whatsuphouse.backend.domain.payment.service.PayoutService;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketPass;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketProductOption;
 import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
@@ -54,6 +57,7 @@ class TicketServiceTest {
     @Mock private TicketProductRepository ticketProductRepository;
     @Mock private ApplicationRepository applicationRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private PayoutService payoutService;
 
     @InjectMocks private TicketService ticketService;
 
@@ -199,24 +203,46 @@ class TicketServiceTest {
     }
 
     @Test
-    @DisplayName("구매 건 환불(모의)은 차감 레코드를 REFUNDED로 넘기고 잔여는 그대로 두며, 이후 취소 복구는 이용권을 돌려주지 않는다")
-    void refundPurchase_refundsDeductionWithoutRestoringTicket() {
+    @DisplayName("구매 건 환불은 차감 기록을 REFUND_PROCESSING에서 멈추고 1회분 금액으로 송금 요청을 만들며, 잔여와 이후 취소 복구는 건드리지 않는다")
+    void refund_stopsAtProcessing_createsPayout() {
         TicketPass pass = activePass(2);
         UUID applicationId = UUID.randomUUID();
         Application application = mock(Application.class);
         given(application.getId()).willReturn(applicationId);
+        given(application.getUser()).willReturn(user);
         TicketTransaction use = TicketTransaction.of(pass, application, TicketTransactionType.USE, -1, "테스트");
         given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE))
                 .willReturn(Optional.of(use));
+        RefundAccount account = new RefundAccount("국민", "12345678901", "홍길동");
 
-        assertThat(ticketService.refundPurchase(application)).contains(TicketDeductionStatus.REFUNDED);
-        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.REFUNDED);
+        assertThat(ticketService.refundPurchase(application, account)).contains(TicketDeductionStatus.REFUND_PROCESSING);
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.REFUND_PROCESSING);
         assertThat(pass.getRemainingCount()).isEqualTo(2);
+        // 4회권 18,000원의 1회분
+        then(payoutService).should().request(PayoutType.REFUND, userId, 4_500, account, applicationId, pass.getId(), null);
 
         ticketService.refundOneTicket(application);
         assertThat(pass.getRemainingCount()).isEqualTo(2);
-        assertThat(ticketService.refundPurchase(application)).isEmpty();
+        assertThat(ticketService.refundPurchase(application, account)).isEmpty();
         then(ticketTransactionRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("송금 완료 후속: 송금 대기(REFUND_PROCESSING)인 차감 기록만 REFUNDED로")
+    void completeRefund_processingToRefunded() {
+        TicketPass pass = activePass(2);
+        UUID applicationId = UUID.randomUUID();
+        TicketTransaction use = TicketTransaction.of(pass, mock(Application.class), TicketTransactionType.USE, -1, "테스트");
+        given(ticketTransactionRepository.findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE))
+                .willReturn(Optional.of(use));
+
+        ticketService.completeRefund(applicationId);
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.DEDUCTED);
+
+        use.advanceRefund(TicketDeductionStatus.REFUND_REQUESTED);
+        use.advanceRefund(TicketDeductionStatus.REFUND_PROCESSING);
+        ticketService.completeRefund(applicationId);
+        assertThat(use.getStatus()).isEqualTo(TicketDeductionStatus.REFUNDED);
     }
 
     @Test

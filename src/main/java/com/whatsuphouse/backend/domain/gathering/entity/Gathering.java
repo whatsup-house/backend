@@ -63,6 +63,10 @@ public class Gathering extends BaseEntity {
     @Column(name = "curated_rank", nullable = false)
     private int curatedRank = 0;
 
+    // 심사용 숨김 종류. 목록·홈·추천·다음 모집 알림에서 빠지고 체험(데모) 회원에게만 보인다. 직접 링크는 열린다. (KAN-407)
+    @Column(name = "hidden", nullable = false)
+    private boolean hidden = false;
+
     // 입금 계좌 정보 (선택). (KAN-390)
     @Column(name = "account_bank", length = 50)
     private String accountBank;

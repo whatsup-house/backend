@@ -31,5 +31,8 @@ public class ChatLastMessageResponse {
 
     private boolean isDeleted;
 
+    @Schema(description = "그록봇이 쓴 메시지. FE가 본문 HTML 엔티티를 되돌릴 때 쓴다")
+    private boolean aiGenerated;
+
     private LocalDateTime createdAt;
 }

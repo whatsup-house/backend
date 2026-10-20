@@ -6,6 +6,8 @@ import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.payment.entity.Deposit;
+import com.whatsuphouse.backend.domain.payment.enums.DepositStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -22,7 +24,7 @@ import java.util.UUID;
 @Builder
 public class DiningApplicationListResponse {
 
-    @Schema(description = "내 우연한 식탁 신청 목록 (최신 신청 순)")
+    @Schema(description = "내 우연한 식탁 신청 목록 (최신 신청 순). 최근 30일 안에 취소한 신청도 status=CANCELLED로 포함")
     private List<Item> applications;
 
     @Getter
@@ -56,8 +58,11 @@ public class DiningApplicationListResponse {
                 example = "3fa85f64-5717-4562-b3fc-2c963f66afa6", nullable = true)
         private UUID resolutionId;
 
+        @Schema(description = "노쇼 보증금. 보증금 대상 신청이 아니면 null", nullable = true)
+        private DepositInfo deposit;
+
         public static Item of(Application application, List<GatheringSession> candidateSessions,
-                              TicketDeductionStatus ticketStatus, DiningTable table, UUID resolutionId) {
+                              TicketDeductionStatus ticketStatus, DiningTable table, UUID resolutionId, Deposit deposit) {
             GatheringSession assigned = application.getSession();
             return Item.builder()
                     .id(application.getId())
@@ -72,8 +77,15 @@ public class DiningApplicationListResponse {
                     .ticketStatus(ticketStatus)
                     .table(table != null ? TableInfo.from(table) : null)
                     .resolutionId(resolutionId)
+                    .deposit(deposit != null ? new DepositInfo(deposit.getStatus(), deposit.getAmount()) : null)
                     .build();
         }
+    }
+
+    /** 신청의 노쇼 보증금 요약. (KAN-402) */
+    public record DepositInfo(
+            @Schema(description = "보증금 상태", example = "PAID") DepositStatus status,
+            @Schema(description = "보증금 금액(원)", example = "50000") int amount) {
     }
 
     @Getter

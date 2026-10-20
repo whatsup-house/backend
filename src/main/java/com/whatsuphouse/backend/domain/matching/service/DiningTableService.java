@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
+import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
@@ -20,8 +21,14 @@ import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -42,10 +49,14 @@ import java.util.stream.Stream;
  * 테이블 멤버 구성 변경: 확정 후 취소 재조정(설계 4.7)과 운영자 수동 조정(이동·분리·병합·해체, 설계 5.3).
  * 수동 조정은 관련 테이블을 전부 하드 조건으로 재검증하고, 위반이 있으면 400 TABLE_RULE_VIOLATION으로 롤백한다. (KAN-347)
  */
+@Slf4j
 @Service
 @Transactional
 @RequiredArgsConstructor
 public class DiningTableService {
+
+    private static final String SHORTAGE_NOTICE =
+            "인원이 부족해 이번 테이블은 진행되지 않아요. 앱에서 다음 일정이나 환불을 선택해 주세요";
 
     private static final Set<DiningTableStatus> ACTIVE_TABLE_STATUSES =
             EnumSet.of(DiningTableStatus.PROPOSED, DiningTableStatus.CONFIRMED);
@@ -59,6 +70,9 @@ public class DiningTableService {
     private final AdminChatService adminChatService;
     // 좌석이 바뀔 때 참석(Attendance) 행을 맞춘다(확정 테이블에 앉으면 SCHEDULED, 떠나면 삭제). (KAN-349)
     private final DiningAttendanceService diningAttendanceService;
+    private final MatchResolutionService matchResolutionService;
+    private final ChatService chatService;
+    private final PlatformTransactionManager transactionManager;
 
     // ── 확정 후 취소 재조정 ──────────────────────────────────────────────────────
 
@@ -66,7 +80,10 @@ public class DiningTableService {
      * 취소된 멤버를 빼고, 남은 인원이 최소 인원 미만이면
      * (1) 같은 회차 REALLOCATING 대기자 중 하드 조건을 지키는 사람을 점수 순으로 충원,
      * (2) 안 되면 남은 멤버를 같은 회차 다른 활성 테이블(최대 인원 미만)로 전원 옮기고 이 테이블은 해체,
-     * (3) 그것도 안 되면 예외함(CONFLICT)에 올려 운영자가 병합·해체를 정한다.
+     * (3) 그것도 안 되면 확정 테이블은 해체하고 남은 멤버 각자에게 해결 선택(대체 회차·보관·환불)을 제안한다(KAN-405).
+     *     보증금은 매칭 실패와 같이 선택 결과가 정한다(KEEP_TICKET/REFUND/EXPIRED 반환, TRANSFER 유지).
+     *     제안(PROPOSED) 테이블은 예외함(CONFLICT)에 올려 운영자가 병합·해체를 정한다.
+     * 해체된 테이블은 비활성이라 다시 불러도 아무것도 하지 않는다.
      */
     public void rebalance(UUID tableId) {
         DiningTable table = lockTable(tableId);
@@ -118,6 +135,10 @@ public class DiningTableService {
         }
 
         if (moveOut(table, remaining)) {
+            return;
+        }
+        if (table.getStatus() == DiningTableStatus.CONFIRMED) {
+            dissolveForShortage(table, remaining);
             return;
         }
         settle(table, evaluator, seated);
@@ -221,6 +242,60 @@ public class DiningTableService {
         syncChat(table, List.of(), remaining);
         dissolve(table);
         return true;
+    }
+
+    // 확정 테이블 인원 부족 해체. 남은 멤버는 단체방 공지를 읽을 수 있게 방에 남겨 둔다.
+    private void dissolveForShortage(DiningTable table, List<DiningTableMember> remaining) {
+        table.recordReallocation("SHORTAGE_DISSOLVE", null, "인원 부족(확정 후 취소)", memberIds(remaining));
+        dissolve(table);
+        List<UUID> excluded = List.of(table.getSession().getId());
+        for (DiningTableMember member : remaining) {
+            Application application = member.getApplication();
+            diningAttendanceService.releaseSeat(member.getId());
+            application.offerAlternative();
+            matchResolutionService.offerResolution(application, excluded);
+        }
+        UUID roomId = table.getChatRoomId();
+        if (roomId != null) {
+            UUID sessionId = table.getSession().getId();
+            UUID tableId = table.getId();
+            afterCommit(() -> postShortageNotice(roomId, sessionId, tableId));
+        }
+    }
+
+    // 취소 트랜잭션이 커밋된 뒤 별도 트랜잭션으로 공지한다. 실패해도 취소·해체를 되돌리지 않고 예외함(NOTIFICATION)에 남긴다.
+    private void postShortageNotice(UUID roomId, UUID sessionId, UUID tableId) {
+        try {
+            inNewTransaction(() -> chatService.postSystemNotice(roomId, SHORTAGE_NOTICE));
+        } catch (Exception e) {
+            log.warn("테이블 해체 채팅 안내 실패: tableId={}", tableId, e);
+            try {
+                inNewTransaction(() -> exceptionCaseService.open(ExceptionCaseType.NOTIFICATION, sessionId, tableId, null,
+                        "인원 부족 해체 채팅방 안내 실패: " + e.getMessage()));
+            } catch (Exception openFailure) {
+                log.error("테이블 해체 안내 실패 예외 건 생성 실패: tableId={}", tableId, openFailure);
+            }
+        }
+    }
+
+    // 트랜잭션 안이면 커밋 후, 아니면(단위 테스트 등) 바로 실행.
+    private static void afterCommit(Runnable work) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            work.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                work.run();
+            }
+        });
+    }
+
+    private void inNewTransaction(Runnable work) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.executeWithoutResult(status -> work.run());
     }
 
     // 같은 회차 REALLOCATING 대기자: 결제 완료, 참여 자격 승인, 활성 테이블 없음. 입력(신청) 순서가 동점 처리 기준.

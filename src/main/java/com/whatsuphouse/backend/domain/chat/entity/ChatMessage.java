@@ -73,6 +73,10 @@ public class ChatMessage {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    // 그록봇이 쓴 메시지(KAN-406)
+    @Column(name = "ai_generated", nullable = false)
+    private boolean aiGenerated;
+
     private ChatMessage(UUID roomId, UUID senderId, ChatMessageType type, byte[] contentEnc, byte[] nonce,
                         ChatSystemKind systemKind, Map<String, Object> systemParams) {
         this.roomId = roomId;
@@ -88,6 +92,13 @@ public class ChatMessage {
 
     public static ChatMessage user(UUID roomId, UUID senderId, ChatMessageType type, byte[] contentEnc, byte[] nonce) {
         return new ChatMessage(roomId, senderId, type, contentEnc, nonce, null, null);
+    }
+
+    /** 그록봇 답변·이관 안내. 발신자는 봇 계정, TEXT. (KAN-406) */
+    public static ChatMessage bot(UUID roomId, UUID botId, byte[] contentEnc, byte[] nonce) {
+        ChatMessage message = new ChatMessage(roomId, botId, ChatMessageType.TEXT, contentEnc, nonce, null, null);
+        message.aiGenerated = true;
+        return message;
     }
 
     public static ChatMessage system(UUID roomId, ChatSystemKind kind, Map<String, Object> params) {
