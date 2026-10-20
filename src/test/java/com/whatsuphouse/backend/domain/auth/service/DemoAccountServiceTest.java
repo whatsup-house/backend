@@ -53,6 +53,8 @@ class DemoAccountServiceTest {
         assertThat(user.getEmail()).isEqualTo("demo+" + user.getName().substring(2) + "@whatsup.house");
         assertThat(user.getPassword()).isEqualTo("encoded");
         assertThat(user.getNickname()).isNotBlank();
+        // 신청서 phone이 NOT NULL이라 체험 계정에도 임시 번호가 있어야 한다 (KAN-407)
+        assertThat(user.getPhone()).matches("^0100000\\d{4}$");
         assertThat(result).isSameAs(login);
         verify(authService).issueLogin(user);
     }

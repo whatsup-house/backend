@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 심사용 체험 계정. "체험 시작"을 누를 때마다 데모 회원을 새로 만들고 곧장 로그인시킨다.
@@ -39,6 +40,8 @@ public class DemoAccountService {
                 .name(name)
                 .nickname(name)
                 .gender(Gender.FEMALE)
+                // applications.phone이 NOT NULL이라 전화번호 없는 체험 계정은 신청 시 500. 고유할 필요 없는 가짜 번호(11자리)를 넣는다.
+                .phone(String.format("0100000%04d", ThreadLocalRandom.current().nextInt(10000)))
                 .age(SAMPLE_AGE)
                 .birthDate(LocalDate.now().minusYears(SAMPLE_AGE))
                 .mbti(Mbti.ENFP)
