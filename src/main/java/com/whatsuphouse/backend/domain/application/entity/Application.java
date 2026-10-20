@@ -142,6 +142,12 @@ public class Application extends BaseEntity {
         this.matchStatus = MatchStatus.WAITING;
     }
 
+    /** 확정 테이블 인원 부족 해체: 좌석이 없어졌으니 배정 회차를 비우고 해결 선택 응답을 기다린다. (KAN-405) */
+    public void offerAlternative() {
+        this.session = null;
+        this.matchStatus = MatchStatus.ALTERNATIVE_OFFERED;
+    }
+
     /** 우연한 식탁 테이블 확정: 그 테이블의 회차를 배정 회차로 두고 매칭 상태를 CONFIRMED로. (KAN-346) */
     public void confirmMatch(GatheringSession session) {
         this.session = session;

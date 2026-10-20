@@ -40,8 +40,9 @@ public class DiningResolutionController {
 
     @Operation(summary = "해결 선택",
             description = "TRANSFER: sessionId(제안 회차 중 아직 모집 중인 회차) 필수, 희망 회차를 그 회차로 바꾸고 매칭 대기로 돌아간다(결제 유지). "
-                    + "KEEP_TICKET: 이용권을 복원하고 신청을 취소한다. REFUND: 이용권 구매 건을 환불(모의)하고 신청을 취소한다. "
-                    + "본인 신청이 아니면 403, 응답 대기(OFFERED)가 아니면 409, sessionId 누락·제안 밖이면 400.")
+                    + "KEEP_TICKET: 이용권을 복원하고 신청을 취소한다. REFUND: refundAccount(은행·계좌번호·예금주) 필수, "
+                    + "1회분 금액을 운영자 송금 목록에 올리고(이용권 차감 상태 REFUND_PROCESSING, 송금 후 REFUNDED) 신청을 취소한다. "
+                    + "본인 신청이 아니면 403, 응답 대기(OFFERED)가 아니면 409, sessionId 누락·제안 밖·계좌 누락(REFUND_ACCOUNT_REQUIRED)이면 400.")
     @PostMapping("/{id}/choose")
     public ResponseEntity<ApiResult<MatchResolutionResponse>> chooseResolution(
             @Parameter(description = "해결 선택 ID") @PathVariable UUID id,

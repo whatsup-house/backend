@@ -55,6 +55,9 @@ public class ChatMessageResponse {
     @Schema(description = "삭제됨 여부(삭제된 메시지입니다)")
     private boolean isDeleted;
 
+    @Schema(description = "그록봇 AI가 작성한 메시지(발신자는 봇 계정)")
+    private boolean aiGenerated;
+
     private LocalDateTime createdAt;
 
     @Getter

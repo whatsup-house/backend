@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.matching.service;
 
+import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
@@ -15,6 +16,7 @@ import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepo
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
 import com.whatsuphouse.backend.domain.notification.event.DiningTableLifecycleEvent;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -67,6 +69,7 @@ public class DiningAttendanceService {
     private final GatheringService gatheringService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
+    private final DepositService depositService;
 
     // ── 체크인 ──────────────────────────────────────────────────────────────
 
@@ -96,6 +99,8 @@ public class DiningAttendanceService {
                 throw new CustomException(ErrorCode.CHECKIN_WINDOW_CLOSED);
             }
             attendance.checkIn(now);
+            // 체크인하면 보증금은 반환 대기로. (설계 4.3, KAN-402)
+            depositService.requestReturn(me.getApplication().getId());
         }
         return DiningTableDetailResponse.AttendanceView.from(attendance);
     }
@@ -123,7 +128,10 @@ public class DiningAttendanceService {
                 .toList();
     }
 
-    /** 운영자 상태 확정(NO_SHOW·CANCELED_LATE·ATTENDED). 바꾼 관리자를 updated_by에 남긴다. 없으면 404, 허용되지 않는 전이 400. */
+    /**
+     * 운영자 상태 확정(NO_SHOW·CANCELED_LATE·ATTENDED). 바꾼 관리자를 updated_by에 남긴다. 없으면 404, 허용되지 않는 전이 400.
+     * 노쇼 확정이면 회원을 보증금 대상으로 지정하고 그 신청의 보증금을 몰수한다. 참석 확정이면 체크인처럼 보증금 반환 대기. (설계 4.2, KAN-402)
+     */
     @Transactional
     public DiningAttendanceResponse changeAttendanceStatus(UUID attendanceId, AttendanceStatus status, UUID adminId) {
         Attendance attendance = attendanceRepository.findById(attendanceId)
@@ -131,19 +139,34 @@ public class DiningAttendanceService {
         attendance.changeStatus(status, adminId);
         DiningTableMember member = diningTableMemberRepository.findById(attendance.getTableMemberId())
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_MEMBER_NOT_FOUND));
+        Application application = member.getApplication();
+        if (status == AttendanceStatus.NO_SHOW) {
+            if (application.getUser() != null) {
+                application.getUser().markDepositRequired();
+            }
+            depositService.forfeit(application.getId());
+        } else if (status == AttendanceStatus.ATTENDED) {
+            depositService.requestReturn(application.getId());
+        }
         return DiningAttendanceResponse.of(attendance, member);
     }
 
     // ── 신청 취소·좌석 변경 훅 ───────────────────────────────────────────────
 
-    /** 신청 취소 훅: 확정 테이블에 앉아 있던 신청이면 그 참석을 CANCELED_EARLY로 바꾼다(참석 행이 있을 때만). */
+    /** 신청 취소 훅: 확정 테이블에 앉아 있던 신청이면 그 참석을 CANCELED_EARLY(마감 후·당일이면 CANCELED_LATE)로 바꾼다(참석 행이 있을 때만). */
     @Transactional
-    public void cancelAttendance(UUID applicationId) {
+    public void cancelAttendance(UUID applicationId, boolean late) {
         List<DiningTableMember> seats = diningTableMemberRepository.findByApplicationIdsWithTable(
                 List.of(applicationId), EnumSet.of(DiningTableStatus.CONFIRMED));
         if (!seats.isEmpty()) {
             attendanceRepository.findByTableMemberIdIn(seats.stream().map(DiningTableMember::getId).toList())
-                    .forEach(Attendance::cancelEarly);
+                    .forEach(attendance -> {
+                        if (late) {
+                            attendance.cancelLate();
+                        } else {
+                            attendance.cancelEarly();
+                        }
+                    });
         }
     }
 
@@ -274,6 +297,23 @@ public class DiningAttendanceService {
             }
         });
         return result;
+    }
+
+    // ── 멤버십 환불 판정 ─────────────────────────────────────────────────────
+
+    /** since(그 날짜 포함) 이후 회차에 ATTENDED로 참석한 적이 있는가. 멤버십 환불 가능 판정(첫 참석 전까지). (KAN-404) */
+    @Transactional(readOnly = true)
+    public boolean hasAttendedSince(UUID userId, LocalDateTime since) {
+        return attendanceRepository.existsByUserAndStatusSince(userId, AttendanceStatus.ATTENDED, since.toLocalDate());
+    }
+
+    /** 이 신청들 중 활성(제안·확정) 테이블에 앉은 신청. 멤버십 환불은 이 신청들부터 취소해야 한다. (KAN-404) */
+    @Transactional(readOnly = true)
+    public Set<UUID> findSeatedApplicationIds(Collection<UUID> applicationIds) {
+        return diningTableMemberRepository.findByApplicationIdsWithTable(applicationIds,
+                        EnumSet.of(DiningTableStatus.PROPOSED, DiningTableStatus.CONFIRMED)).stream()
+                .map(member -> member.getApplication().getId())
+                .collect(Collectors.toSet());
     }
 
     // ── 공통 ────────────────────────────────────────────────────────────────

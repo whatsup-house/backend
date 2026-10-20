@@ -39,4 +39,13 @@ public class ChatRoomSummaryResponse {
 
     @Schema(description = "내가 참여 중인지(관리자 전체 목록용)")
     private boolean isMember;
+
+    @Schema(description = "문의방: 그록봇이 담당자에게 넘겨 담당자 확인이 필요함")
+    private boolean needsHuman;
+
+    @Schema(description = "문의방: 담당자가 답해 그록봇 자동응답이 멈춤(관리자가 재개)")
+    private boolean botPaused;
+
+    @Schema(description = "문의방 이관 사유(관리자에게만, needsHuman일 때). 그 외 null", example = "환불 요청", nullable = true)
+    private String handoffReason;
 }

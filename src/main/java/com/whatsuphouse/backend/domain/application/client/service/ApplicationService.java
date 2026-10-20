@@ -29,6 +29,11 @@ import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEv
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationApprovedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationPendingEvent;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationPaymentConfirmedEvent;
+import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
+import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
@@ -46,9 +51,11 @@ import java.time.Year;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -69,6 +76,8 @@ public class ApplicationService {
     private final TicketService ticketService;
     private final AuthService authService;
     private final ApplicationLookupTokenService applicationLookupTokenService;
+    private final MembershipWeekRule membershipWeekRule;
+    private final DepositService depositService;
 
     private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -96,18 +105,19 @@ public class ApplicationService {
             }
             locked.put(id, session);
         });
-        return applyInternal(candidateIds.stream().map(locked::get).toList(), request.getAnswers(), userId);
+        return applyInternal(candidateIds.stream().map(locked::get).toList(), request.getAnswers(), userId,
+                request.getDepositReturnAccount());
     }
 
     // 기존 신청 경로: 경로의 gatheringId는 회차 ID다(마이그레이션된 회차는 옛 게더링 ID와 같다). 그 회차 하나를 고른 신청으로 처리한다.
     @Transactional
     public ApplicationResponse apply(UUID sessionId, ApplicationRequest request, UUID userId) {
-        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), userId);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), userId, null);
     }
 
     @Transactional
     public ApplicationResponse applyAsGuest(UUID sessionId, ApplicationRequest request) {
-        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), null);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), null, null);
     }
 
     private GatheringSession lockSession(UUID sessionId) {
@@ -116,9 +126,10 @@ public class ApplicationService {
     }
 
     // applyInternal은 @Transactional 퍼블릭 메서드에서만 호출되므로 self-invocation 트랜잭션 누락 위험 없음
-    // candidates: 같은 종류의 잠근 회차들, 희망 순위 순.
+    // candidates: 같은 종류의 잠근 회차들, 희망 순위 순. depositReturnAccount: 보증금 대상 회원의 반환 계좌(KAN-402).
     @SuppressWarnings("java:S6809")
-    private ApplicationResponse applyInternal(List<GatheringSession> candidates, List<AnswerItem> answers, UUID userId) {
+    private ApplicationResponse applyInternal(List<GatheringSession> candidates, List<AnswerItem> answers, UUID userId,
+                                              RefundAccount depositReturnAccount) {
         Gathering gathering = candidates.get(0).getGathering();
         boolean randomTable = gathering.getGatheringType() == GatheringType.RANDOM_TABLE;
         if (!randomTable && candidates.size() != 1) {
@@ -164,6 +175,10 @@ public class ApplicationService {
         User user = null;
         if (userId != null) {
             user = userService.findUser(userId);
+            // 체험(데모) 계정은 실제 회원 모임에 섞이지 않도록 숨김 종류에만 신청할 수 있다. (KAN-407)
+            if (user.isDemo() && !gathering.isHidden()) {
+                throw new CustomException(ErrorCode.DEMO_USER_REAL_GATHERING_FORBIDDEN);
+            }
             // 우연한 식탁은 고른 희망 회차 중 하나라도 이미 신청했으면 중복이다.
             boolean alreadyApplied = session != null
                     ? applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(session.getId(), userId)
@@ -202,6 +217,8 @@ public class ApplicationService {
         boolean paymentPending = false;
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
             validateRandomTableEligibility(user);
+            // 자격 심사 없이 바로 참가한다: 제한 대상만 막고, 처음 신청하는 회원은 자동 승인한다.
+            user.approveRandomTable();
         }
 
         Application application = Application.builder()
@@ -215,6 +232,26 @@ public class ApplicationService {
                 .formSnapshot(buildFormSnapshot(questions))
                 .build();
 
+        // 노쇼 이력 회원은 보증금 입금 전까지 확정하지 않는다. 반환 계좌는 신청 시 필수. (KAN-402)
+        // 무료 식탁(이용권 불필요)은 보증금 면제다: 확정 조건인 이용권 사용이 없어 보증금을 받아도 확정할 수 없다.
+        boolean depositRequired = randomTable && user.isDepositRequired() && application.requiresRandomTableTicket();
+        if (depositRequired && (depositReturnAccount == null || !depositReturnAccount.isComplete())) {
+            throw new CustomException(ErrorCode.DEPOSIT_ACCOUNT_REQUIRED);
+        }
+
+        // 이용권 사용 기준 날짜: 매칭 전이라 어느 희망 회차에 앉을지 모르므로 가장 늦은 희망 회차. (KAN-401)
+        LocalDate ticketDate = null;
+        if (randomTable && application.requiresRandomTableTicket()) {
+            ticketDate = candidates.stream().map(GatheringSession::getEventDate)
+                    .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+            if (ticketDate != null && ticketService.hasMembershipFor(userId, ticketDate)) {
+                membershipWeekRule.check(userId, null, candidates.stream().map(GatheringSession::getEventDate).toList())
+                        .ifPresent(code -> {
+                            throw new CustomException(code);
+                        });
+            }
+        }
+
         Application saved = applicationRepository.save(application);
         // 희망 회차: 요청 순서대로 1순위부터. 일반 모임은 신청 회차 1행.
         for (int i = 0; i < candidates.size(); i++) {
@@ -225,13 +262,17 @@ public class ApplicationService {
             eventPublisher.publishEvent(new GuestEmailVerificationConsumedEvent(email));
         }
 
-        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE
-                && user.isApprovedForRandomTable()) {
+        if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
             if (!saved.requiresRandomTableTicket()) {
                 saved.confirm();
                 autoConfirmed = true;
             } else {
-                autoConfirmed = ticketService.tryUseOneTicket(user, saved);
+                // 보증금 대상이면 이용권(멤버십 USE(0) 포함)은 쓰되 확정은 보증금 입금 후 DepositService.markPaid가 한다.
+                boolean ticketUsed = ticketService.tryUseOneTicket(user, saved, ticketDate);
+                if (depositRequired) {
+                    depositService.createPending(saved, depositReturnAccount);
+                }
+                autoConfirmed = ticketUsed && !depositRequired;
                 paymentPending = !autoConfirmed;
                 if (autoConfirmed) {
                     saved.confirm();
@@ -408,22 +449,48 @@ public class ApplicationService {
             throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
         }
 
-        if (application.getStatus() != ApplicationStatus.PENDING
-                && application.getStatus() != ApplicationStatus.PAYMENT_PENDING) {
+        // 우연한 식탁은 취소 시점 정책·보증금 처리가 있는 POST /api/dining/applications/{id}/cancel만 쓴다. (KAN-402)
+        if (application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
+                || (application.getStatus() != ApplicationStatus.PENDING
+                && application.getStatus() != ApplicationStatus.PAYMENT_PENDING)) {
             throw new CustomException(ErrorCode.CANNOT_CANCEL);
         }
 
         application.cancel();
 
-        // 우연한 식탁 회원 신청 취소 시 차감했던 이용권을 환불한다. (KAN-261)
-        // 단, 회차가 이미 취소된 경우엔 회차 취소 시점에 일괄 환불되었으므로 중복 환불하지 않는다.
-        if (application.getUser() != null
-                && application.getGathering().getGatheringType() == GatheringType.RANDOM_TABLE
-                && !application.isSessionCancelled()) {
-            ticketService.refundOneTicket(application);
-        }
-
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
+    }
+
+    /**
+     * 시스템(입금 웹훅·시뮬레이터)이 일반 모임 입금을 확인한다. 관리자 입금 확인(changePayment confirmed=true)과 같은 효과:
+     * 처음 확인되는 순간에만 입금 완료 안내 이벤트를 낸다. 신청 상태(status)는 건드리지 않는다.
+     * 행을 잠그고, 이미 입금 확인된 신청이면 아무것도 바꾸지 않고 false(같은 입금의 중복 정산 방지, KAN-403).
+     */
+    @Transactional
+    // 같은 입금 확인 규칙 - AdminApplicationService.changePayment와 함께 수정
+    public boolean confirmRegularPaymentBySystem(UUID applicationId) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNullForUpdate(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        // 대사 후보 조회로 이미 올라온 사본이면 잠금 쿼리가 옛 상태를 돌려준다. 잠근 뒤 DB 최신 상태로 판단한다(동시 입금).
+        applicationRepository.refreshForUpdate(application);
+        if (application.isPaymentConfirmed()) {
+            return false;
+        }
+        application.confirmPayment();
+        eventPublisher.publishEvent(new ApplicationPaymentConfirmedEvent(application));
+        return true;
+    }
+
+    /** 입금 대사 후보: 입금 확인 전인 유료 일반 모임 신청(PENDING·CONFIRMED). 어제 이전 회차는 제외. */
+    public List<PendingPayment> listPendingRegularPayments() {
+        return applicationRepository.findUnpaidRegularApplications(
+                        GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED),
+                        LocalDate.now(KOREA).minusDays(1))
+                .stream()
+                .filter(Application::isPaidGathering)
+                .map(a -> new PendingPayment(PaymentTargetType.REGULAR_APPLICATION, a.getId(), a.getId(),
+                        a.getName(), a.getSession().getEffectivePrice()))
+                .toList();
     }
 
     /** 회차별 정원을 차지한 인원(승인+출석). 신청이 없는 회차는 결과에 없다. (KAN-338) */

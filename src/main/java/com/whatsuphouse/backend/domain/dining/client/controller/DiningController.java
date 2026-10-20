@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.dining.client.controller;
 import com.whatsuphouse.backend.domain.dining.client.dto.request.FeedbackCreateRequest;
 import com.whatsuphouse.backend.domain.dining.client.dto.request.SafetyReportCreateRequest;
 import com.whatsuphouse.backend.domain.dining.client.dto.response.DiningHistoryResponse;
+import com.whatsuphouse.backend.domain.dining.client.dto.response.DiningRecommendationResponse;
 import com.whatsuphouse.backend.domain.dining.client.service.DiningService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -65,5 +66,14 @@ public class DiningController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(ApiResult.success(diningService.listMyHistory(principal.getUserId())));
+    }
+
+    @Operation(summary = "내 다음 추천 회차",
+            description = "지금 신청할 수 있는 우연한 식탁 회차 최대 3개. 지난 참석 지역이 같은 회차, 같은 요일, 날짜 순으로 앞서고 숨김 종류는 체험 회원에게만 보입니다.")
+    @GetMapping("/me/recommendations")
+    public ResponseEntity<ApiResult<List<DiningRecommendationResponse>>> listMyRecommendations(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ResponseEntity.ok(ApiResult.success(diningService.listMyRecommendations(principal)));
     }
 }

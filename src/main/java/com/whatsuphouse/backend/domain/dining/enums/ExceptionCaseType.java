@@ -8,5 +8,6 @@ public enum ExceptionCaseType {
     NOTIFICATION,   // 알림·채팅방 생성 3회 실패
     SAFETY,         // 신고 접수
     CONFLICT,       // 확정 후 취소 미해결, 수동 조정 후 하드 조건 위반
-    REFUND          // 자동 환불 실패
+    REFUND,         // 자동 환불 실패
+    CS              // AI 상담이 사람에게 넘긴 문의
 }

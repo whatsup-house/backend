@@ -73,6 +73,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/gatherings/*/applications/guest").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/applications/check").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tickets/products").permitAll()
+                        // 은행 입금 알림 웹훅: 폰 자동화가 호출. 공유 시크릿(X-Deposit-Secret)으로 서비스가 인증한다. (KAN-403)
+                        .requestMatchers(HttpMethod.POST, "/api/payments/deposit-webhook").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().denyAll()

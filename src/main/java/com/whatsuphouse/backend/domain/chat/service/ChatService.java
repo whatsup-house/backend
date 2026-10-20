@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.chat.service;
 
+import com.whatsuphouse.backend.domain.bot.BotAccount;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageSendRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageUpdateRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatReportCreateRequest;
@@ -43,6 +44,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -162,11 +164,91 @@ public class ChatService {
                 ChatMessage.user(roomId, userId, request.getType(), encrypted.ciphertext(), encrypted.nonce()));
         me.markRead(message.getId());
         if (room.isInquiry()) {
-            // 숨긴 문의방도 새 메시지가 오면 목록에 다시 보인다
-            chatMemberRepository.findByRoomIdAndUserId(roomId, room.getInquiryUserId()).ifPresent(ChatMember::unhide);
+            unhideInquiry(room);
+            // 담당자가 문의방에 답하면 그록봇 자동응답을 멈춘다(KAN-406). 재개는 관리자 API.
+            if (!userId.equals(room.getInquiryUserId())) {
+                room.pauseBot();
+            }
         }
         eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, message.getId()));
         return assembler.toMessages(room, List.of(message), userId, isAdmin).get(0);
+    }
+
+    // 숨긴 문의방도 새 메시지가 오면 목록에 다시 보인다
+    private void unhideInquiry(ChatRoom room) {
+        chatMemberRepository.findByRoomIdAndUserId(room.getId(), room.getInquiryUserId()).ifPresent(ChatMember::unhide);
+    }
+
+    // ── 그록봇 연동(KAN-406). 봇 도메인은 채팅 저장소 대신 아래 메서드만 쓴다. ──
+
+    /** 문의방에서 문의자 본인이 보낸 메시지. botPaused는 판정 시점 방 상태. */
+    public record InquiryMessage(UUID roomId, UUID customerId, boolean botPaused) {
+    }
+
+    /** 봇 페이로드용 메시지. role: customer | agent | bot. IMAGE는 text가 "(사진)". */
+    public record BotTranscriptMessage(UUID id, String role, String text, LocalDateTime createdAt) {
+    }
+
+    /** 문의방 고객 본인 메시지면 방 정보, 그 외(단체방·담당자·봇·시스템·삭제)는 empty. */
+    @Transactional(readOnly = true)
+    public Optional<InquiryMessage> findCustomerInquiryMessage(UUID messageId) {
+        return chatMessageRepository.findByIdAndDeletedAtIsNull(messageId)
+                .flatMap(message -> chatRoomRepository.findByIdAndDeletedAtIsNull(message.getRoomId())
+                        .filter(room -> room.isInquiry() && !message.isAiGenerated()
+                                && room.getInquiryUserId().equals(message.getSenderId()))
+                        .map(room -> new InquiryMessage(room.getId(), room.getInquiryUserId(), room.isBotPaused())));
+    }
+
+    @Transactional(readOnly = true)
+    public BotTranscriptMessage getBotTranscriptMessage(UUID messageId) {
+        ChatMessage message = findActiveMessage(messageId);
+        return toTranscript(findRoom(message.getRoomId()), message);
+    }
+
+    /** 최근 size건(시스템·삭제 제외), 오래된 순. */
+    @Transactional(readOnly = true)
+    public List<BotTranscriptMessage> listBotTranscript(UUID roomId, int size) {
+        ChatRoom room = findRoom(roomId);
+        List<ChatMessage> newestFirst = new ArrayList<>(chatMessageRepository
+                .findAllByRoomIdAndTypeNotAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(
+                        roomId, ChatMessageType.SYSTEM, PageRequest.of(0, size)));
+        Collections.reverse(newestFirst);
+        return newestFirst.stream().map(message -> toTranscript(room, message)).toList();
+    }
+
+    private BotTranscriptMessage toTranscript(ChatRoom room, ChatMessage message) {
+        String role = message.isAiGenerated() ? "bot"
+                : room.getInquiryUserId() != null && room.getInquiryUserId().equals(message.getSenderId()) ? "customer"
+                : "agent";
+        String text = message.getType() == ChatMessageType.TEXT ? assembler.decrypt(message) : "(사진)";
+        return new BotTranscriptMessage(message.getId(), role, text, message.getCreatedAt());
+    }
+
+    /** 그록봇 메시지 게시(답변·이관 안내). 발신자 봇 계정, aiGenerated. 문의방만. */
+    public void postBotMessage(UUID roomId, String text) {
+        ChatRoom room = findRoom(roomId);
+        if (!room.isInquiry()) {
+            throw new CustomException(ErrorCode.CHAT_ROOM_TYPE_MISMATCH);
+        }
+        ChatCipher.Encrypted encrypted = chatCipher.encrypt(roomId, text);
+        ChatMessage message = chatMessageRepository.save(
+                ChatMessage.bot(roomId, BotAccount.ID, encrypted.ciphertext(), encrypted.nonce()));
+        unhideInquiry(room);
+        eventPublisher.publishEvent(new ChatMessageCreatedEvent(roomId, message.getId()));
+    }
+
+    /** 봇 이관 표시. 이미 표시돼 있었으면 true. */
+    public boolean markNeedsHuman(UUID roomId) {
+        ChatRoom room = findRoom(roomId);
+        boolean already = room.isNeedsHuman();
+        room.requestHuman();
+        return already;
+    }
+
+    /** 담당자가 답해 봇 자동응답이 멈춘 문의방인지. 큐에 들어간 뒤 멈춘 경우를 발송·답변·이관 시점에 다시 본다. */
+    @Transactional(readOnly = true)
+    public boolean isBotPaused(UUID roomId) {
+        return findRoom(roomId).isBotPaused();
     }
 
     /** 서버가 남기는 안내문(발신자 없음, SYSTEM_NOTICE). 본문은 system_params.text 평문. (KAN-346 확정 안내) */

@@ -107,7 +107,7 @@ public enum ErrorCode {
     APPLICATION_NOT_FOUND("존재하지 않는 신청입니다.", HttpStatus.NOT_FOUND),
     ALREADY_APPLIED("이미 신청한 게더링입니다.", HttpStatus.CONFLICT),
     CANNOT_CANCEL("취소할 수 없는 신청입니다.", HttpStatus.BAD_REQUEST),
-    CANCEL_WINDOW_CLOSED("행사 시작 2일 전까지만 취소할 수 있습니다.", HttpStatus.BAD_REQUEST),
+    CANCEL_WINDOW_CLOSED("이미 시작한 회차의 신청은 취소할 수 없습니다.", HttpStatus.BAD_REQUEST),
     APPLICATION_ALREADY_CANCELLED("이미 취소된 신청입니다.", HttpStatus.CONFLICT),
     INVALID_STATUS_TRANSITION("허용되지 않는 상태 변경입니다.", HttpStatus.BAD_REQUEST),
     CANNOT_DELETE("출석 완료된 신청은 삭제할 수 없습니다.", HttpStatus.BAD_REQUEST),
@@ -118,6 +118,7 @@ public enum ErrorCode {
     PARTICIPANT_BLOCKED("차단된 참가자는 우연한 식탁을 신청할 수 없습니다.", HttpStatus.FORBIDDEN),
     RANDOM_TABLE_ELIGIBILITY_RESTRICTED("우연한 식탁 참여 자격이 제한된 상태입니다.", HttpStatus.FORBIDDEN),
     RANDOM_TABLE_MEMBERS_ONLY("우연한 식탁은 회원만 신청할 수 있습니다.", HttpStatus.FORBIDDEN),
+    DEMO_USER_REAL_GATHERING_FORBIDDEN("체험 계정은 심사용 모임에만 신청할 수 있습니다.", HttpStatus.FORBIDDEN),
     REJECTION_REASON_REQUIRED("신청 거절 사유는 필수입니다.", HttpStatus.BAD_REQUEST),
 
     // Location
@@ -159,8 +160,28 @@ public enum ErrorCode {
     NO_AVAILABLE_TICKET("사용 가능한 이용권이 없습니다. 이용권을 먼저 구매해주세요.", HttpStatus.BAD_REQUEST),
     TICKET_PURCHASE_NOT_ALLOWED("우연한 식탁 참여 승인 후 이용권을 구매할 수 있습니다.", HttpStatus.FORBIDDEN),
     INVALID_TICKET_ADJUSTMENT("유효하지 않은 이용권 횟수 조정입니다.", HttpStatus.BAD_REQUEST),
+    DEPOSIT_ACCOUNT_REQUIRED("보증금 반환 계좌(은행·계좌번호·예금주)를 입력해주세요.", HttpStatus.BAD_REQUEST),
+    MEMBERSHIP_WEEKLY_LIMIT("멤버십은 한 주에 한 번만 신청할 수 있습니다.", HttpStatus.CONFLICT),
+    CANDIDATE_SESSIONS_DIFFERENT_WEEKS("멤버십으로 신청할 때는 같은 주의 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
     TICKET_PRODUCT_NOT_FOUND("존재하지 않는 이용권 상품입니다.", HttpStatus.NOT_FOUND),
     INVALID_REFUND_TRANSITION("환불을 진행할 수 없는 이용권 차감 기록입니다.", HttpStatus.CONFLICT),
+    REFUND_ACCOUNT_REQUIRED("환불받을 계좌(은행·계좌번호·예금주)를 입력해주세요.", HttpStatus.BAD_REQUEST),
+    MEMBERSHIP_REFUND_AFTER_ATTENDANCE("첫 참석 이후에는 멤버십을 환불할 수 없습니다.", HttpStatus.CONFLICT),
+    MEMBERSHIP_REFUND_ACTIVE_TABLE("테이블이 잡힌 신청이 있습니다. 그 신청을 먼저 취소한 뒤 환불해주세요.", HttpStatus.CONFLICT),
+    MEMBERSHIP_REFUND_NOT_ALLOWED("환불할 수 있는 멤버십이 아닙니다.", HttpStatus.CONFLICT),
+    PAYOUT_NOT_FOUND("존재하지 않는 송금 요청입니다.", HttpStatus.NOT_FOUND),
+
+    // Payment (입금 대사, KAN-403)
+    DEPOSIT_WEBHOOK_UNAUTHORIZED("입금 알림 인증에 실패했습니다.", HttpStatus.UNAUTHORIZED),
+    DEPOSIT_WEBHOOK_TOO_LARGE("입금 알림 본문이 너무 큽니다.", HttpStatus.PAYLOAD_TOO_LARGE),
+    INVALID_DEPOSIT_WEBHOOK("입금 알림 형식이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
+    DEMO_DEPOSIT_FORBIDDEN("체험 계정만 입금 시뮬레이터를 쓸 수 있습니다.", HttpStatus.FORBIDDEN),
+    DEMO_DEPOSIT_TARGET_INVALID("이용권 또는 신청 중 하나만 지정해주세요.", HttpStatus.BAD_REQUEST),
+    PAYMENT_TARGET_NOT_FOUND("입금 대기 중인 결제 건이 아닙니다.", HttpStatus.NOT_FOUND),
+    DEPOSIT_NOTIFICATION_NOT_FOUND("존재하지 않는 입금 알림입니다.", HttpStatus.NOT_FOUND),
+    DEPOSIT_NOTIFICATION_NOT_LINKABLE("이미 연결됐거나 입금 알림이 아니어서 연결할 수 없습니다.", HttpStatus.CONFLICT),
+    DEPOSIT_AMOUNT_MISMATCH("입금액과 결제 대상 금액이 다릅니다. 확인 후 강제 연결해주세요.", HttpStatus.CONFLICT),
+    PAYMENT_ALREADY_SETTLED("이미 입금 확인된 결제 건입니다.", HttpStatus.CONFLICT),
 
     // Rate Limit
     TOO_MANY_REQUESTS("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", HttpStatus.TOO_MANY_REQUESTS),
@@ -184,7 +205,18 @@ public enum ErrorCode {
     CHAT_REPORT_NOT_FOUND("존재하지 않는 신고입니다.", HttpStatus.NOT_FOUND),
     CHAT_CRYPTO_FAILED("메시지를 처리하지 못했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
     CHAT_PUSH_DISABLED("웹 푸시를 사용할 수 없습니다.", HttpStatus.SERVICE_UNAVAILABLE),
-    CHAT_PUSH_INVALID_ENDPOINT("올바르지 않은 푸시 구독 주소입니다.", HttpStatus.BAD_REQUEST);
+    CHAT_PUSH_INVALID_ENDPOINT("올바르지 않은 푸시 구독 주소입니다.", HttpStatus.BAD_REQUEST),
+
+    // Bot (그록봇 답변 수신, KAN-406)
+    BOT_DISPATCH_NOT_FOUND("존재하지 않는 봇 요청입니다.", HttpStatus.NOT_FOUND),
+    BOT_REPLY_FORBIDDEN("요청한 문의방·메시지와 일치하지 않습니다.", HttpStatus.FORBIDDEN),
+    BOT_REPLY_ALREADY_HANDLED("이미 처리된 봇 요청입니다.", HttpStatus.CONFLICT),
+    BOT_DISPATCH_STALE("더 최신 문의가 있어 이전 답변은 등록하지 않습니다.", HttpStatus.CONFLICT),
+    BOT_DISPATCH_NOT_LEASED("조회(lease)되어 답변을 기다리는 문의가 아닙니다.", HttpStatus.CONFLICT),
+    BOT_LEASE_EXPIRED("조회 유효 시간(5분)이 지나 답변을 등록하지 않습니다.", HttpStatus.CONFLICT),
+    BOT_ROOM_PAUSED("담당자가 응대 중인 문의방이라 봇 답변을 등록하지 않습니다.", HttpStatus.CONFLICT),
+    BOT_IDEMPOTENCY_KEY_MISMATCH("Idempotency-Key가 eventId와 다릅니다.", HttpStatus.UNPROCESSABLE_ENTITY),
+    BOT_REPLY_INVALID_TEXT("답변은 1자 이상 2000자 이하여야 합니다.", HttpStatus.UNPROCESSABLE_ENTITY);
 
     private final String message;
     private final HttpStatus status;

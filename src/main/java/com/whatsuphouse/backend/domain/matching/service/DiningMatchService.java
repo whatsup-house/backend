@@ -26,6 +26,7 @@ import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepo
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.matching.repository.MatchRunRepository;
 import com.whatsuphouse.backend.domain.notification.event.DiningReallocatingEvent;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.enums.Job;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -80,6 +81,7 @@ public class DiningMatchService {
     private final MatchRunRepository matchRunRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final MatchResolutionService matchResolutionService;
+    private final DepositService depositService;
 
     /**
      * 한 회차 규칙과 신청들의 매칭 프로필·관계를 한 번에 읽어 둔 평가기. 수동 조정·재조정이 여러 멤버 구성을
@@ -120,7 +122,7 @@ public class DiningMatchService {
         dissolveProposedTables(sessionId);
 
         // 후보: 이 회차를 희망했고, 결제 완료(CONFIRMED), 매칭 대기(WAITING|REALLOCATING, NULL=WAITING),
-        // 참여 자격 APPROVED, 활성 테이블 없음. 입력 순서(신청 순)가 엔진의 결정적 동점 처리 기준이다.
+        // 참여 자격 APPROVED, 활성 테이블 없음, 보증금 대상이면 보증금 입금 확인(KAN-402). 입력 순서(신청 순)가 엔진의 결정적 동점 처리 기준이다.
         List<Application> eligible = adminApplicationService.listSessionApplications(sessionId).stream()
                 .filter(a -> a.getStatus() == ApplicationStatus.CONFIRMED)
                 .filter(a -> a.getMatchStatus() == null || CANDIDATE_MATCH_STATUSES.contains(a.getMatchStatus()))
@@ -129,10 +131,12 @@ public class DiningMatchService {
         List<UUID> eligibleIds = eligible.stream().map(Application::getId).toList();
         Map<UUID, List<ApplicationCandidateSession>> wishes = adminApplicationService.findCandidateSessions(eligibleIds);
         Set<UUID> seated = findSeatedApplicationIds(eligibleIds);
+        Set<UUID> unpaidDeposit = depositService.findUnsatisfiedApplicationIds(eligibleIds);
         List<Application> candidates = eligible.stream()
                 .filter(a -> wishes.getOrDefault(a.getId(), List.of()).stream()
                         .anyMatch(wish -> wish.getSession().getId().equals(sessionId)))
                 .filter(a -> !seated.contains(a.getId()))
+                .filter(a -> !unpaidDeposit.contains(a.getId()))
                 .sorted(Comparator.comparing(Application::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(Application::getId))
                 .toList();
@@ -479,7 +483,8 @@ public class DiningMatchService {
         }
     }
 
-    private static Set<String> values(Object value) {
+    // 답변 값(단일 값 또는 목록)을 문자열 집합으로. 식당 가격대 선호(DiningConfirmService)도 쓴다.
+    static Set<String> values(Object value) {
         Set<String> result = new LinkedHashSet<>();
         if (value instanceof Collection<?> collection) {
             collection.stream().filter(Objects::nonNull).map(Object::toString).forEach(result::add);

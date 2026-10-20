@@ -71,7 +71,9 @@ public class AdminDiningService {
     private final MatchExclusionProvider matchExclusionProvider;
 
     public DiningDashboardResponse getDashboard() {
-        List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE);
+        List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE).stream()
+                .filter(session -> !session.getGathering().isHidden()) // 심사용 숨김 종류는 운영 집계에서 뺀다. (KAN-407)
+                .toList();
         List<UUID> sessionIds = sessions.stream().map(GatheringSession::getId).toList();
         Map<UUID, Map<DiningTableStatus, Long>> tableCounts = matchingService.countTablesBySessionIds(sessionIds);
         Set<UUID> matchRunSessionIds = matchingService.findSessionIdsWithMatchRun(sessionIds);
@@ -84,8 +86,11 @@ public class AdminDiningService {
         Map<UUID, Application> distinctApplications = new LinkedHashMap<>();
         List<DiningDashboardResponse.SessionCard> cards = new ArrayList<>();
         for (GatheringSession session : sessions) {
+            // 체험(데모) 회원의 신청은 집계에서 뺀다. (KAN-407)
             // ponytail: 회차마다 신청 조회 1회(N회). 다가오는 우연한 식탁 회차는 몇 개뿐이라 충분, 늘면 회차 ID 일괄 조회로.
-            List<Application> applications = adminApplicationService.listSessionApplications(session.getId());
+            List<Application> applications = adminApplicationService.listSessionApplications(session.getId()).stream()
+                    .filter(application -> application.getUser() == null || !application.getUser().isDemo())
+                    .toList();
             applications.forEach(application -> distinctApplications.putIfAbsent(application.getId(), application));
 
             Map<DiningTableStatus, Long> tables = tableCounts.getOrDefault(session.getId(), Map.of());
@@ -102,7 +107,8 @@ public class AdminDiningService {
                 .paidApplicantCount(distinctApplications.values().stream().filter(this::isPaid).count())
                 .proposedTableCount(sumTables(tableCounts, DiningTableStatus.PROPOSED))
                 .confirmedTableCount(sumTables(tableCounts, DiningTableStatus.CONFIRMED))
-                .openExceptionCount(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN))
+                .openExceptionCount(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN)
+                        - exceptionCaseRepository.countByStatusOnHiddenGatherings(ExceptionCaseStatus.OPEN))
                 .sessions(cards)
                 .build();
     }

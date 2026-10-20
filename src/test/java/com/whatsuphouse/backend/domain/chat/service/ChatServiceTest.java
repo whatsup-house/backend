@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.chat.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
+import com.whatsuphouse.backend.domain.bot.service.BotHandoffService;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatGroupRoomCreateRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMemberAddRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageSendRequest;
@@ -13,6 +14,7 @@ import com.whatsuphouse.backend.domain.chat.enums.ChatMessageType;
 import com.whatsuphouse.backend.domain.chat.enums.ChatSystemKind;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMemberRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatRoomRepository;
+import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
@@ -52,7 +54,8 @@ import static org.mockito.BDDMockito.given;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({TestJpaConfig.class, ChatService.class, AdminChatService.class, ChatAccessPolicy.class,
-        ChatCipher.class, ChatResponseAssembler.class, JwtTokenProvider.class})
+        ChatCipher.class, ChatResponseAssembler.class, JwtTokenProvider.class, BotHandoffService.class,
+        ExceptionCaseService.class})
 @ActiveProfiles("test")
 class ChatServiceTest {
 
@@ -193,6 +196,18 @@ class ChatServiceTest {
         // 읽음 처리하면 0
         chatService.markRead(roomId, friendId, messages.get(messages.size() - 1).getId());
         assertThat(chatService.listRooms(friendId, false).get(0).getUnreadCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("방 목록 마지막 메시지 미리보기에 aiGenerated가 실린다(봇=true, 사람=false)")
+    void listRooms_lastMessageCarriesAiGenerated() {
+        UUID roomId = chatService.openInquiryRoom(userId, false).getRoomId();
+        chatService.postBotMessage(roomId, "안녕하세요 &amp; 반가워요");
+
+        assertThat(chatService.listRooms(userId, false).get(0).getLastMessage().isAiGenerated()).isTrue();
+
+        chatService.sendMessage(roomId, userId, false, text("사람 답장"));
+        assertThat(chatService.listRooms(userId, false).get(0).getLastMessage().isAiGenerated()).isFalse();
     }
 
     private UUID createGroup(UUID... memberIds) {

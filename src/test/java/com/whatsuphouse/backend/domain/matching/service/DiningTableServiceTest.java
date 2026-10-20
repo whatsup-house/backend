@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicatio
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
+import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.entity.MatchingWeights;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
@@ -33,6 +34,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.LocalDate;
 import java.util.Collection;
@@ -56,8 +58,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class DiningTableServiceTest {
@@ -82,12 +86,19 @@ class DiningTableServiceTest {
     private AdminChatService adminChatService;
     @Mock
     private DiningAttendanceService diningAttendanceService;
+    @Mock
+    private MatchResolutionService matchResolutionService;
+    @Mock
+    private ChatService chatService;
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private DiningTableService diningTableService;
 
     private final UUID adminId = UUID.randomUUID();
     private final Map<UUID, Integer> birthYears = new HashMap<>();
+    private MatchingEngine.Rules rules = RULES;
     private Gathering gathering;
     private GatheringSession session;
     private int seq;
@@ -104,7 +115,7 @@ class DiningTableServiceTest {
                     a -> new MatchingEngine.Applicant(a.getId(), a.getUser().getId(), birthYears.get(a.getId()),
                             null, null, Set.of(), Set.of(), Set.of(), null, Map.of()),
                     (a, b) -> a));
-            return new TableEvaluator(new MatchingEngine(), profiles, RULES, MatchingEngine.Relations.none());
+            return new TableEvaluator(new MatchingEngine(), profiles, rules, MatchingEngine.Relations.none());
         });
         lenient().when(diningMatchService.getTables(any()))
                 .thenReturn(DiningTableListResponse.builder().tables(List.of()).build());
@@ -233,9 +244,9 @@ class DiningTableServiceTest {
     }
 
     @Test
-    @DisplayName("재조정 (3) 예외함: 충원도 이동도 안 되면 CONFLICT 예외 건을 연다")
-    void rebalance_opensConflictWhenUnresolvable() {
-        DiningTable table = table(session, DiningTableStatus.CONFIRMED);
+    @DisplayName("재조정 (3) 예외함: 제안(PROPOSED) 테이블은 충원도 이동도 안 되면 CONFLICT 예외 건을 연다")
+    void rebalance_proposed_opensConflictWhenUnresolvable() {
+        DiningTable table = table(session, DiningTableStatus.PROPOSED);
         List<DiningTableMember> seated = members(table, 3);
         seated.get(2).getApplication().cancel();
         given(diningTableMemberRepository.findByTableIdWithApplication(table.getId())).willReturn(seated);
@@ -247,8 +258,120 @@ class DiningTableServiceTest {
 
         then(exceptionCaseService).should().open(eq(ExceptionCaseType.CONFLICT), eq(session.getId()), eq(table.getId()),
                 isNull(), anyString());
-        assertThat(table.getStatus()).isEqualTo(DiningTableStatus.CONFIRMED);
+        assertThat(table.getStatus()).isEqualTo(DiningTableStatus.PROPOSED);
         assertThat(table.getGroupSize()).isEqualTo(2);
+        then(matchResolutionService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("재조정 (3) 확정 테이블 해체: 남은 3명(최소 4명)을 충원·이동 못 하면 해체 + 단체방 공지 + 각자 해결 선택(보증금은 선택 결과가 정함), 예외함 없음. 다시 불러도 중복 제안 없음")
+    void rebalance_threeLeftNoFill_dissolvesAndOffersResolutions() {
+        rules = new MatchingEngine.Rules(4, 5, 8, 0, MatchingWeights.defaults(), List.of());
+        DiningTable table = table(session, DiningTableStatus.CONFIRMED);
+        UUID roomId = UUID.randomUUID();
+        ReflectionTestUtils.setField(table, "chatRoomId", roomId);
+        UUID venueId = UUID.randomUUID();
+        table.assignVenue(venueId);
+        List<DiningTableMember> seated = members(table, 4);
+        seated.get(3).getApplication().cancel();
+        List<DiningTableMember> remaining = seated.subList(0, 3);
+        remaining.forEach(member -> member.getApplication().confirmMatch(session));
+        given(diningTableMemberRepository.findByTableIdWithApplication(table.getId())).willReturn(seated);
+        given(adminApplicationService.listSessionApplications(session.getId())).willReturn(List.of());
+        given(diningTableRepository.findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(eq(session.getId()), anyCollection()))
+                .willReturn(List.of(table));
+
+        diningTableService.rebalance(table.getId());
+        diningTableService.rebalance(table.getId());
+
+        assertThat(table.getStatus()).isEqualTo(DiningTableStatus.DISSOLVED);
+        then(sessionVenueService).should().releaseTable(session.getId(), venueId);
+        then(chatService).should().postSystemNotice(roomId,
+                "인원이 부족해 이번 테이블은 진행되지 않아요. 앱에서 다음 일정이나 환불을 선택해 주세요");
+        then(exceptionCaseService).should(never()).open(any(), any(), any(), any(), any());
+        then(matchResolutionService).should(times(3)).offerResolution(any(), eq(List.of(session.getId())));
+        for (DiningTableMember member : remaining) {
+            Application application = member.getApplication();
+            then(matchResolutionService).should().offerResolution(application, List.of(session.getId()));
+            then(diningAttendanceService).should().releaseSeat(member.getId());
+            assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.ALTERNATIVE_OFFERED);
+            // 더 이상 앉아 있지 않으므로 응답 대기 중에 해체된 회차 좌석을 차지하지 않게 배정 회차를 비운다.
+            assertThat(application.getSession()).isNull();
+        }
+        assertThat(actions(table)).containsExactly("CANCEL_REMOVE", "SHORTAGE_DISSOLVE");
+        assertThat(table.getReallocationLog().get(1).get("reason")).isEqualTo("인원 부족(확정 후 취소)");
+    }
+
+    // 최소 4명 규칙에서 4명 중 1명 취소, 대기자·다른 테이블 없음 → 확정 테이블 해체 경로.
+    private DiningTable shortageTable(UUID roomId) {
+        rules = new MatchingEngine.Rules(4, 5, 8, 0, MatchingWeights.defaults(), List.of());
+        DiningTable table = table(session, DiningTableStatus.CONFIRMED);
+        ReflectionTestUtils.setField(table, "chatRoomId", roomId);
+        List<DiningTableMember> seated = members(table, 4);
+        seated.get(3).getApplication().cancel();
+        given(diningTableMemberRepository.findByTableIdWithApplication(table.getId())).willReturn(seated);
+        given(adminApplicationService.listSessionApplications(session.getId())).willReturn(List.of());
+        given(diningTableRepository.findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(eq(session.getId()), anyCollection()))
+                .willReturn(List.of(table));
+        return table;
+    }
+
+    @Test
+    @DisplayName("재조정 (3) 해체 안내 실패: 채팅 공지가 실패해도 취소·해체·해결 선택은 그대로, NOTIFICATION 예외 건을 연다")
+    void rebalance_dissolveNoticeFails_opensNotificationCase() {
+        UUID roomId = UUID.randomUUID();
+        DiningTable table = shortageTable(roomId);
+        willThrow(new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND)).given(chatService).postSystemNotice(eq(roomId), anyString());
+
+        diningTableService.rebalance(table.getId());
+
+        assertThat(table.getStatus()).isEqualTo(DiningTableStatus.DISSOLVED);
+        then(matchResolutionService).should(times(3)).offerResolution(any(), eq(List.of(session.getId())));
+        then(exceptionCaseService).should().open(eq(ExceptionCaseType.NOTIFICATION), eq(session.getId()), eq(table.getId()),
+                isNull(), anyString());
+    }
+
+    @Test
+    @DisplayName("재조정 (3) 단체방 없음: 공지·예외 건 없이 해체하고 해결 선택을 제안한다")
+    void rebalance_dissolveWithoutChatRoom_skipsNotice() {
+        DiningTable table = shortageTable(null);
+
+        diningTableService.rebalance(table.getId());
+
+        assertThat(table.getStatus()).isEqualTo(DiningTableStatus.DISSOLVED);
+        then(matchResolutionService).should(times(3)).offerResolution(any(), eq(List.of(session.getId())));
+        then(chatService).shouldHaveNoInteractions();
+        then(exceptionCaseService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("재조정 (1) 확정 테이블 남은 3명(최소 4명): 대기자로 충원되면 해체·해결 선택 없이 그대로 진행")
+    void rebalance_threeLeft_refillFromWaiting() {
+        rules = new MatchingEngine.Rules(4, 5, 8, 0, MatchingWeights.defaults(), List.of());
+        DiningTable table = table(session, DiningTableStatus.CONFIRMED);
+        List<DiningTableMember> seated = members(table, 4);
+        seated.get(3).getApplication().cancel();
+        Application waiting = application(1996);
+        waiting.changeMatchStatus(MatchStatus.REALLOCATING);
+        given(diningTableMemberRepository.findByTableIdWithApplication(table.getId())).willReturn(seated);
+        given(adminApplicationService.listSessionApplications(session.getId())).willReturn(List.of(waiting));
+        given(diningTableMemberRepository.findApplicationIdsByTableStatusIn(anyCollection(), anyCollection()))
+                .willReturn(List.of());
+        given(diningTableMemberRepository.save(any(DiningTableMember.class))).willAnswer(invocation -> {
+            DiningTableMember saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", UUID.randomUUID());
+            return saved;
+        });
+
+        diningTableService.rebalance(table.getId());
+
+        assertThat(table.getStatus()).isEqualTo(DiningTableStatus.CONFIRMED);
+        assertThat(table.getGroupSize()).isEqualTo(4);
+        assertThat(waiting.getMatchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+        assertThat(actions(table)).containsExactly("CANCEL_REMOVE", "REFILL");
+        then(matchResolutionService).shouldHaveNoInteractions();
+        then(chatService).shouldHaveNoInteractions();
+        then(exceptionCaseService).shouldHaveNoInteractions();
     }
 
     // ── 수동 조정 ─────────────────────────────────────────────────────────────

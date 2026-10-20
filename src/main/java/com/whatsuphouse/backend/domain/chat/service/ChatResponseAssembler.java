@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.chat.service;
 
+import com.whatsuphouse.backend.domain.bot.service.BotHandoffService;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatLastMessageResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatMessageResponse;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatReportResponse;
@@ -52,6 +53,7 @@ public class ChatResponseAssembler {
     private final ChatCipher chatCipher;
     private final UserService userService;
     private final StorageService storageService;
+    private final BotHandoffService botHandoffService;
 
     // 안 읽은 사람 수 계산 단위. 문의방은 관리자 전원을 "와썹하우스" 한 명으로 센다.
     private record Reader(Set<UUID> userIds, LocalDateTime readAt) {
@@ -93,6 +95,7 @@ public class ChatResponseAssembler {
                     .unreadCount(m.getType() == ChatMessageType.SYSTEM ? 0 : unreadCount(m, readers))
                     .isEdited(m.getEditedAt() != null)
                     .isDeleted(m.isDeleted())
+                    .aiGenerated(m.isAiGenerated())
                     .createdAt(m.getCreatedAt())
                     .build();
         }).toList();
@@ -117,6 +120,7 @@ public class ChatResponseAssembler {
                 ? userService.findUsersByIds(rooms.stream()
                         .map(ChatRoom::getInquiryUserId).filter(Objects::nonNull).collect(Collectors.toSet()))
                 : Map.of();
+        Map<UUID, String> handoffReasons = viewerIsAdmin ? handoffReasons(rooms) : Map.of();
 
         return rooms.stream()
                 .sorted(Comparator.comparing((ChatRoom r) -> activityAt(r, lastMessages.get(r.getId()))).reversed())
@@ -134,6 +138,9 @@ public class ChatResponseAssembler {
                             .isUnanswered(room.isInquiry() && last != null
                                     && room.getInquiryUserId().equals(last.getSenderId()))
                             .isMember(joinedRoomIds.contains(room.getId()))
+                            .needsHuman(room.isNeedsHuman())
+                            .botPaused(room.isBotPaused())
+                            .handoffReason(handoffReasons.get(room.getId()))
                             .build();
                 })
                 .toList();
@@ -163,7 +170,16 @@ public class ChatResponseAssembler {
                 }).toList())
                 .notice(notice)
                 .permissions(permissions)
+                .needsHuman(room.isNeedsHuman())
+                .botPaused(room.isBotPaused())
+                .handoffReason(viewerIsAdmin ? handoffReasons(List.of(room)).get(room.getId()) : null)
                 .build();
+    }
+
+    // 관리자 전용. 이관 표시(needsHuman)된 문의방만 사유를 싣는다.
+    private Map<UUID, String> handoffReasons(List<ChatRoom> rooms) {
+        List<UUID> roomIds = rooms.stream().filter(ChatRoom::isNeedsHuman).map(ChatRoom::getId).toList();
+        return roomIds.isEmpty() ? Map.of() : botHandoffService.findLatestReasons(roomIds);
     }
 
     /** 관리자 검토용: 실제 닉네임, 삭제된 메시지도 TEXT 원문을 보여준다. */
@@ -245,6 +261,7 @@ public class ChatResponseAssembler {
                 .systemKind(m.getSystemKind())
                 .systemParams(m.getSystemParams())
                 .isDeleted(m.isDeleted())
+                .aiGenerated(m.isAiGenerated())
                 .createdAt(m.getCreatedAt())
                 .build();
     }

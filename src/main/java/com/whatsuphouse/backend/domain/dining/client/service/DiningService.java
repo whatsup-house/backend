@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.dining.client.service;
 import com.whatsuphouse.backend.domain.dining.client.dto.request.FeedbackCreateRequest;
 import com.whatsuphouse.backend.domain.dining.client.dto.request.SafetyReportCreateRequest;
 import com.whatsuphouse.backend.domain.dining.client.dto.response.DiningHistoryResponse;
+import com.whatsuphouse.backend.domain.dining.client.dto.response.DiningRecommendationResponse;
 import com.whatsuphouse.backend.domain.dining.entity.ExceptionCase;
 import com.whatsuphouse.backend.domain.dining.entity.Feedback;
 import com.whatsuphouse.backend.domain.dining.entity.PeerPreference;
@@ -14,7 +15,11 @@ import com.whatsuphouse.backend.domain.dining.repository.PeerPreferenceRepositor
 import com.whatsuphouse.backend.domain.dining.repository.SafetyReportRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
+import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
 import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
@@ -22,6 +27,7 @@ import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +35,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -38,6 +46,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -53,7 +62,10 @@ public class DiningService {
     public static final Set<DiningTableStatus> HELD_TABLE_STATUSES =
             EnumSet.of(DiningTableStatus.CONFIRMED, DiningTableStatus.DONE);
 
+    private static final int RECOMMENDATION_LIMIT = 3;
+
     private final MatchingService matchingService;
+    private final GatheringService gatheringService;
     private final DiningAttendanceService diningAttendanceService;
     private final ExceptionCaseService exceptionCaseService;
     private final FeedbackRepository feedbackRepository;
@@ -156,6 +168,42 @@ public class DiningService {
                             .attendanceStatus(attendanceStatuses.get(member.getId()))
                             .build();
                 })
+                .toList();
+    }
+
+    /**
+     * 다음 추천 회차: 지금 신청할 수 있는(OPEN, 마감 전) 우연한 식탁 회차 중 최대 3개. 노출 규칙은 목록과 같다(숨김 종류는 체험 회원에게만, 관리자는 전체).
+     * 정렬은 내가 참석한 지역과 같은 회차 -> 참석한 요일과 같은 회차 -> 날짜 순. (RET-02, KAN-407)
+     */
+    public List<DiningRecommendationResponse> listMyRecommendations(UserPrincipal viewer) {
+        List<DiningTableMember> memberships = matchingService.listUserTableMembers(viewer.getUserId(), HELD_TABLE_STATUSES);
+        Map<UUID, AttendanceStatus> attendance = diningAttendanceService.findAttendanceStatuses(
+                memberships.stream().map(DiningTableMember::getId).toList());
+        Set<String> pastRegions = new HashSet<>();
+        Set<DayOfWeek> pastDays = new HashSet<>();
+        for (DiningTableMember member : memberships) {
+            if (attendance.get(member.getId()) == AttendanceStatus.ATTENDED) {
+                GatheringSession past = member.getTable().getSession();
+                pastDays.add(past.getEventDate().getDayOfWeek());
+                if (past.getLocation() != null) {
+                    pastRegions.add(past.getLocation().getName());
+                }
+            }
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Predicate<Gathering> visible = gatheringService.visibleTo(viewer);
+        return gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE).stream()
+                .filter(session -> visible.test(session.getGathering()))
+                .filter(session -> session.getEffectiveSessionStatus() == GatheringSessionStatus.OPEN
+                        && (session.getApplyDeadlineAt() == null || session.getApplyDeadlineAt().isAfter(now)))
+                .sorted(Comparator
+                        .comparing((GatheringSession session) -> session.getLocation() != null
+                                && pastRegions.contains(session.getLocation().getName()) ? 0 : 1)
+                        .thenComparing(session -> pastDays.contains(session.getEventDate().getDayOfWeek()) ? 0 : 1)
+                        .thenComparing(GatheringSession::getEventDate)
+                        .thenComparing(GatheringSession::getStartTime, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .limit(RECOMMENDATION_LIMIT)
+                .map(DiningRecommendationResponse::from)
                 .toList();
     }
 

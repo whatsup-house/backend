@@ -22,6 +22,7 @@ import com.whatsuphouse.backend.domain.matching.service.DiningTableService;
 import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -87,6 +88,9 @@ class DiningApplicationServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private DepositService depositService;
+
     @InjectMocks
     private DiningApplicationService diningApplicationService;
 
@@ -116,7 +120,7 @@ class DiningApplicationServiceTest {
     // ── cancelApplication() ────────────────────────────────────────────────
 
     @Test
-    @DisplayName("배정 회차 시작 2일 전보다 이르면 취소되고 이용권이 복원된다")
+    @DisplayName("마감(전날 0시) 전이면 취소되고 이용권이 복원된다")
     void cancel_assignedSessionBeforeWindow_cancelsAndRestoresTicket() {
         Application application = confirmedApplication(sessionOn(3));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
@@ -125,7 +129,7 @@ class DiningApplicationServiceTest {
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(ticketService).should().refundOneTicket(application);
-        then(diningAttendanceService).should().cancelAttendance(applicationId);
+        then(diningAttendanceService).should().cancelAttendance(applicationId, false);
         then(eventPublisher).should().publishEvent(any(ApplicationCancelledEvent.class));
     }
 
@@ -144,13 +148,13 @@ class DiningApplicationServiceTest {
 
         // 재조정이 멤버 행에 removed_at을 채우면 cancelAttendance가 좌석을 못 찾으므로 순서가 중요하다.
         InOrder order = inOrder(diningAttendanceService, diningTableService);
-        order.verify(diningAttendanceService).cancelAttendance(applicationId);
+        order.verify(diningAttendanceService).cancelAttendance(applicationId, false);
         order.verify(diningTableService).rebalance(table.getId());
     }
     @Test
-    @DisplayName("배정 회차 시작 2일 이내면 CANCEL_WINDOW_CLOSED")
-    void cancel_assignedSessionWithinWindow_throws() {
-        Application application = confirmedApplication(sessionOn(1));
+    @DisplayName("배정 회차가 이미 시작했으면 CANCEL_WINDOW_CLOSED")
+    void cancel_assignedSessionStarted_throws() {
+        Application application = confirmedApplication(sessionOn(-1));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
 
         assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId))
@@ -165,13 +169,15 @@ class DiningApplicationServiceTest {
     void cancel_waiting_usesEarliestUpcomingCandidate() {
         Application application = confirmedApplication(null);
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
-        // 1순위는 다음 주, 2순위는 내일: 내일 회차가 기준이라 기한이 지났다.
+        // 1순위는 다음 주, 2순위는 내일: 내일 회차가 기준이라 마감이 지나 이용권은 복원하지 않는다.
         given(applicationCandidateSessionRepository.findByApplicationIdsWithSession(List.of(applicationId)))
                 .willReturn(List.of(candidate(application, sessionOn(7), 1), candidate(application, sessionOn(1), 2)));
 
-        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId))
-                .isInstanceOf(CustomException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CANCEL_WINDOW_CLOSED);
+        diningApplicationService.cancelApplication(applicationId, userId);
+
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        then(ticketService).should(never()).refundOneTicket(any());
+        then(diningAttendanceService).should().cancelAttendance(applicationId, true);
     }
 
     @Test
