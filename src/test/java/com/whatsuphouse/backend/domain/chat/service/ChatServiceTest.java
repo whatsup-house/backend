@@ -198,6 +198,18 @@ class ChatServiceTest {
         assertThat(chatService.listRooms(friendId, false).get(0).getUnreadCount()).isZero();
     }
 
+    @Test
+    @DisplayName("방 목록 마지막 메시지 미리보기에 aiGenerated가 실린다(봇=true, 사람=false)")
+    void listRooms_lastMessageCarriesAiGenerated() {
+        UUID roomId = chatService.openInquiryRoom(userId, false).getRoomId();
+        chatService.postBotMessage(roomId, "안녕하세요 &amp; 반가워요");
+
+        assertThat(chatService.listRooms(userId, false).get(0).getLastMessage().isAiGenerated()).isTrue();
+
+        chatService.sendMessage(roomId, userId, false, text("사람 답장"));
+        assertThat(chatService.listRooms(userId, false).get(0).getLastMessage().isAiGenerated()).isFalse();
+    }
+
     private UUID createGroup(UUID... memberIds) {
         ChatGroupRoomCreateRequest request = new ChatGroupRoomCreateRequest();
         ReflectionTestUtils.setField(request, "name", "10월 게더링");

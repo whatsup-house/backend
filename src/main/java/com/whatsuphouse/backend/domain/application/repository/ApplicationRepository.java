@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -102,6 +103,7 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
     Optional<Application> findIncludingDeletedById(UUID id);
 
     // 입금 대사 후보: 입금 확인 전인 일반 모임(우연한 식탁 제외) 신청. 유료 여부는 호출 측이 가격으로 거른다.
+    // 회차 날짜가 since 이전인 지난 모임은 뺀다. 현장 결제 후 미체크로 남은 옛 신청이 엉뚱한 입금에 확정되지 않게. (설계 2.4)
     @EntityGraph(attributePaths = {"gathering", "session"})
     @Query("""
             SELECT a FROM Application a
@@ -110,9 +112,11 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
               AND a.session IS NOT NULL
               AND (a.gathering.gatheringType IS NULL OR a.gathering.gatheringType <> :excludedType)
               AND a.status IN :statuses
+              AND a.session.eventDate >= :since
             ORDER BY a.createdAt ASC
             """)
     List<Application> findUnpaidRegularApplications(
             @Param("excludedType") GatheringType excludedType,
-            @Param("statuses") List<ApplicationStatus> statuses);
+            @Param("statuses") List<ApplicationStatus> statuses,
+            @Param("since") LocalDate since);
 }

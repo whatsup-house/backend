@@ -37,6 +37,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -183,7 +184,8 @@ class ApplicationServiceAutoApproveTest {
     void listPendingRegularPayments_onlyPaidGatherings() {
         Application paid = regularApplication(15000);
         Application free = regularApplication(0);
-        given(applicationRepository.findUnpaidRegularApplications(eq(GatheringType.RANDOM_TABLE), any()))
+        given(applicationRepository.findUnpaidRegularApplications(eq(GatheringType.RANDOM_TABLE), any(),
+                eq(LocalDate.now(ZoneId.of("Asia/Seoul")).minusDays(1))))
                 .willReturn(List.of(paid, free));
 
         List<PendingPayment> result = applicationService.listPendingRegularPayments();

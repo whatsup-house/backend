@@ -11,7 +11,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -24,7 +23,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DemoAccountService {
 
-    private static final SecureRandom RANDOM = new SecureRandom();
     private static final int SAMPLE_AGE = 28;
 
     private final UserRepository userRepository;
@@ -33,12 +31,13 @@ public class DemoAccountService {
 
     public LoginResponse createDemo() {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
-        String name = "체험" + String.format("%04d", RANDOM.nextInt(10_000));
+        // 이름이 겹치면 입금 시뮬레이터가 후보 여러 건으로 막힌다. 계정마다 다른 접미사를 그대로 쓴다.
+        String name = "체험" + suffix;
         User user = User.builder()
                 .email("demo+" + suffix + "@whatsup.house")
                 .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                 .name(name)
-                .nickname("체험" + suffix)
+                .nickname(name)
                 .gender(Gender.FEMALE)
                 .age(SAMPLE_AGE)
                 .birthDate(LocalDate.now().minusYears(SAMPLE_AGE))

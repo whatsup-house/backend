@@ -261,6 +261,7 @@ public class ChatResponseAssembler {
                 .systemKind(m.getSystemKind())
                 .systemParams(m.getSystemParams())
                 .isDeleted(m.isDeleted())
+                .aiGenerated(m.isAiGenerated())
                 .createdAt(m.getCreatedAt())
                 .build();
     }

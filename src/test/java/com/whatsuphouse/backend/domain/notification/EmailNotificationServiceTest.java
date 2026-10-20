@@ -338,6 +338,30 @@ class EmailNotificationServiceTest {
         then(mailSender).shouldHaveNoInteractions();
     }
 
+    // ── 체험 계정 차단 (KAN-407) ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("체험 계정 주소(demo+…@whatsup.house)로는 메일을 보내지 않는다")
+    void demoAddress_sendSkipped() {
+        User demo = buildUser("demo+1a2b3c4d@whatsup.house");
+        Application application = buildApplication(demo, buildGathering());
+
+        emailNotificationService.sendWelcome(demo);
+        emailNotificationService.sendApplicationConfirmed(application);
+        emailNotificationService.sendPaymentConfirmed(application);
+
+        then(mailSender).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("체험 패턴과 비슷하지만 다른 주소는 그대로 발송한다")
+    void nonDemoAddress_sendCalled() {
+        emailNotificationService.sendWelcome(buildUser("demo+1@gmail.com"));
+        emailNotificationService.sendWelcome(buildUser("demo@whatsup.house"));
+
+        then(mailSender).should(times(2)).send(any(SimpleMailMessage.class));
+    }
+
     // ── MailException 격리 ────────────────────────────────────────────────────
 
     @Test

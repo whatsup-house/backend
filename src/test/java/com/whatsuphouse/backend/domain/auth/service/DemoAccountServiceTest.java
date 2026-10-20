@@ -47,8 +47,10 @@ class DemoAccountServiceTest {
         assertThat(user.isDemo()).isTrue();
         assertThat(user.isAdmin()).isFalse();
         assertThat(user.getRandomTableEligibility()).isEqualTo(RandomTableEligibility.APPROVED);
-        assertThat(user.getName()).matches("체험\\d{4}");
+        assertThat(user.getName()).matches("체험[0-9a-f]{8}");
         assertThat(user.getEmail()).matches("demo\\+[0-9a-f]{8}@whatsup\\.house");
+        // 이름 접미사 = 이메일 접미사(계정마다 고유)
+        assertThat(user.getEmail()).isEqualTo("demo+" + user.getName().substring(2) + "@whatsup.house");
         assertThat(user.getPassword()).isEqualTo("encoded");
         assertThat(user.getNickname()).isNotBlank();
         assertThat(result).isSameAs(login);

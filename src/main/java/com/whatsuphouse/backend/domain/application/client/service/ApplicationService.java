@@ -481,10 +481,11 @@ public class ApplicationService {
         return true;
     }
 
-    /** 입금 대사 후보: 입금 확인 전인 유료 일반 모임 신청(PENDING·CONFIRMED). */
+    /** 입금 대사 후보: 입금 확인 전인 유료 일반 모임 신청(PENDING·CONFIRMED). 어제 이전 회차는 제외. */
     public List<PendingPayment> listPendingRegularPayments() {
         return applicationRepository.findUnpaidRegularApplications(
-                        GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED))
+                        GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED),
+                        LocalDate.now(KOREA).minusDays(1))
                 .stream()
                 .filter(Application::isPaidGathering)
                 .map(a -> new PendingPayment(PaymentTargetType.REGULAR_APPLICATION, a.getId(), a.getId(),

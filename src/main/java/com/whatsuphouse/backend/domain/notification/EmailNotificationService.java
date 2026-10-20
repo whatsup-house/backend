@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * NotificationService의 이메일(SMTP) 구현체.
@@ -55,6 +56,10 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class EmailNotificationService implements NotificationService {
+
+    // 체험 계정 주소(demo+…@whatsup.house)는 실제 메일함이 없다. 보내면 반송돼 발신 도메인 평판을 깎는다. (KAN-407)
+    // user.isDemo()로 거르지 않는 이유: @Async 스레드에서 지연 로딩 user 프록시를 건드리면 실제 회원 메일까지 실패한다.
+    private static final Pattern DEMO_EMAIL = Pattern.compile("^demo\\+.*@whatsup\\.house$");
 
     private final JavaMailSender mailSender;
     private final MailTemplateRenderer mailTemplateRenderer;
@@ -312,6 +317,10 @@ public class EmailNotificationService implements NotificationService {
      * 이메일 실패가 신청/상태변경 트랜잭션을 롤백시키지 않도록 격리합니다 (FR-NTF-09).
      */
     private void send(String to, String subject, String body) {
+        if (to != null && DEMO_EMAIL.matcher(to).matches()) {
+            log.debug("체험 계정 메일 건너뜀 [to={}]", to);
+            return;
+        }
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(from);

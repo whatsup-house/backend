@@ -372,8 +372,26 @@ class ApplicationRepositoryTest {
         em.clear();
 
         List<Application> result = applicationRepository.findUnpaidRegularApplications(
-                GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED));
+                GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED),
+                LocalDate.now().minusDays(1));
 
         assertThat(result).extracting(Application::getBookingNumber).containsExactly("WH-U1");
+    }
+
+    @Test
+    @DisplayName("입금 대사 후보는 기준일(어제) 이전 회차의 미입금 신청을 뺀다 — 기준일·다가오는 회차는 포함")
+    void findUnpaidRegularApplications_excludesPastSessions() {
+        LocalDate since = LocalDate.now().minusDays(1);
+        saveApplication("WH-P1", saveSession(since.minusDays(30)), null, "01011111111");
+        saveApplication("WH-P2", saveSession(since.minusDays(1)), null, "01022222222");
+        saveApplication("WH-P3", saveSession(since), null, "01033333333");
+        saveApplication("WH-P4", session, null, "01044444444");   // 7일 뒤
+        em.flush();
+        em.clear();
+
+        List<Application> result = applicationRepository.findUnpaidRegularApplications(
+                GatheringType.RANDOM_TABLE, List.of(ApplicationStatus.PENDING, ApplicationStatus.CONFIRMED), since);
+
+        assertThat(result).extracting(Application::getBookingNumber).containsExactlyInAnyOrder("WH-P3", "WH-P4");
     }
 }
