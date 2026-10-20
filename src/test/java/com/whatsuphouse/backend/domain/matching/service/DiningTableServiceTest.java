@@ -21,7 +21,6 @@ import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.matching.service.DiningMatchService.TableEvaluator;
-import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
@@ -87,8 +86,6 @@ class DiningTableServiceTest {
     private DiningAttendanceService diningAttendanceService;
     @Mock
     private MatchResolutionService matchResolutionService;
-    @Mock
-    private DepositService depositService;
     @Mock
     private ChatService chatService;
 
@@ -263,7 +260,7 @@ class DiningTableServiceTest {
     }
 
     @Test
-    @DisplayName("재조정 (3) 확정 테이블 해체: 남은 3명(최소 4명)을 충원·이동 못 하면 해체 + 단체방 공지 + 각자 해결 선택(마감 후 환불 허용) + 보증금 반환, 예외함 없음. 다시 불러도 중복 제안 없음")
+    @DisplayName("재조정 (3) 확정 테이블 해체: 남은 3명(최소 4명)을 충원·이동 못 하면 해체 + 단체방 공지 + 각자 해결 선택(보증금은 선택 결과가 정함), 예외함 없음. 다시 불러도 중복 제안 없음")
     void rebalance_threeLeftNoFill_dissolvesAndOffersResolutions() {
         rules = new MatchingEngine.Rules(4, 5, 8, 0, MatchingWeights.defaults(), List.of());
         DiningTable table = table(session, DiningTableStatus.CONFIRMED);
@@ -287,11 +284,10 @@ class DiningTableServiceTest {
         then(chatService).should().postSystemNotice(roomId,
                 "인원이 부족해 이번 테이블은 진행되지 않아요. 앱에서 다음 일정이나 환불을 선택해 주세요");
         then(exceptionCaseService).should(never()).open(any(), any(), any(), any(), any());
-        then(matchResolutionService).should(times(3)).offerResolution(any(), eq(List.of(session.getId())), eq(true));
+        then(matchResolutionService).should(times(3)).offerResolution(any(), eq(List.of(session.getId())));
         for (DiningTableMember member : remaining) {
             Application application = member.getApplication();
-            then(matchResolutionService).should().offerResolution(application, List.of(session.getId()), true);
-            then(depositService).should().requestReturn(application.getId());
+            then(matchResolutionService).should().offerResolution(application, List.of(session.getId()));
             then(diningAttendanceService).should().releaseSeat(member.getId());
             assertThat(application.getMatchStatus()).isEqualTo(MatchStatus.ALTERNATIVE_OFFERED);
         }
@@ -325,7 +321,6 @@ class DiningTableServiceTest {
         assertThat(waiting.getMatchStatus()).isEqualTo(MatchStatus.CONFIRMED);
         assertThat(actions(table)).containsExactly("CANCEL_REMOVE", "REFILL");
         then(matchResolutionService).shouldHaveNoInteractions();
-        then(depositService).shouldHaveNoInteractions();
         then(chatService).shouldHaveNoInteractions();
         then(exceptionCaseService).shouldHaveNoInteractions();
     }

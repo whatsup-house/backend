@@ -17,7 +17,6 @@ import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.matching.service.DiningMatchService.TableEvaluator;
-import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -62,7 +61,6 @@ public class DiningTableService {
     // 좌석이 바뀔 때 참석(Attendance) 행을 맞춘다(확정 테이블에 앉으면 SCHEDULED, 떠나면 삭제). (KAN-349)
     private final DiningAttendanceService diningAttendanceService;
     private final MatchResolutionService matchResolutionService;
-    private final DepositService depositService;
     private final ChatService chatService;
 
     // ── 확정 후 취소 재조정 ──────────────────────────────────────────────────────
@@ -71,8 +69,9 @@ public class DiningTableService {
      * 취소된 멤버를 빼고, 남은 인원이 최소 인원 미만이면
      * (1) 같은 회차 REALLOCATING 대기자 중 하드 조건을 지키는 사람을 점수 순으로 충원,
      * (2) 안 되면 남은 멤버를 같은 회차 다른 활성 테이블(최대 인원 미만)로 전원 옮기고 이 테이블은 해체,
-     * (3) 그것도 안 되면 확정 테이블은 해체하고 남은 멤버 각자에게 해결 선택(대체 회차·보관·환불, 마감 후 환불 허용)을 제안하며
-     *     보증금 반환을 요청한다(본인 잘못이 아님, KAN-405). 제안(PROPOSED) 테이블은 예외함(CONFLICT)에 올려 운영자가 병합·해체를 정한다.
+     * (3) 그것도 안 되면 확정 테이블은 해체하고 남은 멤버 각자에게 해결 선택(대체 회차·보관·환불)을 제안한다(KAN-405).
+     *     보증금은 매칭 실패와 같이 선택 결과가 정한다(KEEP_TICKET/REFUND/EXPIRED 반환, TRANSFER 유지).
+     *     제안(PROPOSED) 테이블은 예외함(CONFLICT)에 올려 운영자가 병합·해체를 정한다.
      * 해체된 테이블은 비활성이라 다시 불러도 아무것도 하지 않는다.
      */
     public void rebalance(UUID tableId) {
@@ -247,8 +246,7 @@ public class DiningTableService {
             Application application = member.getApplication();
             diningAttendanceService.releaseSeat(member.getId());
             application.changeMatchStatus(MatchStatus.ALTERNATIVE_OFFERED);
-            matchResolutionService.offerResolution(application, excluded, true);
-            depositService.requestReturn(application.getId());
+            matchResolutionService.offerResolution(application, excluded);
         }
     }
 

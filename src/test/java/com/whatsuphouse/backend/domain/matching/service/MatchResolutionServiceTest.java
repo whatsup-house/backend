@@ -256,11 +256,11 @@ class MatchResolutionServiceTest {
     }
 
     @Test
-    @DisplayName("REFUND: 해체된 확정 테이블 멤버(마감 후 환불 허용)는 회차 전날(취소 마감 후)에도 환불을 고를 수 있다")
+    @DisplayName("REFUND: 해체된 확정 테이블 멤버는 회차 전날(취소 마감 후)에도 환불을 고를 수 있다")
     void choose_refund_dissolvedTableMember_afterDeadline() {
         GatheringSession tomorrow = session(1, LocalDateTime.now().minusDays(1));
         given(gatheringService.listSessionsByGathering(gathering.getId())).willReturn(List.of(tomorrow));
-        matchResolutionService.offerResolution(application, List.of(tomorrow.getId()), true);
+        matchResolutionService.offerResolution(application, List.of(tomorrow.getId()));
         ArgumentCaptor<MatchResolution> saved = ArgumentCaptor.forClass(MatchResolution.class);
         then(matchResolutionRepository).should().save(saved.capture());
         MatchResolution resolution = saved.getValue();
