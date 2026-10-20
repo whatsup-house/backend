@@ -256,8 +256,8 @@ class MatchResolutionServiceTest {
     }
 
     @Test
-    @DisplayName("REFUND: 해체된 확정 테이블 멤버는 회차 전날(취소 마감 후)에도 환불을 고를 수 있다")
-    void choose_refund_dissolvedTableMember_afterDeadline() {
+    @DisplayName("REFUND: 희망 회차가 내일이라 취소 마감(D-1 00:00)이 지났어도 해결 선택 환불은 받는다")
+    void choose_refund_pastDeadlineSession_allowed() {
         GatheringSession tomorrow = session(1, LocalDateTime.now().minusDays(1));
         given(gatheringService.listSessionsByGathering(gathering.getId())).willReturn(List.of(tomorrow));
         matchResolutionService.offerResolution(application, List.of(tomorrow.getId()));

@@ -21,8 +21,14 @@ import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,10 +49,14 @@ import java.util.stream.Stream;
  * 테이블 멤버 구성 변경: 확정 후 취소 재조정(설계 4.7)과 운영자 수동 조정(이동·분리·병합·해체, 설계 5.3).
  * 수동 조정은 관련 테이블을 전부 하드 조건으로 재검증하고, 위반이 있으면 400 TABLE_RULE_VIOLATION으로 롤백한다. (KAN-347)
  */
+@Slf4j
 @Service
 @Transactional
 @RequiredArgsConstructor
 public class DiningTableService {
+
+    private static final String SHORTAGE_NOTICE =
+            "인원이 부족해 이번 테이블은 진행되지 않아요. 앱에서 다음 일정이나 환불을 선택해 주세요";
 
     private static final Set<DiningTableStatus> ACTIVE_TABLE_STATUSES =
             EnumSet.of(DiningTableStatus.PROPOSED, DiningTableStatus.CONFIRMED);
@@ -62,6 +72,7 @@ public class DiningTableService {
     private final DiningAttendanceService diningAttendanceService;
     private final MatchResolutionService matchResolutionService;
     private final ChatService chatService;
+    private final PlatformTransactionManager transactionManager;
 
     // ── 확정 후 취소 재조정 ──────────────────────────────────────────────────────
 
@@ -237,17 +248,54 @@ public class DiningTableService {
     private void dissolveForShortage(DiningTable table, List<DiningTableMember> remaining) {
         table.recordReallocation("SHORTAGE_DISSOLVE", null, "인원 부족(확정 후 취소)", memberIds(remaining));
         dissolve(table);
-        if (table.getChatRoomId() != null) {
-            chatService.postSystemNotice(table.getChatRoomId(),
-                    "인원이 부족해 이번 테이블은 진행되지 않아요. 앱에서 다음 일정이나 환불을 선택해 주세요");
-        }
         List<UUID> excluded = List.of(table.getSession().getId());
         for (DiningTableMember member : remaining) {
             Application application = member.getApplication();
             diningAttendanceService.releaseSeat(member.getId());
-            application.changeMatchStatus(MatchStatus.ALTERNATIVE_OFFERED);
+            application.offerAlternative();
             matchResolutionService.offerResolution(application, excluded);
         }
+        UUID roomId = table.getChatRoomId();
+        if (roomId != null) {
+            UUID sessionId = table.getSession().getId();
+            UUID tableId = table.getId();
+            afterCommit(() -> postShortageNotice(roomId, sessionId, tableId));
+        }
+    }
+
+    // 취소 트랜잭션이 커밋된 뒤 별도 트랜잭션으로 공지한다. 실패해도 취소·해체를 되돌리지 않고 예외함(NOTIFICATION)에 남긴다.
+    private void postShortageNotice(UUID roomId, UUID sessionId, UUID tableId) {
+        try {
+            inNewTransaction(() -> chatService.postSystemNotice(roomId, SHORTAGE_NOTICE));
+        } catch (Exception e) {
+            log.warn("테이블 해체 채팅 안내 실패: tableId={}", tableId, e);
+            try {
+                inNewTransaction(() -> exceptionCaseService.open(ExceptionCaseType.NOTIFICATION, sessionId, tableId, null,
+                        "인원 부족 해체 채팅방 안내 실패: " + e.getMessage()));
+            } catch (Exception openFailure) {
+                log.error("테이블 해체 안내 실패 예외 건 생성 실패: tableId={}", tableId, openFailure);
+            }
+        }
+    }
+
+    // 트랜잭션 안이면 커밋 후, 아니면(단위 테스트 등) 바로 실행.
+    private static void afterCommit(Runnable work) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            work.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                work.run();
+            }
+        });
+    }
+
+    private void inNewTransaction(Runnable work) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.executeWithoutResult(status -> work.run());
     }
 
     // 같은 회차 REALLOCATING 대기자: 결제 완료, 참여 자격 승인, 활성 테이블 없음. 입력(신청) 순서가 동점 처리 기준.
