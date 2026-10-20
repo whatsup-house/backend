@@ -71,9 +71,12 @@ public class AdminDiningService {
     private final MatchExclusionProvider matchExclusionProvider;
 
     public DiningDashboardResponse getDashboard() {
-        List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE).stream()
-                .filter(session -> !session.getGathering().isHidden()) // 심사용 숨김 종류는 운영 집계에서 뺀다. (KAN-407)
-                .toList();
+        // 카드에는 심사용 숨김 종류 회차도 넣는다(hidden=true, 콘솔에서 매칭 실행용). 타일 집계에서는 뺀다. (KAN-407, KAN-416)
+        List<GatheringSession> sessions = gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE);
+        Set<UUID> hiddenSessionIds = sessions.stream()
+                .filter(session -> session.getGathering().isHidden())
+                .map(GatheringSession::getId)
+                .collect(Collectors.toSet());
         List<UUID> sessionIds = sessions.stream().map(GatheringSession::getId).toList();
         Map<UUID, Map<DiningTableStatus, Long>> tableCounts = matchingService.countTablesBySessionIds(sessionIds);
         Set<UUID> matchRunSessionIds = matchingService.findSessionIdsWithMatchRun(sessionIds);
@@ -86,27 +89,30 @@ public class AdminDiningService {
         Map<UUID, Application> distinctApplications = new LinkedHashMap<>();
         List<DiningDashboardResponse.SessionCard> cards = new ArrayList<>();
         for (GatheringSession session : sessions) {
-            // 체험(데모) 회원의 신청은 집계에서 뺀다. (KAN-407)
+            boolean hidden = hiddenSessionIds.contains(session.getId());
+            // 체험(데모) 회원의 신청은 집계에서 뺀다. 숨김 회차 카드는 자기 회차 신청(데모 포함)을 그대로 센다. (KAN-407, KAN-416)
             // ponytail: 회차마다 신청 조회 1회(N회). 다가오는 우연한 식탁 회차는 몇 개뿐이라 충분, 늘면 회차 ID 일괄 조회로.
             List<Application> applications = adminApplicationService.listSessionApplications(session.getId()).stream()
-                    .filter(application -> application.getUser() == null || !application.getUser().isDemo())
+                    .filter(application -> hidden || application.getUser() == null || !application.getUser().isDemo())
                     .toList();
-            applications.forEach(application -> distinctApplications.putIfAbsent(application.getId(), application));
+            if (!hidden) {
+                applications.forEach(application -> distinctApplications.putIfAbsent(application.getId(), application));
+            }
 
             Map<DiningTableStatus, Long> tables = tableCounts.getOrDefault(session.getId(), Map.of());
             long tableCount = tables.getOrDefault(DiningTableStatus.PROPOSED, 0L)
                     + tables.getOrDefault(DiningTableStatus.CONFIRMED, 0L);
             boolean isMatchRunDone = matchRunSessionIds.contains(session.getId());
             cards.add(DiningDashboardResponse.SessionCard.of(session, applications.stream().filter(this::isPaid).count(),
-                    tableCount, isMatchRunDone, openExceptions.getOrDefault(session.getId(), 0L)));
+                    tableCount, isMatchRunDone, openExceptions.getOrDefault(session.getId(), 0L), hidden));
         }
 
         return DiningDashboardResponse.builder()
-                .upcomingSessionCount(sessions.size())
+                .upcomingSessionCount(sessions.size() - hiddenSessionIds.size())
                 .waitingApplicantCount(distinctApplications.values().stream().filter(this::isWaitingForMatch).count())
                 .paidApplicantCount(distinctApplications.values().stream().filter(this::isPaid).count())
-                .proposedTableCount(sumTables(tableCounts, DiningTableStatus.PROPOSED))
-                .confirmedTableCount(sumTables(tableCounts, DiningTableStatus.CONFIRMED))
+                .proposedTableCount(sumTables(tableCounts, hiddenSessionIds, DiningTableStatus.PROPOSED))
+                .confirmedTableCount(sumTables(tableCounts, hiddenSessionIds, DiningTableStatus.CONFIRMED))
                 .openExceptionCount(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN)
                         - exceptionCaseRepository.countByStatusOnHiddenGatherings(ExceptionCaseStatus.OPEN))
                 .sessions(cards)
@@ -230,8 +236,12 @@ public class AdminDiningService {
                 && !CLOSED_APPLICATION_STATUSES.contains(application.getStatus());
     }
 
-    private static long sumTables(Map<UUID, Map<DiningTableStatus, Long>> tableCounts, DiningTableStatus status) {
-        return tableCounts.values().stream().mapToLong(counts -> counts.getOrDefault(status, 0L)).sum();
+    // 타일용 합계. 숨김 회차는 뺀다.
+    private static long sumTables(Map<UUID, Map<DiningTableStatus, Long>> tableCounts, Set<UUID> excludedSessionIds,
+                                  DiningTableStatus status) {
+        return tableCounts.entrySet().stream()
+                .filter(entry -> !excludedSessionIds.contains(entry.getKey()))
+                .mapToLong(entry -> entry.getValue().getOrDefault(status, 0L)).sum();
     }
 
     private static String text(Object value) {

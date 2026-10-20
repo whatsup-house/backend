@@ -81,8 +81,12 @@ public class DiningDashboardResponse {
         @Schema(description = "이 회차의 열린 예외 수", example = "1")
         private long openExceptionCount;
 
+        // 심사용 숨김 종류 회차. 카드에는 나오지만 타일 집계에서는 빠진다. 화면이 "심사용"으로 표시한다. (KAN-416)
+        @Schema(description = "심사용 숨김 종류 회차 여부", example = "false")
+        private boolean hidden;
+
         public static SessionCard of(GatheringSession session, long paidCount, long tableCount,
-                                     boolean isMatchRunDone, long openExceptionCount) {
+                                     boolean isMatchRunDone, long openExceptionCount, boolean hidden) {
             return SessionCard.builder()
                     .sessionId(session.getId())
                     .gatheringId(session.getGathering().getId())
@@ -97,6 +101,7 @@ public class DiningDashboardResponse {
                     .isMatchRunDone(isMatchRunDone)
                     .tableCount(tableCount)
                     .openExceptionCount(openExceptionCount)
+                    .hidden(hidden)
                     .build();
         }
     }
