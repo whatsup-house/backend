@@ -18,7 +18,7 @@
 - 대사는 후보가 **정확히 1건**일 때만 자동 처리. 이름 비교: 같거나 `payerName.startsWith(알림이름)`.
 - 타 도메인 Repository 직접 주입 금지(서비스·이벤트 경유). `remainingCount` 변경 시 `TicketTransaction` 기록 필수. 시스템 질문 키는 enum만.
 - 커밋·PR에 AI·Claude·Co-Authored-By 문구 금지. 커밋 메시지 `feat: … (KAN-4xx)` 형식. 에픽 KAN-399, 각 태스크 제목 옆 키 사용.
-- 시크릿(`DEPOSIT_WEBHOOK_SECRET`, `GROK_WEBHOOK_URL`, `GROK_WEBHOOK_KEY`, `WHATSUP_BOT_TOKEN`)은 `.env`·배포 환경변수로만. 코드·문서·채팅에 값 금지.
+- 시크릿(`DEPOSIT_WEBHOOK_SECRET`, `SLACK_SIGNAL_WEBHOOK_URL`, `WHATSUP_BOT_TOKEN`)은 `.env`·배포 환경변수로만. 코드·문서·채팅에 값 금지.
 - Flyway 번호 고정: BE-0 V18, BE-2 V19, BE-3 V20, BE-4 V21, BE-5 V22, BE-7 V23, BE-8 V24. (아래 태스크 본문의 옛 번호 V18~V23은 이 표로 대체)
 - 병렬 레인: 통합 브랜치 `feature/KAN-399-dining-hackathon`(BE·FE 각각)에서 BE-0 후 분기. 레인 A = BE-1→2→3→4→5→6, B = BE-7, C = BE-8, D = FE-1→2→3, E = FE-4→5→6. 레인은 서로의 코드가 없다고 가정하고 BE-0과 이 계획의 인터페이스만 의존한다.
 - `src/test/.../global/storage/service/SupabaseStorageServiceTest.java`의 변경·삭제는 보안 도구 오탐 처리 결과라 **절대 커밋에 포함하지 않는다**.
@@ -189,6 +189,8 @@
 
 ### Task BE-7 (KAN-406): 1:1 문의방 그록봇 AI 자동응답 (웹훅 발송 + 답변 수신 API)
 
+> **2026-10-20 변경(BE-7b):** 외부 에이전트 웹훅 URL을 쓸 수 없어 웹훅 푸시를 폐기하고 "Slack 신호(`SLACK_SIGNAL_WEBHOOK_URL`, 고정 문구) + `GET /api/bot/pending` lease(5분, `FOR UPDATE SKIP LOCKED`, 응답 `{"items":[...]}`) + `POST /api/bot/replies`(LEASED일 때만)" 방식으로 전환했다(V25). 아래 본문의 웹훅 발송·`GROK_WEBHOOK_*`·SENT/3분 타임아웃 내용은 BE-7b로 대체되었다. 나머지(인증·멱등·이관·일시정지·한도·대상 고객)는 유지.
+
 AI는 외부 에이전트(Grok Bot). 우리 서버가 웹훅으로 문의를 보내고, 에이전트가 우리 답변 API를 호출해 답을 등록한다. 봇은 **읽기 전용**: 데이터 변경(취소·환불·입금 확인 등) 금지, 할 수 있는 건 "답변 등록"과 "담당자 이관 표시"뿐. 비밀값(`GROK_WEBHOOK_URL`, `GROK_WEBHOOK_KEY`, `WHATSUP_BOT_TOKEN`)은 환경변수만, 로그 출력 금지.
 
 **Files:** Create `V23__bot_dispatch.sql`, `domain/bot/entity/{BotDispatch,BotSetting}.java`, `domain/bot/enums/BotDispatchStatus.java`, `domain/bot/service/{BotDispatchListener,BotDispatchService,BotPayloadBuilder,BotWebhookClient,BotReplyService,BotDispatchScheduler}.java`, `domain/bot/controller/BotReplyController.java`, `domain/bot/admin/controller/AdminBotController.java`, `global/config/BotSecurityConfig.java`(별도 필터 체인), `resources/cs/faq.md`; Modify `ChatRoom.java`(+`needsHuman`, `botPaused`), `ChatMessage.java`(+`aiGenerated`), `ChatService.java`(+`postBotMessage`, 관리자가 INQUIRY 방에 답하면 `botPaused=true`), `AdminChatService.java`(+봇 재개), 채팅 응답 DTO(`aiGenerated`, 방 요약·상세에 `needsHuman`, `botPaused`, 관리자용 `handoffReason`), `application.yml`/`application-test.yml`(`bot.*`), `.github/workflows/deploy.yml`(세 시크릿 전달 + `BOT_ENABLED`, `BOT_ALLOWED_USER_IDS`); Test `domain/bot/**`
@@ -324,7 +326,7 @@ AI는 외부 에이전트(Grok Bot). 우리 서버가 웹훅으로 문의를 보
 **Files:** Create `backend/scripts/seed_dining_demo.py`(또는 빌더 선택 언어), `backend/docs/deposit-webhook-setup.md`(MacroDroid·단축어 설정 방법, 시크릿 값은 적지 않음)
 
 - [ ] 숨김 RANDOM_TABLE 종류 1개 + 데모 회차 2개(가까운 시각), 식당 풀, 가상데이터에서 회차당 12~20명 데모 회원·신청·결제 완료 시드. 동명이인 PAYMENT 예외 1건 시드.
-- [ ] 운영 `.env`에 `DEPOSIT_WEBHOOK_SECRET`, `GROK_WEBHOOK_URL`·`GROK_WEBHOOK_KEY`(사용자 제공), `WHATSUP_BOT_TOKEN`, `BOT_ENABLED`, `BOT_ALLOWED_USER_IDS` 설정, 배포.
+- [ ] 운영 `.env`에 `DEPOSIT_WEBHOOK_SECRET`, `SLACK_SIGNAL_WEBHOOK_URL`, `WHATSUP_BOT_TOKEN`, `BOT_ENABLED`, `BOT_ALLOWED_USER_IDS` 설정, 배포.
 - [ ] MacroDroid(안드로이드) 실기기: 실제 소액 이체 → 결제 완료 확인, 30초 영상 녹화.
 - [ ] 심사 전용 관리자 계정 생성(제출 후 비활성화 메모).
 - [ ] PRD 18장 12단계를 실서비스에서 데모 계정으로 1회 완주, 막히는 단계 기록·수정.
