@@ -24,8 +24,8 @@ class MatchingEngineTest {
 
     private final MatchingEngine engine = new MatchingEngine();
 
-    private static MatchingEngine.Rules rules(double minGroupScore) {
-        return new MatchingEngine.Rules(4, 6, 8, minGroupScore, MatchingWeights.defaults(), List.of());
+    private static MatchingEngine.Rules rules() {
+        return new MatchingEngine.Rules(4, 6, 8, MatchingWeights.defaults(), List.of());
     }
 
     private static MatchingEngine.Applicant person(int no, int birthYear, String gender, String... interests) {
@@ -72,7 +72,7 @@ class MatchingEngineTest {
                 person(2, 1997, "MALE", "영화"), person(3, 1995, "FEMALE", "영화"),
                 person(4, 1980, "MALE", "영화"), person(5, 1980, "FEMALE", "영화"));
 
-        MatchingEngine.Result result = engine.match(people, rules(0), MatchingEngine.Relations.none());
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
 
         assertThat(result.tables()).singleElement()
                 .satisfies(table -> assertThat(ids(table)).containsExactlyInAnyOrder(
@@ -88,7 +88,7 @@ class MatchingEngineTest {
     void match_splitsLargePool(int count, int tableCount, int unassignedCount) {
         List<MatchingEngine.Applicant> people = sameAge(count);
 
-        MatchingEngine.Result result = engine.match(people, rules(0), MatchingEngine.Relations.none());
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
 
         assertThat(result.tables()).hasSize(tableCount);
         assertThat(result.unassigned()).hasSize(unassignedCount)
@@ -97,7 +97,7 @@ class MatchingEngineTest {
         assertThat(result.tables().stream().mapToInt(t -> t.seats().size()).sum() + unassignedCount).isEqualTo(count);
         assertHardConditions(result, people);
         // 결정적: 같은 입력이면 같은 결과
-        assertThat(engine.match(people, rules(0), MatchingEngine.Relations.none())).isEqualTo(result);
+        assertThat(engine.match(people, rules(), MatchingEngine.Relations.none())).isEqualTo(result);
     }
 
     @Test
@@ -112,7 +112,7 @@ class MatchingEngineTest {
         List<MatchingEngine.Applicant> people = new ArrayList<>(a);
         people.addAll(b);
 
-        MatchingEngine.Result result = engine.match(people, rules(0),
+        MatchingEngine.Result result = engine.match(people, rules(),
                 new MatchingEngine.Relations(block(a.get(0), b), Map.of()));
 
         assertThat(result.tables()).hasSize(2);
@@ -138,7 +138,7 @@ class MatchingEngineTest {
         List<MatchingEngine.Applicant> people = new ArrayList<>(a);
         people.addAll(b);
 
-        MatchingEngine.Result result = engine.match(people, rules(0),
+        MatchingEngine.Result result = engine.match(people, rules(),
                 new MatchingEngine.Relations(block(a.get(0), b), Map.of()));
 
         assertThat(result.unassigned()).isEmpty();
@@ -151,20 +151,18 @@ class MatchingEngineTest {
     }
 
     @Test
-    @DisplayName("최소 점수 미달 테이블은 해체되고, 들어갈 곳이 없으면 LOW_SCORE로 남는다")
-    void match_dissolvesLowScoreTable() {
+    @DisplayName("점수가 낮은 조합도 하드 조건만 맞으면 테이블이 되고, LOW_SCORE 미배정은 생기지 않는다 (KAN-420)")
+    void match_lowScoreCombination_stillFormsTable() {
         // 전원 남성(−0.30) + 관심사 겹침 없음 → 0점
         List<MatchingEngine.Applicant> people = List.of(person(0, 1995, "MALE", "영화"), person(1, 1995, "MALE", "음악"),
-                person(2, 1995, "MALE", "독서"), person(3, 1995, "MALE", "여행"));
+                person(2, 1995, "MALE", "독서"), person(3, 1995, "MALE", "여행"), person(4, 1995, "MALE", "운동"));
 
-        MatchingEngine.Result lenient = engine.match(people, rules(0), MatchingEngine.Relations.none());
-        MatchingEngine.Result strict = engine.match(people, rules(0.35), MatchingEngine.Relations.none());
+        MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
 
-        assertThat(lenient.tables()).hasSize(1);
-        assertThat(lenient.tables().get(0).score().value()).isEqualByComparingTo("0");
-        assertThat(strict.tables()).isEmpty();
-        assertThat(strict.unassigned()).hasSize(4)
-                .allSatisfy(u -> assertThat(u.reason()).isEqualTo(UnassignedReason.LOW_SCORE));
+        assertThat(result.tables()).hasSize(1);
+        assertThat(result.tables().get(0).seats()).hasSize(5);
+        assertThat(result.tables().get(0).score().value()).isEqualByComparingTo("0");
+        assertThat(result.unassigned()).isEmpty();
     }
 
     @Test
@@ -172,7 +170,7 @@ class MatchingEngineTest {
     void match_excludedPair_neverSeatedTogether() {
         List<MatchingEngine.Applicant> people = sameAge(5);
 
-        MatchingEngine.Result result = engine.match(people, rules(0),
+        MatchingEngine.Result result = engine.match(people, rules(),
                 new MatchingEngine.Relations(block(people.get(1), List.of(people.get(0))), Map.of()));
 
         // 시드는 동점(제외 관계로 상대가 3명)인 0번과 1번 중 입력이 앞선 0번
@@ -187,8 +185,8 @@ class MatchingEngineTest {
     void score_metBeforePenalty() {
         List<MatchingEngine.Applicant> people = sameAge(4); // 남·여·남·여, 관심사 같음
 
-        MatchingEngine.Score fresh = engine.score(people, rules(0), MatchingEngine.Relations.none());
-        MatchingEngine.Score met = engine.score(people, rules(0),
+        MatchingEngine.Score fresh = engine.score(people, rules(), MatchingEngine.Relations.none());
+        MatchingEngine.Score met = engine.score(people, rules(),
                 new MatchingEngine.Relations(Map.of(), block(people.get(0), List.of(people.get(1)))));
 
         // 페어: 남녀 4쌍 1.0, 동성 2쌍 0.5 → 0.7 × 5/6 + 0.3 × 0.5
@@ -205,9 +203,9 @@ class MatchingEngineTest {
         Map<UUID, Set<UUID>> met = Map.of(
                 people.get(0).userId(), Set.of(people.get(1).userId(), people.get(2).userId()));
 
-        MatchingEngine.Score penalized = engine.score(people, rules(0), new MatchingEngine.Relations(Map.of(), met));
+        MatchingEngine.Score penalized = engine.score(people, rules(), new MatchingEngine.Relations(Map.of(), met));
         // 1번이 0번에게 AGAIN(방향 무관) → 0-1 쌍만 면제, 0-2 쌍은 그대로 감점
-        MatchingEngine.Score again = engine.score(people, rules(0), new MatchingEngine.Relations(Map.of(), met,
+        MatchingEngine.Score again = engine.score(people, rules(), new MatchingEngine.Relations(Map.of(), met,
                 block(people.get(1), List.of(people.get(0)))));
 
         assertThat(penalized.detail().penalties()).containsEntry("metBefore", 0.30);

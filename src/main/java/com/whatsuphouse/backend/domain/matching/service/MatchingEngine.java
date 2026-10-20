@@ -31,6 +31,7 @@ import java.util.stream.IntStream;
  *   출생연도를 모르는 사람은 나이 차 계산에서 빠진다.
  * - 페어 점수 = Σ(weight × 항목) / Σweight. 답이 없어 계산할 수 없는 항목은 분자·분모에서 뺀다. Σweight = 0이면 0.
  * - 그룹 점수 = 0.7·pairAvg + 0.3·pairMin − 페널티, 0 미만은 0.
+ *   점수는 조합을 고르는 데만 쓰고 테이블을 거절하지 않는다. 점수 미달로 미배정되는 사람은 없다. (KAN-420)
  * - 무작위 없음. 모든 선택의 동점은 입력 순서가 앞선 쪽이라 같은 입력(순서 포함)이면 같은 결과다.
  */
 @Component
@@ -81,7 +82,7 @@ public class MatchingEngine {
     public record CustomField(String questionKey, MatchingStrategy strategy, double weight) {
     }
 
-    public record Rules(int tableSizeMin, int tableSizeMax, int maxAgeGap, double minGroupScore,
+    public record Rules(int tableSizeMin, int tableSizeMax, int maxAgeGap,
                         MatchingWeights weights, List<CustomField> customFields) {
     }
 
@@ -199,12 +200,11 @@ public class MatchingEngine {
 
             // 4. 남은 사람 재배치
             Map<Integer, UnassignedReason> unassigned = new TreeMap<>();
-            reallocate(incomplete.stream().flatMap(d -> d.members.stream()).sorted().toList(), tables, unassigned, null);
+            reallocate(incomplete.stream().flatMap(d -> d.members.stream()).sorted().toList(), tables, unassigned);
 
-            // 5. 재검증(MAT-07), 6. 최소 점수 미달 → 해체 후 재배치.
-            // 재배치는 하드 조건과 최소 점수를 지키는 테이블에만 넣으므로 두 검사는 한 바퀴로 수렴한다.
-            reallocate(dissolveIf(tables, t -> !isValid(t.members)), tables, unassigned, null);
-            reallocate(dissolveIf(tables, t -> belowMinScore(t.members)), tables, unassigned, UnassignedReason.LOW_SCORE);
+            // 5. 재검증(MAT-07). 재배치는 하드 조건을 지키는 테이블에만 넣으므로 한 바퀴로 수렴한다.
+            // 최소 점수 미달 해체는 하지 않는다(KAN-420).
+            reallocate(dissolveIf(tables, t -> !isValid(t.members)), tables, unassigned);
 
             List<TableResult> results = tables.stream()
                     .map(t -> new TableResult(t.members.stream()
@@ -305,9 +305,8 @@ public class MatchingEngine {
             }
         }
 
-        // 자리(< max)가 있고 하드 조건을 통과하며 넣은 뒤 점수가 최소 점수 이상인 테이블 중 점수가 가장 높은 곳에 넣는다.
-        private void reallocate(List<Integer> persons, List<Draft> tables, Map<Integer, UnassignedReason> unassigned,
-                                UnassignedReason fixedReason) {
+        // 자리(< max)가 있고 하드 조건을 통과하는 테이블 중 넣은 뒤 점수가 가장 높은 곳에 넣는다.
+        private void reallocate(List<Integer> persons, List<Draft> tables, Map<Integer, UnassignedReason> unassigned) {
             for (int p : persons) {
                 Draft best = null;
                 double bestScore = -1;
@@ -316,7 +315,7 @@ public class MatchingEngine {
                         continue;
                     }
                     double s = scoreValue(concat(t.members, List.of(p)));
-                    if (s >= rules.minGroupScore() && s > bestScore) {
+                    if (s > bestScore) {
                         best = t;
                         bestScore = s;
                     }
@@ -325,31 +324,24 @@ public class MatchingEngine {
                     best.add(p, AssignReason.REALLOCATED);
                     reallocatedCount++;
                 } else {
-                    unassigned.put(p, fixedReason != null ? fixedReason : reasonFor(p, tables));
+                    unassigned.put(p, reasonFor(p, tables));
                 }
             }
         }
 
-        // 넣을 수 있는 테이블이 없었던 이유. 조건은 맞았는데 점수가 모자랐다 > 자리가 없었다 > 제외 관계 > 나이 차.
+        // 넣을 수 있는 테이블이 없었던 이유. 자리가 없었다 > 제외 관계 > 나이 차.
+        // 자리가 있고 조건이 맞는 테이블이 있었다면 reallocate가 이미 넣었으므로 여기서는 고려하지 않는다.
         private UnassignedReason reasonFor(int p, List<Draft> tables) {
-            boolean roomButLowScore = false;
             boolean fitsButFull = false;
             boolean blockedOnly = false;
             for (Draft t : tables) {
                 boolean ageOk = ageGap(concat(t.members, List.of(p))) <= rules.maxAgeGap();
                 boolean pairOk = t.members.stream().noneMatch(m -> blocked[m][p]);
                 if (ageOk && pairOk) {
-                    if (t.members.size() < rules.tableSizeMax()) {
-                        roomButLowScore = true;
-                    } else {
-                        fitsButFull = true;
-                    }
+                    fitsButFull = true;
                 } else if (ageOk) {
                     blockedOnly = true;
                 }
-            }
-            if (roomButLowScore) {
-                return UnassignedReason.LOW_SCORE;
             }
             if (fitsButFull || tables.isEmpty()) {
                 return UnassignedReason.NOT_ENOUGH_PEOPLE;
@@ -458,10 +450,6 @@ public class MatchingEngine {
         }
 
         // ── 점수 ─────────────────────────────────────────────────────────────
-
-        private boolean belowMinScore(List<Integer> group) {
-            return scoreValue(group) < rules.minGroupScore();
-        }
 
         private double scoreValue(List<Integer> group) {
             return score(group).value().doubleValue();

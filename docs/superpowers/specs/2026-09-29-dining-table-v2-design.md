@@ -205,9 +205,9 @@ matching_rule_settings (단일 행)
    - 다음 희망 회차가 남아 있으면 `REALLOCATING`(그 회차 실행 시 후보로 포함).
    - 마지막 희망 회차였으면 `ALTERNATIVE_OFFERED` + `MatchResolution` 생성. 제안 회차 = 신청자가 고르지 않은 OPEN 회차 중 마감 전인 것(PRD 7.4의 5번). 없으면 `NO_MATCH`로 두고 KEEP_TICKET/REFUND만 제안.
 5. **검증**(MAT-07): 생성된 모든 테이블을 하드 조건으로 재검증. 실패 테이블은 해체 후 4번 루프.
-6. `min_group_score` 미달 테이블은 해체 후 4번 루프(멤버는 재배치 대상).
+6. ~~`min_group_score` 미달 테이블은 해체 후 4번 루프~~ → 폐기(KAN-420). 점수는 조합 선택·순위에만 쓰고 테이블을 거절하지 않는다. `min_group_score` 설정은 남아 있지만 무시된다.
 7. 살아남은 테이블 → `PROPOSED`, `confirm_at = now + grace`, 멤버 `match_status=CONFIRM_PENDING`.
-8. `MatchRun` 집계 저장. 미배정 사유는 `AGE_GAP | BLOCKED_PAIR | NOT_ENOUGH_PEOPLE | LOW_SCORE | NEXT_SESSION_WAITING` 중 하나.
+8. `MatchRun` 집계 저장. 미배정 사유는 `AGE_GAP | BLOCKED_PAIR | NOT_ENOUGH_PEOPLE | NEXT_SESSION_WAITING` 중 하나(`LOW_SCORE`는 KAN-420부터 만들지 않고 과거 기록 호환용으로만 남김).
 
 ### 4.6 자동 확정 파이프라인
 
