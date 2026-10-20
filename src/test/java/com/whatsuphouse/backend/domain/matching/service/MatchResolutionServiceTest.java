@@ -255,6 +255,27 @@ class MatchResolutionServiceTest {
         then(depositService).should().requestReturn(application.getId());
     }
 
+    @Test
+    @DisplayName("REFUND: 해체된 확정 테이블 멤버(마감 후 환불 허용)는 회차 전날(취소 마감 후)에도 환불을 고를 수 있다")
+    void choose_refund_dissolvedTableMember_afterDeadline() {
+        GatheringSession tomorrow = session(1, LocalDateTime.now().minusDays(1));
+        given(gatheringService.listSessionsByGathering(gathering.getId())).willReturn(List.of(tomorrow));
+        matchResolutionService.offerResolution(application, List.of(tomorrow.getId()), true);
+        ArgumentCaptor<MatchResolution> saved = ArgumentCaptor.forClass(MatchResolution.class);
+        then(matchResolutionRepository).should().save(saved.capture());
+        MatchResolution resolution = saved.getValue();
+        ReflectionTestUtils.setField(resolution, "id", UUID.randomUUID());
+        given(matchResolutionRepository.findByIdForUpdate(resolution.getId())).willReturn(Optional.of(resolution));
+        given(ticketService.refundPurchase(application, ACCOUNT)).willReturn(Optional.of(TicketDeductionStatus.REFUND_PROCESSING));
+
+        matchResolutionService.chooseResolution(resolution.getId(), userId, refundRequest());
+
+        assertThat(resolution.getStatus()).isEqualTo(ResolutionStatus.RESOLVED);
+        assertThat(resolution.getChoice()).isEqualTo(ResolutionChoice.REFUND);
+        assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        then(depositService).should().requestReturn(application.getId());
+    }
+
     private static final RefundAccount ACCOUNT = new RefundAccount("국민", "12345678901", "회원");
 
     private static ResolutionChooseRequest refundRequest() {

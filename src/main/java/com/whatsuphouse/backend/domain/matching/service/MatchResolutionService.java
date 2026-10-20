@@ -63,6 +63,16 @@ public class MatchResolutionService {
      */
     @Transactional
     public void offerResolution(Application application, Collection<UUID> wishedSessionIds) {
+        offerResolution(application, wishedSessionIds, false);
+    }
+
+    /**
+     * refundAllowedAfterDeadline: 본인 잘못이 아닌 실패(확정 테이블 인원 부족 해체 등)라 취소 마감 후여도 REFUND를 받는다. (KAN-405)
+     * ponytail: REFUND 선택은 지금 취소 마감을 검사하지 않아(매칭 실패 제안은 원래 마감 시각 이후에 생긴다) 플래그가 막을 것이 없다.
+     * 마감 검사를 REFUND에 넣게 되면 이 플래그를 resolution에 저장하고 true면 검사를 건너뛴다.
+     */
+    @Transactional
+    public void offerResolution(Application application, Collection<UUID> wishedSessionIds, boolean refundAllowedAfterDeadline) {
         // 멤버십으로 확정한 신청이면 매칭 실패 보상으로 기간을 연장한다(신청당 1회). (KAN-401)
         ticketService.extendMembershipForFailure(application.getId());
         LocalDateTime now = LocalDateTime.now();

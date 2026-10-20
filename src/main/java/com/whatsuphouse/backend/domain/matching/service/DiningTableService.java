@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
+import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
@@ -16,6 +17,7 @@ import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.matching.service.DiningMatchService.TableEvaluator;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -59,6 +61,9 @@ public class DiningTableService {
     private final AdminChatService adminChatService;
     // 좌석이 바뀔 때 참석(Attendance) 행을 맞춘다(확정 테이블에 앉으면 SCHEDULED, 떠나면 삭제). (KAN-349)
     private final DiningAttendanceService diningAttendanceService;
+    private final MatchResolutionService matchResolutionService;
+    private final DepositService depositService;
+    private final ChatService chatService;
 
     // ── 확정 후 취소 재조정 ──────────────────────────────────────────────────────
 
@@ -66,7 +71,9 @@ public class DiningTableService {
      * 취소된 멤버를 빼고, 남은 인원이 최소 인원 미만이면
      * (1) 같은 회차 REALLOCATING 대기자 중 하드 조건을 지키는 사람을 점수 순으로 충원,
      * (2) 안 되면 남은 멤버를 같은 회차 다른 활성 테이블(최대 인원 미만)로 전원 옮기고 이 테이블은 해체,
-     * (3) 그것도 안 되면 예외함(CONFLICT)에 올려 운영자가 병합·해체를 정한다.
+     * (3) 그것도 안 되면 확정 테이블은 해체하고 남은 멤버 각자에게 해결 선택(대체 회차·보관·환불, 마감 후 환불 허용)을 제안하며
+     *     보증금 반환을 요청한다(본인 잘못이 아님, KAN-405). 제안(PROPOSED) 테이블은 예외함(CONFLICT)에 올려 운영자가 병합·해체를 정한다.
+     * 해체된 테이블은 비활성이라 다시 불러도 아무것도 하지 않는다.
      */
     public void rebalance(UUID tableId) {
         DiningTable table = lockTable(tableId);
@@ -118,6 +125,10 @@ public class DiningTableService {
         }
 
         if (moveOut(table, remaining)) {
+            return;
+        }
+        if (table.getStatus() == DiningTableStatus.CONFIRMED) {
+            dissolveForShortage(table, remaining);
             return;
         }
         settle(table, evaluator, seated);
@@ -221,6 +232,24 @@ public class DiningTableService {
         syncChat(table, List.of(), remaining);
         dissolve(table);
         return true;
+    }
+
+    // 확정 테이블 인원 부족 해체. 남은 멤버는 단체방 공지를 읽을 수 있게 방에 남겨 둔다.
+    private void dissolveForShortage(DiningTable table, List<DiningTableMember> remaining) {
+        table.recordReallocation("SHORTAGE_DISSOLVE", null, "인원 부족(확정 후 취소)", memberIds(remaining));
+        dissolve(table);
+        if (table.getChatRoomId() != null) {
+            chatService.postSystemNotice(table.getChatRoomId(),
+                    "인원이 부족해 이번 테이블은 진행되지 않아요. 앱에서 다음 일정이나 환불을 선택해 주세요");
+        }
+        List<UUID> excluded = List.of(table.getSession().getId());
+        for (DiningTableMember member : remaining) {
+            Application application = member.getApplication();
+            diningAttendanceService.releaseSeat(member.getId());
+            application.changeMatchStatus(MatchStatus.ALTERNATIVE_OFFERED);
+            matchResolutionService.offerResolution(application, excluded, true);
+            depositService.requestReturn(application.getId());
+        }
     }
 
     // 같은 회차 REALLOCATING 대기자: 결제 완료, 참여 자격 승인, 활성 테이블 없음. 입력(신청) 순서가 동점 처리 기준.
