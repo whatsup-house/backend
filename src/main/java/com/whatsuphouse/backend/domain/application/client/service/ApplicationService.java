@@ -467,6 +467,8 @@ public class ApplicationService {
     public boolean confirmRegularPaymentBySystem(UUID applicationId) {
         Application application = applicationRepository.findByIdAndDeletedAtIsNullForUpdate(applicationId)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        // 대사 후보 조회로 이미 올라온 사본이면 잠금 쿼리가 옛 상태를 돌려준다. 잠근 뒤 DB 최신 상태로 판단한다(동시 입금).
+        applicationRepository.refreshForUpdate(application);
         if (application.isPaymentConfirmed()) {
             return false;
         }

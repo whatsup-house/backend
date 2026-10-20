@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.payment.entity.Deposit;
 import com.whatsuphouse.backend.domain.payment.enums.DepositStatus;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import com.whatsuphouse.backend.global.common.repository.LockRefreshRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,7 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface DepositRepository extends JpaRepository<Deposit, UUID> {
+public interface DepositRepository extends JpaRepository<Deposit, UUID>, LockRefreshRepository<Deposit> {
 
     Optional<Deposit> findByApplication_Id(UUID applicationId);
 

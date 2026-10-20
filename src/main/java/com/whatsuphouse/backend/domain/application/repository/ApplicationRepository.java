@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import com.whatsuphouse.backend.global.common.repository.LockRefreshRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface ApplicationRepository extends JpaRepository<Application, UUID>, ApplicationRepositoryCustom {
+public interface ApplicationRepository extends JpaRepository<Application, UUID>, LockRefreshRepository<Application>, ApplicationRepositoryCustom {
 
     interface ApplicationSessionCountProjection {
         UUID getSessionId();

@@ -50,8 +50,10 @@ public class DepositService {
      * 이번 호출이 입금 대기(PENDING) 보증금을 입금 확인했으면 true. 입금 대사는 false를 중복 입금으로 본다. (KAN-403)
      */
     public boolean markPaid(UUID applicationId) {
-        Optional<Deposit> pending = depositRepository.findByApplication_IdForUpdate(applicationId)
-                .filter(deposit -> deposit.getStatus() == DepositStatus.PENDING);
+        Optional<Deposit> locked = depositRepository.findByApplication_IdForUpdate(applicationId);
+        // 대사 후보 조회로 이미 올라온 사본이면 잠금 쿼리가 옛 상태를 돌려준다. 잠근 뒤 DB 최신 상태로 판단한다(동시 입금).
+        locked.ifPresent(depositRepository::refreshForUpdate);
+        Optional<Deposit> pending = locked.filter(deposit -> deposit.getStatus() == DepositStatus.PENDING);
         pending.ifPresent(deposit -> {
             deposit.markPaid();
             Application application = deposit.getApplication();

@@ -102,6 +102,9 @@ public class TicketService {
     public TicketPass settlePass(UUID passId, String actor) {
         TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)
                 .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
+        // 대사 후보 조회(listPendingPasses)로 이미 올라온 사본이면 잠금 쿼리가 옛 상태를 돌려준다.
+        // 잠근 뒤 DB 최신 상태로 PENDING을 판단해야 동시 입금이 두 번 정산되지 않는다. (KAN-403)
+        ticketPassRepository.refreshForUpdate(pass);
         Application paymentPending = resolvePaymentPendingApplication(pass);
         // 이미 이용권을 쓴(보증금만 기다리는) 신청에서 또 차감하지 않는다.
         // ponytail: 연결 없는 이용권이면 그 회원의 다른 결제 대기 신청은 찾지 않는다. 필요하면 USE 없는 신청을 고르도록 조회를 바꾼다.

@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.ticket.enums.TicketProductKind;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import com.whatsuphouse.backend.global.common.repository.LockRefreshRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,7 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface TicketPassRepository extends JpaRepository<TicketPass, UUID> {
+public interface TicketPassRepository extends JpaRepository<TicketPass, UUID>, LockRefreshRepository<TicketPass> {
 
     // 이용권 소유자(회원) 기준 조회.
     List<TicketPass> findByUser_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID userId);
