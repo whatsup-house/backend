@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.ticket.controller;
 
+import com.whatsuphouse.backend.domain.ticket.dto.request.MembershipRefundRequest;
 import com.whatsuphouse.backend.domain.ticket.dto.request.TicketPurchaseRequest;
 import com.whatsuphouse.backend.domain.ticket.dto.response.MyTicketsResponse;
 import com.whatsuphouse.backend.domain.ticket.dto.response.TicketPassResponse;
@@ -14,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -55,5 +57,20 @@ public class TicketController {
     ) {
         return ResponseEntity.ok(ApiResult.success(
                 ticketService.getMyTickets(principal.getUserId(), applicationId)));
+    }
+
+    @Operation(summary = "멤버십 환불 요청",
+            description = "첫 참석 전까지만 구매가 전액. 이 멤버십으로 확정한 테이블 배정 전 신청은 함께 취소된다. "
+                    + "성공하면 이용권 CANCELLED, 운영자 송금 후 내 이용권의 refundStatus가 SENT. "
+                    + "계좌 누락 400 REFUND_ACCOUNT_REQUIRED, 참석 이후 409 MEMBERSHIP_REFUND_AFTER_ATTENDANCE, "
+                    + "테이블이 잡힌 신청이 있으면 409 MEMBERSHIP_REFUND_ACTIVE_TABLE.")
+    @PostMapping("/{passId}/refund")
+    public ResponseEntity<ApiResult<Void>> refundMembership(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID passId,
+            @Valid @RequestBody MembershipRefundRequest request
+    ) {
+        ticketService.refundMembership(passId, principal.getUserId(), request.getRefundAccount());
+        return ResponseEntity.ok(ApiResult.success(null));
     }
 }

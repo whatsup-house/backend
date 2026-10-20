@@ -16,8 +16,14 @@ import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSession
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.notification.event.TicketPurchaseRequestedEvent;
 import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
+import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
+import com.whatsuphouse.backend.domain.notification.event.ApplicationCancelledEvent;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
+import com.whatsuphouse.backend.domain.payment.enums.PayoutStatus;
+import com.whatsuphouse.backend.domain.payment.enums.PayoutType;
 import com.whatsuphouse.backend.domain.payment.service.DepositService;
+import com.whatsuphouse.backend.domain.payment.service.PayoutService;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketPassStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketProductKind;
@@ -32,6 +38,7 @@ import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,12 +46,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -63,6 +72,11 @@ public class TicketService {
     private final DepositService depositService;
     private final MembershipWeekRule membershipWeekRule;
     private final ExceptionCaseService exceptionCaseService;
+    private final PayoutService payoutService;
+    // 참석 → 모임 → 신청 → 이용권으로 생성자 순환이 생겨 지연 조회로 끊는다. (KAN-404)
+    private final ObjectProvider<DiningAttendanceService> diningAttendanceServiceProvider;
+
+    private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
 
     // 멤버십으로 확정한 신청이 매칭에 실패하면 기간을 이만큼 연장한다. (KAN-401)
     private static final int MEMBERSHIP_FAILURE_EXTENSION_DAYS = 7;
@@ -254,8 +268,13 @@ public class TicketService {
                 .filter(p -> p.getStatus() == TicketPassStatus.ACTIVE)
                 .mapToInt(TicketPass::getRemainingCount)
                 .sum();
+        // 환불을 요청한 멤버십(CANCELLED)은 송금 대기/완료 상태를 함께 보여 준다. (KAN-404)
+        Map<UUID, PayoutStatus> refundStatuses = payoutService.findRefundStatusesByPassIds(passes.stream()
+                .filter(p -> p.getStatus() == TicketPassStatus.CANCELLED)
+                .map(TicketPass::getId)
+                .toList());
         List<TicketPassResponse> items = passes.stream()
-                .map(TicketPassResponse::from)
+                .map(p -> TicketPassResponse.from(p, refundStatuses.get(p.getId())))
                 .toList();
         return MyTicketsResponse.builder()
                 .accountStatus(user.getEffectiveAccountStatus())
@@ -398,27 +417,85 @@ public class TicketService {
     }
 
     /**
-     * 이용권 구매 건 환불(모의, 즉시): 신청의 차감(USE) 기록을 REFUND_REQUESTED → REFUND_PROCESSING → REFUNDED로 넘긴다.
-     * 차감한 1회분을 돈으로 돌려주는 것이라 잔여 수는 바꾸지 않는다. 전환에 실패하면 REFUND_FAILED로 남긴다.
-     * 차감 기록이 없거나 이미 복원·환불 처리돼 구매 건을 특정할 수 없으면 빈 값. (설계 4.8, KAN-347)
+     * 매칭 실패 환불 선택: 신청의 차감(USE) 기록을 REFUND_REQUESTED → REFUND_PROCESSING(송금 대기)으로 넘기고
+     * 1회분 금액으로 운영자 송금 요청(REFUND)을 만든다. 송금 완료 시 {@link #completeRefund}가 REFUNDED로 마무리한다.
+     * 데모 회원은 송금 요청이 바로 완료돼 REFUNDED로 돌아온다. 차감한 1회분을 돈으로 돌려주는 것이라 잔여 수는 바꾸지 않는다.
+     * 차감 기록이 없거나 이미 복원·환불됐거나 멤버십 사용(기간 연장으로 보상)이면 빈 값. (설계 3.3, KAN-347, KAN-404)
      */
-    public Optional<TicketDeductionStatus> refundPurchase(Application application) {
+    public Optional<TicketDeductionStatus> refundPurchase(Application application, RefundAccount account) {
         Optional<TicketTransaction> deduction = ticketTransactionRepository
                 .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(application.getId(), TicketTransactionType.USE)
-                .filter(TicketTransaction::isDeducted);
+                .filter(TicketTransaction::isDeducted)
+                .filter(use -> !use.getTicketPass().isPeriod());
         if (deduction.isEmpty()) {
             return Optional.empty();
         }
         TicketTransaction use = deduction.get();
-        // ponytail: 모의 PG라 세 단계를 한 번에 넘긴다. 실결제 연동 시 PROCESSING에서 PG 결과(웹훅)를 기다린다.
-        try {
-            use.advanceRefund(TicketDeductionStatus.REFUND_REQUESTED);
-            use.advanceRefund(TicketDeductionStatus.REFUND_PROCESSING);
-            use.advanceRefund(TicketDeductionStatus.REFUNDED);
-        } catch (CustomException e) {
-            use.failRefund();
-        }
+        use.advanceRefund(TicketDeductionStatus.REFUND_REQUESTED);
+        use.advanceRefund(TicketDeductionStatus.REFUND_PROCESSING);
+        TicketPass pass = use.getTicketPass();
+        // 1회권은 구매가 그대로, 옛 다회권은 1회분.
+        int amount = pass.getPurchaseAmount() / Math.max(pass.getTotalCount(), 1);
+        payoutService.request(PayoutType.REFUND, application.getUser().getId(), amount, account,
+                application.getId(), pass.getId(), null);
         return Optional.of(use.getStatus());
+    }
+
+    /** 운영자 송금 완료 후속(PayoutSentEvent): 송금 대기(REFUND_PROCESSING)인 차감 기록을 REFUNDED로. 그 외는 무시. */
+    public void completeRefund(UUID applicationId) {
+        ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
+                .filter(use -> use.getStatus() == TicketDeductionStatus.REFUND_PROCESSING)
+                .ifPresent(use -> use.advanceRefund(TicketDeductionStatus.REFUNDED));
+    }
+
+    /**
+     * 멤버십 환불(설계 3.3·13장): 첫 참석(ATTENDED) 전까지만 구매가 전액. 이 멤버십으로 확정한 진행 중 신청(테이블 배정 전)은
+     * 함께 취소하고(보증금 반환 요청), 테이블(제안·확정)에 앉은 신청이 있으면 그 신청을 먼저 취소해야 한다.
+     * 성공하면 이용권 CANCELLED + 운영자 송금 요청(REFUND). 잔여 수는 원래 0이라 바뀌지 않는다(REFUND 0 기록만). (KAN-404)
+     */
+    public void refundMembership(UUID passId, UUID userId, RefundAccount account) {
+        TicketPass pass = ticketPassRepository.findByIdAndDeletedAtIsNullForUpdate(passId)
+                .filter(p -> p.getUser() != null && p.getUser().getId().equals(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PASS_NOT_FOUND));
+        // 잠근 뒤 DB 최신 상태로 판단해야 동시 요청이 두 번 환불되지 않는다.
+        ticketPassRepository.refreshForUpdate(pass);
+        if (!pass.isPeriod() || pass.getStatus() != TicketPassStatus.ACTIVE) {
+            throw new CustomException(ErrorCode.MEMBERSHIP_REFUND_NOT_ALLOWED);
+        }
+        DiningAttendanceService attendanceService = diningAttendanceServiceProvider.getObject();
+        if (attendanceService.hasAttendedSince(userId, pass.getActivatedAt())) {
+            throw new CustomException(ErrorCode.MEMBERSHIP_REFUND_AFTER_ATTENDANCE);
+        }
+        List<Application> inProgress = findInProgressApplications(pass);
+        Set<UUID> ids = inProgress.stream().map(Application::getId).collect(Collectors.toSet());
+        if (!ids.isEmpty() && !attendanceService.findSeatedApplicationIds(ids).isEmpty()) {
+            throw new CustomException(ErrorCode.MEMBERSHIP_REFUND_ACTIVE_TABLE);
+        }
+        // 테이블에 앉지 않은 신청이라 참석·재조정은 없다. 사전 취소와 같이 보증금은 반환 요청.
+        inProgress.forEach(application -> {
+            application.cancel();
+            refundOneTicket(application);
+            depositService.requestReturn(application.getId());
+            eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
+        });
+        pass.cancel();
+        ticketTransactionRepository.save(TicketTransaction.of(pass, null, TicketTransactionType.REFUND, 0, "멤버십 환불 요청"));
+        payoutService.request(PayoutType.REFUND, userId, pass.getPurchaseAmount(), account, null, passId, null);
+    }
+
+    // 이 멤버십으로 확정한(차감 상태 USE) 취소되지 않은 신청 중 회차가 지나지 않은 것. 배정 전 신청은 회차가 없다.
+    private List<Application> findInProgressApplications(TicketPass pass) {
+        LocalDate today = LocalDate.now(KOREA);
+        return ticketTransactionRepository.findByTicketPass_IdOrderByCreatedAtDesc(pass.getId()).stream()
+                .filter(TicketTransaction::isDeducted)
+                .map(TicketTransaction::getApplication)
+                .filter(Objects::nonNull)
+                .filter(application -> application.getStatus() != ApplicationStatus.CANCELLED)
+                .filter(application -> application.getSession() == null
+                        || !application.getSession().getEventDate().isBefore(today))
+                .distinct()
+                .toList();
     }
 
     /**

@@ -92,6 +92,20 @@ public class Deposit {
         }
     }
 
+    /** 운영자 송금 완료(RETURN_PENDING → RETURNED). 그 외는 그대로. (KAN-404) */
+    public void markReturned() {
+        if (status == DepositStatus.RETURN_PENDING) {
+            status = DepositStatus.RETURNED;
+        }
+    }
+
+    /** 반환 송금 30일 후 계좌번호를 끝 4자리만 남긴다. */
+    public void maskReturnAccount() {
+        if (returnAccount != null) {
+            returnAccount = returnAccount.masked();
+        }
+    }
+
     /** 몰수. 받은 돈이 아직 회원에게 돌아가지 않았을 때만(PAID·RETURN_PENDING). */
     public void forfeit() {
         if (status == DepositStatus.PAID || status == DepositStatus.RETURN_PENDING) {

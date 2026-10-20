@@ -299,6 +299,23 @@ public class DiningAttendanceService {
         return result;
     }
 
+    // ── 멤버십 환불 판정 ─────────────────────────────────────────────────────
+
+    /** since(그 날짜 포함) 이후 회차에 ATTENDED로 참석한 적이 있는가. 멤버십 환불 가능 판정(첫 참석 전까지). (KAN-404) */
+    @Transactional(readOnly = true)
+    public boolean hasAttendedSince(UUID userId, LocalDateTime since) {
+        return attendanceRepository.existsByUserAndStatusSince(userId, AttendanceStatus.ATTENDED, since.toLocalDate());
+    }
+
+    /** 이 신청들 중 활성(제안·확정) 테이블에 앉은 신청. 멤버십 환불은 이 신청들부터 취소해야 한다. (KAN-404) */
+    @Transactional(readOnly = true)
+    public Set<UUID> findSeatedApplicationIds(Collection<UUID> applicationIds) {
+        return diningTableMemberRepository.findByApplicationIdsWithTable(applicationIds,
+                        EnumSet.of(DiningTableStatus.PROPOSED, DiningTableStatus.CONFIRMED)).stream()
+                .map(member -> member.getApplication().getId())
+                .collect(Collectors.toSet());
+    }
+
     // ── 공통 ────────────────────────────────────────────────────────────────
 
     // 취소(soft delete)된 신청의 멤버 행은 뺀다.

@@ -164,6 +164,11 @@ public enum ErrorCode {
     CANDIDATE_SESSIONS_DIFFERENT_WEEKS("멤버십으로 신청할 때는 같은 주의 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
     TICKET_PRODUCT_NOT_FOUND("존재하지 않는 이용권 상품입니다.", HttpStatus.NOT_FOUND),
     INVALID_REFUND_TRANSITION("환불을 진행할 수 없는 이용권 차감 기록입니다.", HttpStatus.CONFLICT),
+    REFUND_ACCOUNT_REQUIRED("환불받을 계좌(은행·계좌번호·예금주)를 입력해주세요.", HttpStatus.BAD_REQUEST),
+    MEMBERSHIP_REFUND_AFTER_ATTENDANCE("첫 참석 이후에는 멤버십을 환불할 수 없습니다.", HttpStatus.CONFLICT),
+    MEMBERSHIP_REFUND_ACTIVE_TABLE("테이블이 잡힌 신청이 있습니다. 그 신청을 먼저 취소한 뒤 환불해주세요.", HttpStatus.CONFLICT),
+    MEMBERSHIP_REFUND_NOT_ALLOWED("환불할 수 있는 멤버십이 아닙니다.", HttpStatus.CONFLICT),
+    PAYOUT_NOT_FOUND("존재하지 않는 송금 요청입니다.", HttpStatus.NOT_FOUND),
 
     // Payment (입금 대사, KAN-403)
     DEPOSIT_WEBHOOK_UNAUTHORIZED("입금 알림 인증에 실패했습니다.", HttpStatus.UNAUTHORIZED),

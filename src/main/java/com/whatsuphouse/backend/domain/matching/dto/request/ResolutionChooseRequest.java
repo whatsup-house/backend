@@ -1,7 +1,9 @@
 package com.whatsuphouse.backend.domain.matching.dto.request;
 
 import com.whatsuphouse.backend.domain.matching.enums.ResolutionChoice;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -21,4 +23,12 @@ public class ResolutionChooseRequest {
     @Schema(description = "옮길 회차 ID. TRANSFER일 때 필수이며 제안 회차 중 하나여야 한다",
             example = "3fa85f64-5717-4562-b3fc-2c963f66afa6", nullable = true)
     private UUID sessionId;
+
+    @Valid
+    @Schema(description = "환불받을 계좌. REFUND일 때 필수(없으면 REFUND_ACCOUNT_REQUIRED)", nullable = true)
+    private RefundAccount refundAccount;
+
+    public ResolutionChooseRequest(ResolutionChoice choice, UUID sessionId) {
+        this(choice, sessionId, null);
+    }
 }

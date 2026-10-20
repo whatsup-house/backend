@@ -2,10 +2,15 @@ package com.whatsuphouse.backend.domain.payment.admin.controller;
 
 import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
 import com.whatsuphouse.backend.domain.payment.dto.request.DepositNotificationLinkRequest;
+import com.whatsuphouse.backend.domain.payment.dto.request.PayoutSentRequest;
 import com.whatsuphouse.backend.domain.payment.dto.response.AdminDepositNotificationPageResponse;
 import com.whatsuphouse.backend.domain.payment.dto.response.AdminDepositNotificationResponse;
+import com.whatsuphouse.backend.domain.payment.dto.response.AdminPayoutResponse;
 import com.whatsuphouse.backend.domain.payment.enums.DepositMatchResult;
+import com.whatsuphouse.backend.domain.payment.enums.PayoutStatus;
+import com.whatsuphouse.backend.domain.payment.enums.PayoutType;
 import com.whatsuphouse.backend.domain.payment.service.DepositReconciliationService;
+import com.whatsuphouse.backend.domain.payment.service.PayoutService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,13 +31,14 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "관리자 결제", description = "입금 알림 로그·결제 대기 건 수동 연결 API")
+@Tag(name = "관리자 결제", description = "입금 알림 로그·결제 대기 건 수동 연결·송금 목록(환불·보증금 반환) API")
 @RestController
 @RequestMapping("/api/admin/payments")
 @RequiredArgsConstructor
 public class AdminPaymentController {
 
     private final DepositReconciliationService depositReconciliationService;
+    private final PayoutService payoutService;
 
     @Operation(summary = "결제 대기 후보 목록",
             description = "자동 대사와 같은 후보(1회권+같은 신청 보증금은 합산 1건). 입금 알림 수동 연결 드롭다운용.")
@@ -61,5 +67,27 @@ public class AdminPaymentController {
     ) {
         return ResponseEntity.ok(ApiResult.success(
                 depositReconciliationService.linkNotification(id, request, principal.getUserId())));
+    }
+
+    @Operation(summary = "송금 목록", description = "운영자가 직접 이체할 환불(REFUND)·보증금 반환(DEPOSIT_RETURN). 오래된 요청부터. "
+            + "송금 30일이 지난 건은 계좌번호 끝 4자리만 보인다.")
+    @GetMapping("/payouts")
+    public ResponseEntity<ApiResult<List<AdminPayoutResponse>>> payouts(
+            @Parameter(description = "송금 종류", example = "REFUND") @RequestParam PayoutType type,
+            @Parameter(description = "송금 상태", example = "REQUESTED") @RequestParam PayoutStatus status
+    ) {
+        return ResponseEntity.ok(ApiResult.success(payoutService.list(type, status)));
+    }
+
+    @Operation(summary = "송금 완료 처리",
+            description = "이체를 끝낸 송금 요청을 SENT로. 환불이면 이용권 차감 상태 REFUNDED, 보증금 반환이면 보증금 RETURNED. "
+                    + "이미 SENT인 건은 무시, 없는 ID면 404(전체 취소).")
+    @PostMapping("/payouts/sent")
+    public ResponseEntity<ApiResult<Void>> markPayoutsSent(
+            @Valid @RequestBody PayoutSentRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        payoutService.markSent(request.ids(), principal.getUserId());
+        return ResponseEntity.ok(ApiResult.success(null));
     }
 }

@@ -160,6 +160,11 @@ public class TicketPass extends BaseEntity {
         this.extendedDays += days;
     }
 
+    /** 멤버십 환불로 취소. 잔여 수는 바꾸지 않는다(멤버십은 0). (KAN-404) */
+    public void cancel() {
+        this.status = TicketPassStatus.CANCELLED;
+    }
+
     /** 멤버십 기간 만료. */
     public void expire() {
         this.status = TicketPassStatus.USED_UP;

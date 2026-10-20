@@ -4,8 +4,6 @@ import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicatio
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
-import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
-import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
@@ -16,6 +14,7 @@ import com.whatsuphouse.backend.domain.matching.enums.ResolutionStatus;
 import com.whatsuphouse.backend.domain.matching.repository.MatchResolutionRepository;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
 import com.whatsuphouse.backend.domain.notification.event.DiningResolutionEvent;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
@@ -52,7 +51,6 @@ public class MatchResolutionService {
     private final GatheringService gatheringService;
     private final AdminApplicationService adminApplicationService;
     private final TicketService ticketService;
-    private final ExceptionCaseService exceptionCaseService;
     private final ApplicationEventPublisher eventPublisher;
     private final DepositService depositService;
 
@@ -101,7 +99,7 @@ public class MatchResolutionService {
         switch (request.getChoice()) {
             case TRANSFER -> chosenSessionId = transfer(resolution, request.getSessionId());
             case KEEP_TICKET -> keepTicket(application);
-            case REFUND -> refund(resolution, application);
+            case REFUND -> refund(resolution, application, request.getRefundAccount());
         }
         resolution.resolve(request.getChoice(), chosenSessionId);
         return MatchResolutionResponse.of(resolution, findOfferableSessions(resolution));
@@ -158,9 +156,11 @@ public class MatchResolutionService {
         depositService.requestReturn(application.getId());
     }
 
-    // 모의 환불. 구매 건(차감 기록)을 특정할 수 없으면 이용권 보관과 같이 처리한다.
-    private void refund(MatchResolution resolution, Application application) {
-        Optional<TicketDeductionStatus> result = ticketService.refundPurchase(application);
+    // 환불: 계좌를 받아 운영자 송금 요청을 만들고 송금 대기(REFUND_PROCESSING)로 둔다. 운영자 송금 완료 시 REFUNDED.
+    // 데모 회원은 바로 REFUNDED라 완료 알림까지 보낸다. 구매 건(차감 기록)을 특정할 수 없으면 이용권 보관과 같이 처리. (KAN-404)
+    private void refund(MatchResolution resolution, Application application, RefundAccount account) {
+        RefundAccount.requireComplete(account);
+        Optional<TicketDeductionStatus> result = ticketService.refundPurchase(application, account);
         if (result.isEmpty()) {
             log.info("[MatchResolution] 환불할 이용권 차감 기록이 없어 이용권 보관으로 처리: resolutionId={}, applicationId={}",
                     resolution.getId(), application.getId());
@@ -172,11 +172,7 @@ public class MatchResolutionService {
         eventPublisher.publishEvent(new DiningResolutionEvent(application, NotificationType.DINING_REFUND_REQUESTED));
         if (result.get() == TicketDeductionStatus.REFUNDED) {
             eventPublisher.publishEvent(new DiningResolutionEvent(application, NotificationType.DINING_REFUND_COMPLETED));
-            return;
         }
-        exceptionCaseService.open(ExceptionCaseType.REFUND,
-                application.getSession() != null ? application.getSession().getId() : null, null, application.getId(),
-                "매칭 실패 환불 자동 처리 실패(이용권 차감 기록 " + result.get() + "). 수동 환불 필요");
     }
 
     // ── 조회 헬퍼 ────────────────────────────────────────────────────────────

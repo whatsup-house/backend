@@ -4,13 +4,12 @@ import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicatio
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
-import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
-import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.dto.request.ResolutionChooseRequest;
+import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import com.whatsuphouse.backend.domain.matching.entity.MatchResolution;
 import com.whatsuphouse.backend.domain.matching.enums.ResolutionChoice;
 import com.whatsuphouse.backend.domain.matching.enums.ResolutionStatus;
@@ -44,9 +43,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -63,8 +60,6 @@ class MatchResolutionServiceTest {
     private AdminApplicationService adminApplicationService;
     @Mock
     private TicketService ticketService;
-    @Mock
-    private ExceptionCaseService exceptionCaseService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
@@ -207,50 +202,63 @@ class MatchResolutionServiceTest {
     }
 
     @Test
-    @DisplayName("REFUND: 모의 환불 완료 → 신청 취소 + 환불 요청·완료 알림, 이용권 복원은 하지 않는다")
-    void choose_refund() {
+    @DisplayName("REFUND: 계좌가 없으면 REFUND_ACCOUNT_REQUIRED, 아무것도 처리하지 않는다")
+    void chooseRefund_withoutAccount_throws() {
         MatchResolution resolution = offered(List.of());
-        given(ticketService.refundPurchase(application)).willReturn(Optional.of(TicketDeductionStatus.REFUNDED));
 
-        matchResolutionService.chooseResolution(resolution.getId(), userId,
-                new ResolutionChooseRequest(ResolutionChoice.REFUND, null));
+        assertThatThrownBy(() -> matchResolutionService.chooseResolution(resolution.getId(), userId,
+                new ResolutionChooseRequest(ResolutionChoice.REFUND, null)))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFUND_ACCOUNT_REQUIRED);
+        then(ticketService).shouldHaveNoInteractions();
+        assertThat(resolution.getStatus()).isEqualTo(ResolutionStatus.OFFERED);
+    }
+
+    @Test
+    @DisplayName("REFUND: 송금 대기(REFUND_PROCESSING) → 신청 취소 + 환불 요청 알림만, 이용권 복원·예외함 없음")
+    void choose_refund_processing() {
+        MatchResolution resolution = offered(List.of());
+        given(ticketService.refundPurchase(application, ACCOUNT)).willReturn(Optional.of(TicketDeductionStatus.REFUND_PROCESSING));
+
+        matchResolutionService.chooseResolution(resolution.getId(), userId, refundRequest());
 
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         assertThat(resolution.getChoice()).isEqualTo(ResolutionChoice.REFUND);
-        assertThat(publishedTypes(2)).containsExactly(
-                NotificationType.DINING_REFUND_REQUESTED, NotificationType.DINING_REFUND_COMPLETED);
+        assertThat(publishedTypes(1)).containsExactly(NotificationType.DINING_REFUND_REQUESTED);
         then(ticketService).should(never()).refundOneTicket(any());
-        then(exceptionCaseService).shouldHaveNoInteractions();
         then(depositService).should().requestReturn(application.getId());
     }
 
     @Test
-    @DisplayName("REFUND: 환불 전환 실패면 예외함(REFUND)에 올리고 완료 알림은 보내지 않는다")
-    void choose_refund_failed() {
+    @DisplayName("REFUND: 데모 회원은 바로 송금 완료(REFUNDED) → 환불 요청·완료 알림")
+    void choose_refund_demoCompleted() {
         MatchResolution resolution = offered(List.of());
-        given(ticketService.refundPurchase(application)).willReturn(Optional.of(TicketDeductionStatus.REFUND_FAILED));
+        given(ticketService.refundPurchase(application, ACCOUNT)).willReturn(Optional.of(TicketDeductionStatus.REFUNDED));
 
-        matchResolutionService.chooseResolution(resolution.getId(), userId,
-                new ResolutionChooseRequest(ResolutionChoice.REFUND, null));
+        matchResolutionService.chooseResolution(resolution.getId(), userId, refundRequest());
 
-        then(exceptionCaseService).should().open(eq(ExceptionCaseType.REFUND), isNull(), isNull(),
-                eq(application.getId()), anyString());
-        assertThat(publishedTypes(1)).containsExactly(NotificationType.DINING_REFUND_REQUESTED);
+        assertThat(publishedTypes(2)).containsExactly(
+                NotificationType.DINING_REFUND_REQUESTED, NotificationType.DINING_REFUND_COMPLETED);
     }
 
     @Test
     @DisplayName("REFUND: 구매 건(차감 기록)을 특정할 수 없으면 이용권 보관과 같이 처리")
     void choose_refund_noPurchase_keepsTicket() {
         MatchResolution resolution = offered(List.of());
-        given(ticketService.refundPurchase(application)).willReturn(Optional.empty());
+        given(ticketService.refundPurchase(application, ACCOUNT)).willReturn(Optional.empty());
 
-        matchResolutionService.chooseResolution(resolution.getId(), userId,
-                new ResolutionChooseRequest(ResolutionChoice.REFUND, null));
+        matchResolutionService.chooseResolution(resolution.getId(), userId, refundRequest());
 
         then(ticketService).should().refundOneTicket(application);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
         then(eventPublisher).shouldHaveNoInteractions();
         then(depositService).should().requestReturn(application.getId());
+    }
+
+    private static final RefundAccount ACCOUNT = new RefundAccount("국민", "12345678901", "회원");
+
+    private static ResolutionChooseRequest refundRequest() {
+        return new ResolutionChooseRequest(ResolutionChoice.REFUND, null, ACCOUNT);
     }
 
     @Test

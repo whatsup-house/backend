@@ -10,6 +10,7 @@ import com.whatsuphouse.backend.domain.payment.entity.Deposit;
 import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import com.whatsuphouse.backend.domain.payment.enums.DepositStatus;
 import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
+import com.whatsuphouse.backend.domain.payment.enums.PayoutType;
 import com.whatsuphouse.backend.domain.payment.repository.DepositRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -34,6 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class DepositServiceTest {
@@ -42,6 +44,7 @@ class DepositServiceTest {
     @Mock private ObjectProvider<TicketService> ticketServiceProvider;
     @Mock private TicketService ticketService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private PayoutService payoutService;
 
     @InjectMocks
     private DepositService depositService;
@@ -128,6 +131,8 @@ class DepositServiceTest {
 
         assertThat(deposit.getStatus()).isEqualTo(DepositStatus.RETURN_PENDING);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
+        then(payoutService).should().request(PayoutType.DEPOSIT_RETURN, application.getUser().getId(), 50_000,
+                deposit.getReturnAccount(), application.getId(), null, deposit.getId());
         then(ticketServiceProvider).shouldHaveNoInteractions();
         then(eventPublisher).shouldHaveNoInteractions();
     }
@@ -148,22 +153,27 @@ class DepositServiceTest {
     }
 
     @Test
-    @DisplayName("반환 요청은 입금된 보증금만 RETURN_PENDING으로, 미입금 보증금은 그대로 둔다")
-    void requestReturn_onlyPaid() {
-        Deposit deposit = pending();
+    @DisplayName("반환 요청: 잠근 뒤 최신 상태로 입금된(PAID) 보증금만 RETURN_PENDING + 반환 계좌로 송금 요청 1건, 다시 불러도 그대로")
+    void requestReturn_paidOnly_createsPayoutOnce() {
+        Deposit deposit = pendingLocked();
 
         depositService.requestReturn(application.getId());
         assertThat(deposit.getStatus()).isEqualTo(DepositStatus.PENDING);
 
         deposit.markPaid();
         depositService.requestReturn(application.getId());
+        depositService.requestReturn(application.getId());
+
         assertThat(deposit.getStatus()).isEqualTo(DepositStatus.RETURN_PENDING);
+        then(depositRepository).should(times(3)).refreshForUpdate(deposit);
+        then(payoutService).should(times(1)).request(PayoutType.DEPOSIT_RETURN, application.getUser().getId(), 50_000,
+                deposit.getReturnAccount(), application.getId(), null, deposit.getId());
     }
 
     @Test
-    @DisplayName("몰수는 아직 돌려주지 않은 보증금(PAID·RETURN_PENDING)만 FORFEITED로")
+    @DisplayName("몰수는 아직 돌려주지 않은 보증금(PAID·RETURN_PENDING)만 FORFEITED로, 반환 대기였으면 송금 전 반환 요청을 거둔다")
     void forfeit_paidOrReturnPending() {
-        Deposit deposit = pending();
+        Deposit deposit = pendingLocked();
         depositService.forfeit(application.getId());
         assertThat(deposit.getStatus()).isEqualTo(DepositStatus.PENDING);
 
@@ -171,6 +181,24 @@ class DepositServiceTest {
         deposit.requestReturn();
         depositService.forfeit(application.getId());
         assertThat(deposit.getStatus()).isEqualTo(DepositStatus.FORFEITED);
+        then(payoutService).should().withdrawDepositReturn(deposit.getId());
+    }
+
+    @Test
+    @DisplayName("송금 완료 후속: 반환 대기 보증금만 RETURNED로")
+    void markReturned_onlyReturnPending() {
+        Deposit deposit = Deposit.pending(application, null);
+        UUID depositId = UUID.randomUUID();
+        ReflectionTestUtils.setField(deposit, "id", depositId);
+        given(depositRepository.findById(depositId)).willReturn(Optional.of(deposit));
+
+        depositService.markReturned(depositId);
+        assertThat(deposit.getStatus()).isEqualTo(DepositStatus.PENDING);
+
+        deposit.markPaid();
+        deposit.requestReturn();
+        depositService.markReturned(depositId);
+        assertThat(deposit.getStatus()).isEqualTo(DepositStatus.RETURNED);
     }
 
     @Test

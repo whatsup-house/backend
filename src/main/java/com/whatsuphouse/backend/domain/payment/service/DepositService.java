@@ -8,6 +8,7 @@ import com.whatsuphouse.backend.domain.payment.entity.Deposit;
 import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import com.whatsuphouse.backend.domain.payment.enums.DepositStatus;
 import com.whatsuphouse.backend.domain.payment.enums.PaymentTargetType;
+import com.whatsuphouse.backend.domain.payment.enums.PayoutType;
 import com.whatsuphouse.backend.domain.payment.repository.DepositRepository;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class DepositService {
     // TicketService.settlePass가 isSatisfied를 부르므로 생성자 순환을 지연 조회로 끊는다.
     private final ObjectProvider<TicketService> ticketServiceProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final PayoutService payoutService;
 
     public Deposit createPending(Application application, RefundAccount returnAccount) {
         return depositRepository.save(Deposit.pending(application, returnAccount));
@@ -50,15 +52,13 @@ public class DepositService {
      * 이번 호출이 입금 대기(PENDING) 보증금을 입금 확인했으면 true. 입금 대사는 false를 중복 입금으로 본다. (KAN-403)
      */
     public boolean markPaid(UUID applicationId) {
-        Optional<Deposit> locked = depositRepository.findByApplication_IdForUpdate(applicationId);
-        // 대사 후보 조회로 이미 올라온 사본이면 잠금 쿼리가 옛 상태를 돌려준다. 잠근 뒤 DB 최신 상태로 판단한다(동시 입금).
-        locked.ifPresent(depositRepository::refreshForUpdate);
-        Optional<Deposit> pending = locked.filter(deposit -> deposit.getStatus() == DepositStatus.PENDING);
+        // 잠근 뒤 DB 최신 상태로 판단한다(동시 입금).
+        Optional<Deposit> pending = lockFresh(applicationId).filter(deposit -> deposit.getStatus() == DepositStatus.PENDING);
         pending.ifPresent(deposit -> {
             deposit.markPaid();
             Application application = deposit.getApplication();
             if (application.getStatus() == ApplicationStatus.CANCELLED) {
-                deposit.requestReturn();
+                startReturn(deposit);
             } else if (application.getStatus() == ApplicationStatus.PAYMENT_PENDING
                     && ticketServiceProvider.getObject().hasTicketUse(applicationId)) {
                 application.confirm();
@@ -76,14 +76,50 @@ public class DepositService {
         return depositRepository.findByApplication_Id(applicationId).map(Deposit::isSatisfied).orElse(true);
     }
 
-    /** 반환 요청(PAID → RETURN_PENDING). 미입금·이미 처리된 보증금·보증금 없는 신청은 무시한다. */
+    /**
+     * 반환 요청(PAID → RETURN_PENDING) + 신청 때 받은 반환 계좌로 운영자 송금 요청(DEPOSIT_RETURN) 1건.
+     * 미입금·이미 처리된 보증금·보증금 없는 신청은 무시한다. 잠근 뒤 최신 상태로 판단해 송금 요청이 두 번 생기지 않는다. (KAN-404)
+     */
     public void requestReturn(UUID applicationId) {
-        depositRepository.findByApplication_Id(applicationId).ifPresent(Deposit::requestReturn);
+        lockFresh(applicationId)
+                .filter(deposit -> deposit.getStatus() == DepositStatus.PAID)
+                .ifPresent(this::startReturn);
     }
 
-    /** 몰수(PAID·RETURN_PENDING → FORFEITED). 그 외는 무시한다. */
+    /** 몰수(PAID·RETURN_PENDING → FORFEITED). 반환 대기였으면 아직 송금 전인 반환 요청을 거둔다. 그 외는 무시한다. */
     public void forfeit(UUID applicationId) {
-        depositRepository.findByApplication_Id(applicationId).ifPresent(Deposit::forfeit);
+        lockFresh(applicationId).ifPresent(deposit -> {
+            if (deposit.getStatus() == DepositStatus.RETURN_PENDING) {
+                payoutService.withdrawDepositReturn(deposit.getId());
+            }
+            deposit.forfeit();
+        });
+    }
+
+    /** 운영자 송금 완료 후속(PayoutSentEvent): RETURN_PENDING → RETURNED. */
+    public void markReturned(UUID depositId) {
+        depositRepository.findById(depositId).ifPresent(Deposit::markReturned);
+    }
+
+    /** 반환 송금 30일 후 보증금 쪽 계좌 사본도 끝 4자리만 남긴다. */
+    public void maskReturnAccounts(Collection<UUID> depositIds) {
+        if (!depositIds.isEmpty()) {
+            depositRepository.findAllById(depositIds).forEach(Deposit::maskReturnAccount);
+        }
+    }
+
+    // 대사 후보 조회 등으로 이미 올라온 사본이면 잠금 쿼리가 옛 상태를 돌려주므로 잠근 뒤 DB 최신 상태로 덮는다.
+    private Optional<Deposit> lockFresh(UUID applicationId) {
+        Optional<Deposit> locked = depositRepository.findByApplication_IdForUpdate(applicationId);
+        locked.ifPresent(depositRepository::refreshForUpdate);
+        return locked;
+    }
+
+    private void startReturn(Deposit deposit) {
+        deposit.requestReturn();
+        Application application = deposit.getApplication();
+        payoutService.request(PayoutType.DEPOSIT_RETURN, application.getUser().getId(), deposit.getAmount(),
+                deposit.getReturnAccount(), application.getId(), null, deposit.getId());
     }
 
     /** 입금 대사 후보: 취소되지 않은 신청의 입금 대기 보증금(50,000원). 이용권과 합산 입금 묶기는 대사 쪽이 한다. */

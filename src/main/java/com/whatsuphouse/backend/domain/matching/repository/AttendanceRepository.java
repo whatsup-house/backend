@@ -61,4 +61,13 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
             """)
     List<UserCountProjection> countByUserIdsAndStatus(@Param("userIds") Collection<UUID> userIds,
                                                       @Param("status") AttendanceStatus status);
+
+    // 회원이 since(포함) 이후 회차에 status로 참석한 적이 있는가. 멤버십 환불 판정용. (KAN-404)
+    @Query("""
+            select case when count(a) > 0 then true else false end
+            from Attendance a, DiningTableMember m join m.application ap join m.table t join t.session s
+            where a.tableMemberId = m.id and a.status = :status and ap.user.id = :userId and s.eventDate >= :since
+            """)
+    boolean existsByUserAndStatusSince(@Param("userId") UUID userId, @Param("status") AttendanceStatus status,
+                                       @Param("since") LocalDate since);
 }
