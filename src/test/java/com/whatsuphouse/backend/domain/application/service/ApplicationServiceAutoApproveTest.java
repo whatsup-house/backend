@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -120,6 +121,22 @@ class ApplicationServiceAutoApproveTest {
         assertThat(user.isApprovedForRandomTable()).isTrue();
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
         then(eventPublisher).should().publishEvent(any(ApplicationApprovedEvent.class));
+    }
+
+    @Test
+    @DisplayName("체험 계정의 임시 전화번호가 신청서 phone에 그대로 복사된다 (null이면 NOT NULL 위반, KAN-407)")
+    void apply_randomTable_demoUserPhone_copiedToApplication() {
+        user.markDemo();
+        ReflectionTestUtils.setField(user, "phone", "01000001234");
+        ReflectionTestUtils.setField(randomTable, "hidden", true); // 체험 계정은 심사용(숨김) 모임만 신청 가능
+        stubFormAndUser();
+        given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        applicationService.apply(request(), userId);
+
+        ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
+        then(applicationRepository).should().save(saved.capture());
+        assertThat(saved.getValue().getPhone()).isEqualTo("01000001234");
     }
 
     @Test
