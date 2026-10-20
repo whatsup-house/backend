@@ -196,7 +196,7 @@ public class DiningConfirmService {
                 UUID sessionId = table.getSession().getId();
                 sessionVenueService.useFirstAvailableVenue(sessionId, preferredPriceRanges(tableId)).ifPresentOrElse(table::assignVenue,
                         () -> exceptionCaseService.open(ExceptionCaseType.VENUE, sessionId, tableId, null,
-                                "회차 식당 풀에 남은 자리가 없어 식당을 배정하지 못했습니다."));
+                                "이번 회차 식당에 남은 자리가 없어 식당을 배정하지 못했습니다."));
             });
         } catch (Exception e) {
             log.warn("테이블 식당 배정 실패: tableId={}", tableId, e);
