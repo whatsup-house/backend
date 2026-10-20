@@ -18,6 +18,9 @@ import com.whatsuphouse.backend.domain.payment.repository.DepositRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import com.whatsuphouse.backend.domain.payment.dto.response.AdminDepositNotificationResponse;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -37,6 +40,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -683,5 +688,57 @@ class DepositReconciliationServiceTest {
         AdminDepositNotifiedEvent event = publishedAdminEvent();
         assertThat(event.isMatched()).isTrue();
         assertThat(event.isManual()).isTrue();
+    }
+
+    @Test
+    @DisplayName("후보 목록: 이용권은 상품명, 보증금·일반 모임은 모임 제목, 이름을 못 찾으면 null. 종류당 한 번씩 조회한다 (KAN-426)")
+    void listPendingTargets_resolvesTargetNames() {
+        // given
+        UUID depositApplicationId = UUID.randomUUID();
+        UUID regularApplicationId = UUID.randomUUID();
+        UUID goneApplicationId = UUID.randomUUID();
+        candidates(List.of(new PendingPayment(PaymentTargetType.TICKET_PASS, passId, null, "한지형", 9_900)),
+                List.of(new PendingPayment(PaymentTargetType.DEPOSIT, UUID.randomUUID(), depositApplicationId, "권재원", 50_000)),
+                List.of(new PendingPayment(PaymentTargetType.REGULAR_APPLICATION, regularApplicationId, regularApplicationId, "김민준", 30_000),
+                        new PendingPayment(PaymentTargetType.REGULAR_APPLICATION, goneApplicationId, goneApplicationId, "이서연", 30_000)));
+        given(ticketService.findProductNames(Set.of(passId))).willReturn(Map.of(passId, "1회권"));
+        given(applicationService.findGatheringTitles(Set.of(depositApplicationId, regularApplicationId, goneApplicationId)))
+                .willReturn(Map.of(depositApplicationId, "와인 모임", regularApplicationId, "독서 모임"));
+
+        // when
+        List<PendingPayment> targets = service.listPendingTargets();
+
+        // then
+        assertThat(targets).extracting(PendingPayment::targetName)
+                .containsExactly("1회권", "와인 모임", "독서 모임", null);
+        then(ticketService).should(times(1)).findProductNames(any());
+        then(applicationService).should(times(1)).findGatheringTitles(any());
+    }
+
+    @Test
+    @DisplayName("알림 로그: 연결된 대상의 이름을 채우고, 대상이 없거나 삭제됐으면 null (KAN-426)")
+    void listNotifications_resolvesTargetNames() {
+        // given
+        UUID depositApplicationId = UUID.randomUUID();
+        UUID deletedPassId = UUID.randomUUID();
+        DepositNotification pass = failedNotification(DepositMatchResult.NO_CANDIDATE, null);
+        pass.match(new PendingPayment(PaymentTargetType.TICKET_PASS, passId, applicationId, "한지형", 59_900));
+        DepositNotification deposit = failedNotification(DepositMatchResult.NO_CANDIDATE, null);
+        deposit.match(new PendingPayment(PaymentTargetType.DEPOSIT, UUID.randomUUID(), depositApplicationId, "권재원", 50_000));
+        DepositNotification deletedPass = failedNotification(DepositMatchResult.NO_CANDIDATE, null);
+        deletedPass.match(new PendingPayment(PaymentTargetType.TICKET_PASS, deletedPassId, null, "김민준", 9_900));
+        DepositNotification unlinked = failedNotification(DepositMatchResult.NO_CANDIDATE, null);
+        given(depositNotificationRepository.findAll(any(Pageable.class)))
+                .willReturn(new PageImpl<>(List.of(pass, deposit, deletedPass, unlinked)));
+        given(ticketService.findProductNames(Set.of(passId, deletedPassId))).willReturn(Map.of(passId, "1회권"));
+        given(applicationService.findGatheringTitles(Set.of(depositApplicationId)))
+                .willReturn(Map.of(depositApplicationId, "와인 모임"));
+
+        // when
+        List<AdminDepositNotificationResponse> rows = service.listNotifications(null, 0, 20).getContent();
+
+        // then
+        assertThat(rows).extracting(AdminDepositNotificationResponse::getTargetName)
+                .containsExactly("1회권", "와인 모임", null, null);
     }
 }

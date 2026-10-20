@@ -177,10 +177,14 @@ public class DepositReconciliationService {
         return ingest(raw, DepositSource.SIMULATOR, now);
     }
 
-    /** 운영자 수동 연결용 후보 목록. 자동 대사와 같은 후보(합산 적용). */
+    /** 운영자 수동 연결용 후보 목록. 자동 대사와 같은 후보(합산 적용). 대상 이름(targetName)을 채운다. */
     @Transactional(readOnly = true)
     public List<PendingPayment> listPendingTargets() {
-        return buildTargets().stream().map(Target::payment).toList();
+        List<PendingPayment> payments = buildTargets().stream().map(Target::payment).toList();
+        TargetNames names = targetNames(payments, PendingPayment::type, PendingPayment::targetId, PendingPayment::applicationId);
+        return payments.stream()
+                .map(payment -> payment.withTargetName(names.of(payment.type(), payment.targetId(), payment.applicationId())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -193,7 +197,10 @@ public class DepositReconciliationService {
         Page<DepositNotification> rows = result == null
                 ? depositNotificationRepository.findAll(pageable)
                 : depositNotificationRepository.findAllByResult(result, pageable);
-        return AdminDepositNotificationPageResponse.from(rows.map(AdminDepositNotificationResponse::from));
+        TargetNames names = targetNames(rows.getContent(), DepositNotification::getTargetType,
+                DepositNotification::getTargetId, DepositNotification::getApplicationId);
+        return AdminDepositNotificationPageResponse.from(rows.map(row -> AdminDepositNotificationResponse.from(row,
+                names.of(row.getTargetType(), row.getTargetId(), row.getApplicationId()))));
     }
 
     /**
@@ -223,7 +230,36 @@ public class DepositReconciliationService {
                     "입금 알림 수동 연결 (" + describe(target) + ")");
         }
         alertAdmins(notification, true);
-        return AdminDepositNotificationResponse.from(notification);
+        TargetNames names = targetNames(List.of(notification), DepositNotification::getTargetType,
+                DepositNotification::getTargetId, DepositNotification::getApplicationId);
+        return AdminDepositNotificationResponse.from(notification,
+                names.of(notification.getTargetType(), notification.getTargetId(), notification.getApplicationId()));
+    }
+
+    /** 결제 대상 이름. 이용권 = 상품명(passId 기준), 보증금·일반 모임 = 모임 제목(신청 ID 기준). */
+    private record TargetNames(Map<UUID, String> passNames, Map<UUID, String> gatheringTitles) {
+        String of(PaymentTargetType type, UUID targetId, UUID applicationId) {
+            if (type == null) {
+                return null;
+            }
+            return type == PaymentTargetType.TICKET_PASS ? passNames.get(targetId)
+                    : applicationId != null ? gatheringTitles.get(applicationId) : null;
+        }
+    }
+
+    // 종류별로 ID를 모아 종류당 한 번씩만 조회한다(N+1 방지).
+    private <T> TargetNames targetNames(List<T> rows, Function<T, PaymentTargetType> type,
+                                        Function<T, UUID> targetId, Function<T, UUID> applicationId) {
+        Set<UUID> passIds = new HashSet<>();
+        Set<UUID> applicationIds = new HashSet<>();
+        for (T row : rows) {
+            if (type.apply(row) == PaymentTargetType.TICKET_PASS) {
+                passIds.add(targetId.apply(row));
+            } else if (type.apply(row) != null && applicationId.apply(row) != null) {
+                applicationIds.add(applicationId.apply(row));
+            }
+        }
+        return new TargetNames(ticketService.findProductNames(passIds), applicationService.findGatheringTitles(applicationIds));
     }
 
     static String hash(String raw) {
@@ -370,7 +406,8 @@ public class DepositReconciliationService {
         if (!owned) {
             throw new CustomException(ErrorCode.PAYMENT_TARGET_NOT_FOUND);
         }
-        return listPendingTargets().stream()
+        return buildTargets().stream()
+                .map(Target::payment)
                 .filter(condition)
                 .findFirst()
                 .orElseThrow(() -> new CustomException(ErrorCode.PAYMENT_TARGET_NOT_FOUND));
