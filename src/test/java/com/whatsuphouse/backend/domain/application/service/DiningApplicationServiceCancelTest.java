@@ -34,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -57,6 +58,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 
 /** 취소 시점 정책(마감 전 100%·마감 후 50%·당일 0%)과 이용권 환불·보증금 처리, 취소 미리보기. (KAN-402, KAN-418) */
@@ -210,7 +212,8 @@ class DiningApplicationServiceCancelTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CANCEL_WINDOW_CLOSED);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         then(diningAttendanceService).should(never()).cancelAttendance(any(), anyBoolean());
-        then(depositService).shouldHaveNoInteractions();
+        then(depositService).should(never()).requestReturn(any(), anyInt());
+        then(depositService).should(never()).forfeit(any());
         then(ticketService).shouldHaveNoInteractions();
     }
 
@@ -345,16 +348,59 @@ class DiningApplicationServiceCancelTest {
     }
 
     @Test
-    @DisplayName("취소는 신청 행을 잠가 최신 상태로 판단한다(동시 취소의 뒤 요청은 409), 미리보기는 잠그지 않는다")
-    void cancel_locksApplicationRow_previewDoesNot() {
-        Application application = confirmedApplication(sessionOn(3, null));
+    @DisplayName("잠금 순서: 테이블 → 보증금 → 신청을 잡은 뒤에 보증금 처리·재조정을 한다(교착 방지), 미리보기는 잠그지 않는다")
+    void cancel_locksTableThenDepositThenApplication() {
+        Application application = confirmedApplication(sessionOn(0, LocalTime.MAX));
         given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        DiningTable table = seatedTable(application.getSession());
 
         diningApplicationService.previewCancel(applicationId, userId);
         then(applicationRepository).should(never()).refreshForUpdate(any());
+        then(diningTableService).should(never()).lockForUpdate(any());
+        then(depositService).should(never()).lockForUpdate(any());
 
         diningApplicationService.cancelApplication(applicationId, userId, null);
-        then(applicationRepository).should().refreshForUpdate(application);
+
+        InOrder order = inOrder(diningTableService, depositService, applicationRepository);
+        order.verify(diningTableService).lockForUpdate(table.getId());
+        order.verify(depositService).lockForUpdate(applicationId);
+        order.verify(applicationRepository).refreshForUpdate(application);
+        order.verify(depositService).forfeit(applicationId);
+        order.verify(diningTableService).rebalance(table.getId());
+    }
+
+    @Test
+    @DisplayName("테이블에 앉지 않은 신청: 보증금 → 신청 순으로 잠그고, 테이블은 잠그지 않는다")
+    void cancel_unseated_locksDepositThenApplication() {
+        Application application = confirmedApplication(sessionOn(3, null));
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+
+        diningApplicationService.cancelApplication(applicationId, userId, null);
+
+        InOrder order = inOrder(depositService, applicationRepository);
+        order.verify(depositService).lockForUpdate(applicationId);
+        order.verify(applicationRepository).refreshForUpdate(application);
+        order.verify(depositService).requestReturn(applicationId, 100);
+        then(diningTableService).should(never()).lockForUpdate(any());
+    }
+
+    @Test
+    @DisplayName("잠근 뒤 다시 읽었더니 이미 취소돼 있으면(동시 취소) 409, 아무것도 바꾸지 않는다")
+    void cancel_cancelledWhileWaitingForLock_conflict() {
+        Application application = confirmedApplication(sessionOn(3, null));
+        given(applicationRepository.findIncludingDeletedById(applicationId)).willReturn(Optional.of(application));
+        // 잠금을 기다리는 동안 다른 요청이 취소를 커밋했다.
+        org.mockito.BDDMockito.willAnswer(invocation -> {
+            application.cancel();
+            return null;
+        }).given(applicationRepository).refreshForUpdate(application);
+
+        assertThatThrownBy(() -> diningApplicationService.cancelApplication(applicationId, userId, null))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.APPLICATION_ALREADY_CANCELLED);
+        then(depositService).should(never()).requestReturn(any(), anyInt());
+        then(diningAttendanceService).should(never()).cancelAttendance(any(), anyBoolean());
+        then(eventPublisher).should(never()).publishEvent(any());
     }
 
     @Test

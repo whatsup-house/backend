@@ -133,8 +133,18 @@ public class DiningApplicationService {
      */
     @Transactional
     public void cancelApplication(UUID applicationId, UUID userId, RefundAccount refundAccount) {
-        Application application = findCancellable(applicationId, userId, true);
+        Application application = findCancellable(applicationId, userId);
         DiningTable table = matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId);
+        // 잠금 순서는 전역으로 회차 → 테이블 → 보증금 → 신청이다(DiningConfirmService.confirm: 회차→테이블→신청,
+        // DepositService.markPaid: 보증금→신청). 신청을 바꾸기 전에 이 순서로 잡아야 동시 확정·입금 확인과 교착하지 않는다.
+        // 재조정(rebalance)·보증금 처리는 같은 트랜잭션에서 이미 잡은 행을 다시 잠그므로 순서가 바뀌지 않는다.
+        if (table != null) {
+            diningTableService.lockForUpdate(table.getId());
+        }
+        depositService.lockForUpdate(applicationId);
+        // 신청은 마지막에 잠그고 DB 최신 상태로 다시 검사한다. 동시 취소의 뒤 요청은 여기서 409(이미 취소됨).
+        applicationRepository.refreshForUpdate(application);
+        checkCancellableStatus(application);
         Settlement settlement = settle(application, table);
         // 아무것도 바꾸기 전에 확인한다.
         if (settlement.ticketRefundAmount() > 0) {
@@ -162,7 +172,7 @@ public class DiningApplicationService {
 
     /** 지금 취소하면 적용되는 결과(PAY-02). 취소와 같은 검증·계산을 하고 아무것도 바꾸지 않는다. */
     public DiningCancelPreviewResponse previewCancel(UUID applicationId, UUID userId) {
-        Application application = findCancellable(applicationId, userId, false);
+        Application application = findCancellable(applicationId, userId);
         Settlement settlement = settle(application,
                 matchingService.findTablesByApplicationIds(List.of(applicationId)).get(applicationId));
         int ticketRefund = settlement.ticketRefundAmount();
@@ -198,18 +208,19 @@ public class DiningApplicationService {
         return window == CancelWindow.SAME_DAY && table != null;
     }
 
-    // lock: 취소는 신청 행을 잠그고 DB 최신 상태로 판단한다. 동시 취소의 뒤 요청은 409(이미 취소됨)가 된다.
-    // 미리보기는 읽기 전용 트랜잭션이라 잠그지 않는다.
-    private Application findCancellable(UUID applicationId, UUID userId, boolean lock) {
+    // 잠그지 않고 읽는다(미리보기는 읽기 전용 트랜잭션). 취소는 잠근 뒤 checkCancellableStatus를 다시 부른다.
+    private Application findCancellable(UUID applicationId, UUID userId) {
         // 취소하면 soft delete되므로 삭제된 신청까지 찾아야 "이미 취소됨(409)"을 구분할 수 있다.
         Application application = applicationRepository.findIncludingDeletedById(applicationId)
                 .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
         if (application.getUser() == null || !application.getUser().getId().equals(userId)) {
             throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
         }
-        if (lock) {
-            applicationRepository.refreshForUpdate(application);
-        }
+        checkCancellableStatus(application);
+        return application;
+    }
+
+    private static void checkCancellableStatus(Application application) {
         if (application.getStatus() == ApplicationStatus.CANCELLED) {
             throw new CustomException(ErrorCode.APPLICATION_ALREADY_CANCELLED);
         }
@@ -220,7 +231,6 @@ public class DiningApplicationService {
                 || !CANCELLABLE.contains(application.getStatus())) {
             throw new CustomException(ErrorCode.CANNOT_CANCEL);
         }
-        return application;
     }
 
     /**

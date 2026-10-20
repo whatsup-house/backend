@@ -98,6 +98,11 @@ public class DepositService {
                 });
     }
 
+    /** 이 신청의 보증금 행을 잠그고 최신 상태로 읽는다(없으면 무시). 신청 취소가 신청보다 먼저 잡는다. 잠금 순서: 회차 → 테이블 → 보증금 → 신청. */
+    public void lockForUpdate(UUID applicationId) {
+        lockFresh(applicationId);
+    }
+
     /** 몰수(PAID·RETURN_PENDING → FORFEITED). 반환 대기였으면 아직 송금 전인 반환 요청을 거둔다. 그 외는 무시한다. */
     public void forfeit(UUID applicationId) {
         lockFresh(applicationId).ifPresent(deposit -> {
