@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.bot.service;
 
+import com.whatsuphouse.backend.domain.bot.dto.response.BotPendingResponse;
 import com.whatsuphouse.backend.domain.bot.dto.response.BotSettingResponse;
 import com.whatsuphouse.backend.domain.bot.entity.BotDispatch;
 import com.whatsuphouse.backend.domain.bot.entity.BotSetting;
@@ -19,24 +20,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestClientResponseException;
 
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * 1:1 문의방 그록봇 자동응답 발송(KAN-406).
+ * 1:1 문의방 그록봇 자동응답 대기열(KAN-406).
  * 대상: bot.enabled && 전역 토글 ON && (허용 목록 또는 데모 회원) && 방 botPaused=false 인 고객 본인 메시지.
- * 흐름: 메시지 → PENDING(같은 방 대기 건은 디바운스로 마지막 메시지 하나로 묶음) → 스케줄러가 발송 → SENT → 답변 API.
- * 실패·무응답·한도 초과는 담당자 이관(handOff). 봇은 데이터를 바꾸지 않는다(답변 게시·이관 표시만).
+ * 흐름: 메시지 → PENDING(같은 방 대기 건은 디바운스로 마지막 메시지 하나로 묶음) → Slack 신호(BotSignalService)
+ *      → 에이전트가 GET /api/bot/pending으로 lease(LEASED, 5분) → 답변 API. 만료되면 PENDING으로, 3회 만료면 FAILED.
+ * 미처리(5분)·lease 소진·한도 초과는 담당자 이관(handOff). 봇은 데이터를 바꾸지 않는다(답변 게시·이관 표시만).
  */
 @Slf4j
 @Service
@@ -47,7 +48,10 @@ public class BotDispatchService {
     static final String TIMEOUT_REASON = "응답 시간 초과";
     static final String LIMIT_REASON = "발송 한도 초과";
     static final String PAUSED_REASON = "담당자 응대 중";
-    private static final int SEND_BATCH = 20;
+    static final String NOT_TARGET_REASON = "자동응답 대상 아님";
+    static final int MAX_PENDING_LIMIT = 20;
+    private static final Duration LEASE = Duration.ofMinutes(5);
+    private static final Duration UNCLAIMED_TIMEOUT = Duration.ofMinutes(5);
 
     private final BotDispatchRepository botDispatchRepository;
     private final BotSettingRepository botSettingRepository;
@@ -55,7 +59,6 @@ public class BotDispatchService {
     private final UserService userService;
     private final ExceptionCaseService exceptionCaseService;
     private final BotPayloadBuilder botPayloadBuilder;
-    private final BotWebhookClient botWebhookClient;
     private final TransactionTemplate transactionTemplate;
 
     @Value("${bot.enabled:false}")
@@ -64,17 +67,11 @@ public class BotDispatchService {
     @Value("${bot.allowed-user-ids:}")
     private String allowedUserIdsValue;
 
-    @Value("${bot.reply-url:}")
-    private String replyUrl;
-
     @Value("${bot.reply-token:}")
     private String replyToken;
 
     @Value("${bot.debounce-seconds:10}")
     private long debounceSeconds;
-
-    @Value("${bot.reply-timeout-minutes:3}")
-    private long replyTimeoutMinutes;
 
     @Value("${bot.per-user-hourly-limit:20}")
     private long perUserHourlyLimit;
@@ -82,15 +79,10 @@ public class BotDispatchService {
     @Value("${bot.daily-limit:300}")
     private long dailyLimit;
 
-    private boolean replyUrlAllowed;
     private Set<UUID> allowedUserIds = Set.of();
 
     @PostConstruct
     void init() {
-        replyUrlAllowed = isWhatsupHttpsUrl(replyUrl);
-        if (enabled && !replyUrlAllowed) {
-            log.warn("bot.reply-url이 https://whatsup.house 또는 *.whatsup.house가 아니어서 그록봇을 비활성화합니다.");
-        }
         Set<UUID> ids = new HashSet<>();
         Arrays.stream(allowedUserIdsValue.split(",")).map(String::trim).filter(StringUtils::hasText).forEach(value -> {
             try {
@@ -102,37 +94,21 @@ public class BotDispatchService {
         allowedUserIds = Set.copyOf(ids);
     }
 
-    /** 에이전트에게 알려 줄 답변 주소는 우리 도메인(https)만. 다른 호스트로 답변을 유도하는 설정 실수를 막는다. */
-    public static boolean isWhatsupHttpsUrl(String url) {
-        if (url == null) {
-            return false;
-        }
-        try {
-            URI uri = new URI(url);
-            String host = uri.getHost() == null ? null : uri.getHost().toLowerCase(Locale.ROOT);
-            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getUserInfo() == null && host != null
-                    && (host.equals("whatsup.house") || host.endsWith(".whatsup.house"));
-        } catch (URISyntaxException e) {
-            return false;
-        }
-    }
-
     /** 서버 마스터 스위치(bot.enabled). 꺼져 있으면 스케줄러가 DB도 보지 않는다. */
     public boolean isMasterEnabled() {
         return enabled;
     }
 
-    /** 마스터 스위치·설정(웹훅 주소·키·답변 토큰·답변 주소)·관리자 전역 토글이 모두 켜져 있는지. */
+    /** 마스터 스위치·답변 토큰·관리자 전역 토글이 모두 켜져 있는지. Slack 신호 주소는 없어도 된다(pull은 동작). */
     public boolean isActive() {
-        return enabled && replyUrlAllowed && StringUtils.hasText(replyToken) && botWebhookClient.isConfigured()
-                && isToggleOn();
+        return enabled && StringUtils.hasText(replyToken) && isToggleOn();
     }
 
     private boolean isToggleOn() {
         return botSettingRepository.findById(BotSetting.ID).map(BotSetting::isEnabled).orElse(true);
     }
 
-    /** 고객 메시지 1건을 발송 큐에 넣는다(BotDispatchListener가 단일 스레드로 호출). */
+    /** 고객 메시지 1건을 대기열에 넣는다(BotDispatchListener가 단일 스레드로 호출). */
     @Transactional
     public void enqueue(UUID messageId) {
         if (!isActive()) {
@@ -177,60 +153,76 @@ public class BotDispatchService {
     }
 
     /**
-     * 발송할 때가 된 건을 1건씩 별도 트랜잭션(행 잠금 유지)으로 보낸다.
-     * 한 건이 최대 15초 걸리므로 건마다 now에 경과 시간을 더한 시각을 쓴다(테스트가 넘긴 기준 시각도 유지).
+     * 대기 문의 조회(GET /api/bot/pending). 조회 가능한 PENDING을 limit(1~20)건 lease하고 본인 데이터로 본문을 만든다.
+     * 봇이 비활성(토글 OFF 등)이면 빈 목록 — 남은 PENDING은 미처리 타임아웃이 담당자에게 넘긴다.
      */
-    public void sendDue(LocalDateTime now) {
-        long startedAt = System.nanoTime();
-        for (int i = 0; i < SEND_BATCH; i++) {
-            LocalDateTime at = now.plusNanos(System.nanoTime() - startedAt);
-            if (!Boolean.TRUE.equals(transactionTemplate.execute(status -> sendNextDue(at)))) {
-                return;
+    public BotPendingResponse listPending(int limit) {
+        if (!isActive()) {
+            return new BotPendingResponse(List.of());
+        }
+        int size = Math.max(1, Math.min(MAX_PENDING_LIMIT, limit));
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (BotDispatch dispatch : leaseDue(size, LocalDateTime.now())) {
+            try {
+                items.add(botPayloadBuilder.build(dispatch));
+            } catch (RuntimeException e) {
+                // LEASED로 남아 만료 → 다시 PENDING → 3회면 FAILED + 이관. 한 건 때문에 나머지를 막지 않는다.
+                log.warn("그록봇 대기 문의 본문 생성 실패: dispatchId={}, error={}", dispatch.getId(), e.getClass().getSimpleName());
             }
         }
+        return new BotPendingResponse(items);
     }
 
-    // 웹훅 응답(최대 15초)을 기다리는 동안 행 잠금을 쥔다: 그 사이 같은 방 새 메시지는 enqueue에서 커밋을 기다렸다가
-    // SENT를 확인하고 새 PENDING을 만든다(보낸 건의 message_id가 바뀌지 않게).
-    private boolean sendNextDue(LocalDateTime now) {
-        List<String> ids = botDispatchRepository.lockNextDueId(now);
-        if (ids.isEmpty()) {
-            return false;
-        }
-        BotDispatch dispatch = botDispatchRepository.findById(UUID.fromString(ids.get(0))).orElseThrow();
-        // 큐에 들어간 뒤 담당자가 답했으면 보내지 않고 닫는다(안내 문구 없음).
-        if (chatService.isBotPaused(dispatch.getConversationId())) {
-            dispatch.markHandedOff(PAUSED_REASON);
-            return true;
-        }
-        try {
-            botWebhookClient.send(botPayloadBuilder.build(dispatch));
-            dispatch.markSent(now);
-        } catch (RuntimeException e) {
-            dispatch.recordFailure(now, describe(e));
-            log.warn("그록봇 웹훅 발송 실패: dispatchId={}, attempts={}, error={}",
-                    dispatch.getId(), dispatch.getAttempts(), dispatch.getLastError());
-            if (dispatch.isFailed()) {
-                handOff(dispatch, BotDispatch.FAILED_REASON, true);
+    // lease는 짧은 트랜잭션으로 커밋하고 본문은 그 뒤에 만든다(조회 서비스 예외가 lease를 되돌리지 않게).
+    private List<BotDispatch> leaseDue(int limit, LocalDateTime now) {
+        List<BotDispatch> leased = transactionTemplate.execute(status -> {
+            List<BotDispatch> result = new ArrayList<>();
+            for (String id : botDispatchRepository.lockDueIds(now, limit)) {
+                BotDispatch dispatch = botDispatchRepository.findById(UUID.fromString(id)).orElseThrow();
+                // 반환 직전 다시 확인: 그 사이 담당자가 답했거나 대상에서 빠졌으면 돌려주지 않는다.
+                if (chatService.isBotPaused(dispatch.getConversationId())) {
+                    dispatch.markHandedOff(PAUSED_REASON);
+                    continue;
+                }
+                if (!isTargetCustomer(dispatch.getCustomerId())) {
+                    dispatch.markHandedOff(NOT_TARGET_REASON);
+                    handOff(dispatch, NOT_TARGET_REASON, true);
+                    continue;
+                }
+                dispatch.lease(now.plus(LEASE));
+                result.add(dispatch);
             }
-        }
-        return true;
-    }
-
-    // 상태 코드·예외 클래스만. 응답 본문·URL·키가 담길 수 있는 메시지는 남기지 않는다.
-    private static String describe(RuntimeException e) {
-        return e instanceof RestClientResponseException response
-                ? "HTTP " + response.getStatusCode().value()
-                : e.getClass().getSimpleName();
+            return result;
+        });
+        return leased == null ? List.of() : leased;
     }
 
     /**
-     * 답 없이 reply-timeout-minutes가 지난 SENT를 이관한다. 같은 방에 더 새 dispatch가 있으면 건너뛴다.
-     * 담당자가 이미 응대 중(botPaused)인 방은 이관·안내 없이 닫기만 한다.
+     * 기한 지난 LEASED: 담당자 응대 중이면 닫기만, lease 3회 소진이면 FAILED + 이관, 아니면 다시 PENDING.
+     * 같은 방에 더 새 dispatch가 있는(대체된) LEASED는 건드리지 않는다(방당 PENDING 1건 유지, 그 답변은 어차피 409).
      */
     @Transactional
-    public void handOffTimedOut(LocalDateTime now) {
-        for (String id : botDispatchRepository.lockTimedOutIds(now.minusMinutes(replyTimeoutMinutes))) {
+    public void expireLeases(LocalDateTime now) {
+        for (String id : botDispatchRepository.lockExpiredLeaseIds(now)) {
+            BotDispatch dispatch = botDispatchRepository.findById(UUID.fromString(id)).orElseThrow();
+            if (chatService.isBotPaused(dispatch.getConversationId())) {
+                dispatch.markHandedOff(PAUSED_REASON);
+            } else if (dispatch.isLeaseExhausted()) {
+                dispatch.markFailed(BotDispatch.LEASE_EXHAUSTED_REASON);
+                handOff(dispatch, BotDispatch.LEASE_EXHAUSTED_REASON, true);
+            } else {
+                dispatch.requeue(now);
+            }
+        }
+    }
+
+    /**
+     * 조회 가능해진 뒤(send_after) 5분 동안 아무도 가져가지 않은 PENDING(신호 유실·에이전트 정지)을 이관한다.
+     * 관리자 전역 토글과 무관하게 돈다. 담당자 응대 중인 방은 이관·안내 없이 닫기만 한다.
+     */
+    @Transactional
+    public void handOffUnclaimed(LocalDateTime now) {
+        for (String id : botDispatchRepository.lockUnclaimedIds(now.minus(UNCLAIMED_TIMEOUT))) {
             BotDispatch dispatch = botDispatchRepository.findById(UUID.fromString(id)).orElseThrow();
             if (chatService.isBotPaused(dispatch.getConversationId())) {
                 dispatch.markHandedOff(PAUSED_REASON);
@@ -243,7 +235,7 @@ public class BotDispatchService {
 
     /**
      * 담당자 이관(공통): 방 needsHuman, 이 방의 열린 CS 예외가 없으면 새로 연다.
-     * notifyCustomer(웹훅 실패·무응답·한도 초과)면 고정 안내를 봇 이름으로 남긴다.
+     * notifyCustomer(미처리·lease 소진·한도 초과·대상 아님)면 고정 안내를 봇 이름으로 남긴다.
      * 이미 이관 중인 방, 담당자가 응대 중(botPaused)인 방엔 남기지 않는다.
      * dispatch 상태는 호출 측이 정한다.
      */

@@ -28,9 +28,8 @@ services:
       R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
       BOT_ENABLED: ${BOT_ENABLED:-false}
       BOT_ALLOWED_USER_IDS: ${BOT_ALLOWED_USER_IDS:-}
-      GROK_WEBHOOK_URL: ${GROK_WEBHOOK_URL:-}
-      GROK_WEBHOOK_KEY: ${GROK_WEBHOOK_KEY:-}
       WHATSUP_BOT_TOKEN: ${WHATSUP_BOT_TOKEN:-}
+      SLACK_SIGNAL_WEBHOOK_URL: ${SLACK_SIGNAL_WEBHOOK_URL:-}
     depends_on:
       - redis
     restart: unless-stopped

@@ -17,14 +17,13 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 /**
- * 문의방 고객 메시지 → 그록봇 웹훅 발송 1건. 같은 방의 PENDING은 디바운스로 마지막 메시지 하나에 묶인다.
- * 실패 시 5초 → 30초 → 2분 뒤 재시도, 최초+3회 실패면 FAILED. last_error엔 상태 코드·예외 클래스만. (KAN-406)
+ * 문의방 고객 메시지 → 그록봇 대기 문의 1건. 같은 방의 PENDING은 디바운스로 마지막 메시지 하나에 묶인다.
+ * 에이전트가 GET /api/bot/pending으로 가져가면 LEASED(leased_until까지), 만료되면 PENDING으로 돌아가고
+ * 3회 lease가 모두 만료되면 FAILED. (KAN-406)
  */
 @Entity
 @Table(name = "bot_dispatch")
@@ -33,8 +32,8 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class BotDispatch {
 
-    public static final String FAILED_REASON = "웹훅 발송 실패";
-    private static final List<Duration> BACKOFF = List.of(Duration.ofSeconds(5), Duration.ofSeconds(30), Duration.ofMinutes(2));
+    public static final String LEASE_EXHAUSTED_REASON = "응답 없음(조회 3회 만료)";
+    static final int MAX_LEASES = 3;
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -60,17 +59,12 @@ public class BotDispatch {
     @Column(nullable = false)
     private int attempts;
 
-    @Column(name = "last_error", columnDefinition = "TEXT")
-    private String lastError;
-
     @Column(name = "send_after", nullable = false)
     private LocalDateTime sendAfter;
 
-    @Column(name = "next_attempt_at")
-    private LocalDateTime nextAttemptAt;
-
-    @Column(name = "sent_at")
-    private LocalDateTime sentAt;
+    // LEASED일 때 답변을 받는 기한.
+    @Column(name = "leased_until")
+    private LocalDateTime leasedUntil;
 
     // 관리자만 본다.
     @Column(name = "handoff_reason", columnDefinition = "TEXT")
@@ -105,29 +99,37 @@ public class BotDispatch {
         return dispatch;
     }
 
-    /** 디바운스: 대기 중인 건을 새 메시지로 바꾸고 발송 시각을 미룬다. */
+    /** 디바운스: 대기 중인 건을 새 메시지로 바꾸고 조회 가능 시각(send_after)을 미룬다. */
     public void debounce(UUID messageId, LocalDateTime sendAfter) {
         this.messageId = messageId;
         this.sendAfter = sendAfter;
     }
 
-    public void markSent(LocalDateTime now) {
-        this.status = BotDispatchStatus.SENT;
-        this.sentAt = now;
-        this.nextAttemptAt = null;
+    /** 에이전트가 가져감. attempts는 lease 횟수. */
+    public void lease(LocalDateTime leasedUntil) {
+        this.status = BotDispatchStatus.LEASED;
+        this.leasedUntil = leasedUntil;
+        this.attempts++;
     }
 
-    /** 발송 실패 1회 기록. 남은 재시도가 없으면 FAILED. error는 상태 코드·예외 클래스명만. */
-    public void recordFailure(LocalDateTime now, String error) {
-        this.attempts++;
-        this.lastError = error;
-        if (attempts > BACKOFF.size()) {
-            this.status = BotDispatchStatus.FAILED;
-            this.nextAttemptAt = null;
-            this.handoffReason = FAILED_REASON;
-            return;
-        }
-        this.nextAttemptAt = now.plus(BACKOFF.get(attempts - 1));
+    /** 만료된 lease를 다시 대기로. send_after를 지금으로 당겨 신호·미처리 타임아웃이 이 시각부터 다시 센다. */
+    public void requeue(LocalDateTime now) {
+        this.status = BotDispatchStatus.PENDING;
+        this.leasedUntil = null;
+        this.sendAfter = now;
+    }
+
+    public boolean isLeaseExhausted() {
+        return attempts >= MAX_LEASES;
+    }
+
+    public boolean isLeaseExpired(LocalDateTime now) {
+        return leasedUntil == null || !leasedUntil.isAfter(now);
+    }
+
+    public void markFailed(String reason) {
+        this.status = BotDispatchStatus.FAILED;
+        this.handoffReason = reason;
     }
 
     public void markReplied() {
@@ -137,10 +139,6 @@ public class BotDispatch {
     public void markHandedOff(String reason) {
         this.status = BotDispatchStatus.HANDED_OFF;
         this.handoffReason = reason;
-    }
-
-    public boolean isFailed() {
-        return status == BotDispatchStatus.FAILED;
     }
 
     public boolean isAnswered() {

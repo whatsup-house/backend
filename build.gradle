@@ -90,6 +90,8 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'com.h2database:h2'
+	// 그록봇 Slack 신호(Incoming Webhook) 대역 (KAN-406)
+	testImplementation 'org.wiremock:wiremock-standalone:3.13.1'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

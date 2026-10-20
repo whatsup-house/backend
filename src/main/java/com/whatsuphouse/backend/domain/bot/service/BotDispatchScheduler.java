@@ -8,9 +8,10 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 
 /**
- * 2초마다 발송 대기(디바운스·재시도 끝) 건을 보내고, 3분 무응답 SENT를 이관한다. (KAN-406)
- * 발송은 봇이 활성일 때만. 무응답 이관은 관리자 토글을 끄거나 설정이 빠져도 계속 돈다(이미 보낸 건이 SENT로 남지 않게).
- * 서버 마스터 스위치(bot.enabled)가 꺼져 있으면 둘 다 건너뛴다(봇을 쓰지 않는 환경·테스트에서 2초 폴링 쿼리를 막는다).
+ * 그록봇 대기열 스케줄(KAN-406). 서버 마스터 스위치(bot.enabled)가 꺼져 있으면 아무것도 하지 않는다
+ * (봇을 쓰지 않는 환경·테스트에서 2초 폴링 쿼리를 막는다).
+ * - run: lease 만료 처리(다시 PENDING / 3회면 FAILED + 이관)와 5분 미처리 PENDING 이관. 관리자 토글과 무관하게 돈다.
+ * - signal: 봇이 활성일 때만 Slack 신호. 재시도 대기(최대 십수 초)가 만료·이관 처리를 밀지 않게 따로 돈다.
  */
 @Slf4j
 @Component
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
 public class BotDispatchScheduler {
 
     private final BotDispatchService botDispatchService;
+    private final BotSignalService botSignalService;
 
     @Scheduled(fixedDelay = 2_000, initialDelay = 2_000)
     public void run() {
@@ -25,12 +27,23 @@ public class BotDispatchScheduler {
             return;
         }
         try {
-            if (botDispatchService.isActive()) {
-                botDispatchService.sendDue(LocalDateTime.now());
-            }
-            botDispatchService.handOffTimedOut(LocalDateTime.now());
+            LocalDateTime now = LocalDateTime.now();
+            botDispatchService.expireLeases(now);
+            botDispatchService.handOffUnclaimed(now);
         } catch (Exception e) {
-            log.error("그록봇 발송 스케줄 실패", e);
+            log.error("그록봇 대기열 스케줄 실패", e);
+        }
+    }
+
+    @Scheduled(fixedDelay = 2_000, initialDelay = 2_000)
+    public void signal() {
+        if (!botDispatchService.isMasterEnabled() || !botDispatchService.isActive()) {
+            return;
+        }
+        try {
+            botSignalService.signalIfDue(LocalDateTime.now());
+        } catch (Exception e) {
+            log.error("그록봇 Slack 신호 스케줄 실패", e);
         }
     }
 }

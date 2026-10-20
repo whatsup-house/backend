@@ -27,7 +27,7 @@ import java.security.MessageDigest;
 import java.util.List;
 
 /**
- * 그록봇 답변 수신(/api/bot/**) 전용 필터 체인(KAN-406). 기본 체인(SecurityConfig)보다 먼저 매칭된다.
+ * 그록봇 대기 문의 조회·답변 수신(/api/bot/**) 전용 필터 체인(KAN-406). 기본 체인(SecurityConfig)보다 먼저 매칭된다.
  * JWT·세션은 보지 않고 Authorization: Bearer 값이 bot.reply-token과 같을 때만 ROLE_BOT을 준다.
  * 토큰 미설정이면 항상 401. 토큰 값은 로그에 남기지 않는다.
  */

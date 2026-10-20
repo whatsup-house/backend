@@ -114,9 +114,8 @@ jobs:
             "R2_PUBLIC_BASE_URL=${{ secrets.R2_PUBLIC_BASE_URL }}" \
             "BOT_ENABLED=${{ secrets.BOT_ENABLED }}" \
             "BOT_ALLOWED_USER_IDS=${{ secrets.BOT_ALLOWED_USER_IDS }}" \
-            "GROK_WEBHOOK_URL=${{ secrets.GROK_WEBHOOK_URL }}" \
-            "GROK_WEBHOOK_KEY=${{ secrets.GROK_WEBHOOK_KEY }}" \
             "WHATSUP_BOT_TOKEN=${{ secrets.WHATSUP_BOT_TOKEN }}" \
+            "SLACK_SIGNAL_WEBHOOK_URL=${{ secrets.SLACK_SIGNAL_WEBHOOK_URL }}" \
             | ssh ec2-user@${{ secrets.EC2_HOST }} "cat > ~/whatsup/.env"
 
       - name: Copy docker-compose

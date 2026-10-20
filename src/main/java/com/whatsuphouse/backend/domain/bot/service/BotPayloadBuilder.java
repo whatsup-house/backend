@@ -1,6 +1,5 @@
 package com.whatsuphouse.backend.domain.bot.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.whatsuphouse.backend.domain.application.client.service.DiningApplicationService;
 import com.whatsuphouse.backend.domain.bot.entity.BotDispatch;
@@ -9,10 +8,8 @@ import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.service.UserService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -28,10 +25,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 그록봇 웹훅 본문. 고객 데이터는 dispatch.customerId 한 명의 "내 것" 조회 서비스로만 모은다(다른 고객 조회 메서드 금지).
- * 이메일은 빼고 전화번호는 뒤 4자리, 계좌번호는 앞 3자리+***로 가린다. (KAN-406)
- * 본문: {eventId, conversationId, messageId, customer{id, displayName}, message{text, createdAt}, history[],
- *        context{applications[], tickets{}, depositRequired}, faq[{q, a}], replyUrl}
+ * 그록봇 대기 문의 항목(GET /api/bot/pending의 items[]). 고객 데이터는 dispatch.customerId 한 명의 "내 것" 조회 서비스로만
+ * 모은다(다른 고객 조회 메서드 금지). 이메일은 빼고 전화번호는 뒤 4자리, 계좌번호는 앞 3자리+***로 가린다. (KAN-406)
+ * 항목: {eventId, conversationId, messageId, customer{id, displayName}, message{text, createdAt}, history[],
+ *        context{applications[], tickets{}, depositRequired}, faq[{q, a}]}
  */
 @Component
 @RequiredArgsConstructor
@@ -47,12 +44,8 @@ public class BotPayloadBuilder {
     private final ObjectMapper objectMapper;
     private final List<Map<String, String>> faq = parseFaq(readFaq());
 
-    @Value("${bot.reply-url:}")
-    private String replyUrl;
-
-    // 조회 서비스가 던지는 예외가 발송 트랜잭션(행 잠금)을 rollback-only로 만들지 않도록 따로 돈다.
-    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
-    public String build(BotDispatch dispatch) {
+    @Transactional(readOnly = true)
+    public Map<String, Object> build(BotDispatch dispatch) {
         UUID customerId = dispatch.getCustomerId();
         User customer = userService.findUser(customerId);
 
@@ -75,12 +68,7 @@ public class BotPayloadBuilder {
                 .map(m -> toNode(m, true)).toList());
         body.put("context", mask(objectMapper.convertValue(context, Map.class)));
         body.put("faq", faq);
-        body.put("replyUrl", replyUrl);
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
-            throw new UncheckedIOException(e);
-        }
+        return body;
     }
 
     private Map<String, Object> toNode(ChatService.BotTranscriptMessage message, boolean withRole) {

@@ -15,15 +15,15 @@ import java.util.UUID;
 public class BotReplyRequest {
 
     @NotNull
-    @Schema(description = "웹훅으로 받은 eventId(= Idempotency-Key 헤더)", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @Schema(description = "GET /api/bot/pending 항목의 eventId(= Idempotency-Key 헤더)", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID eventId;
 
     @NotNull
-    @Schema(description = "웹훅의 conversationId(문의방 ID)", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
+    @Schema(description = "대기 문의 항목의 conversationId(문의방 ID)", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
     private UUID conversationId;
 
     @NotNull
-    @Schema(description = "웹훅의 messageId", example = "1b4e28ba-2fa1-11d2-883f-0016d3cca427")
+    @Schema(description = "대기 문의 항목의 messageId", example = "1b4e28ba-2fa1-11d2-883f-0016d3cca427")
     private UUID inReplyToMessageId;
 
     @NotNull

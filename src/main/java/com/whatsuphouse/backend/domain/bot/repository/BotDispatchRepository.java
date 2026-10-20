@@ -25,7 +25,7 @@ public interface BotDispatchRepository extends JpaRepository<BotDispatch, UUID> 
     @Query("select d from BotDispatch d where d.eventId = :eventId")
     Optional<BotDispatch> findByEventIdForUpdate(@Param("eventId") UUID eventId);
 
-    // 디바운스 대상. 스케줄러가 발송 중(행 잠금)이면 커밋을 기다렸다가 상태를 다시 본다.
+    // 디바운스 대상. 조회(lease)가 이 행을 잠그고 있으면 커밋을 기다렸다가 상태를 다시 본다(LEASED면 새 PENDING).
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<BotDispatch> findFirstByConversationIdAndStatus(UUID conversationId, BotDispatchStatus status);
 
@@ -37,27 +37,38 @@ public interface BotDispatchRepository extends JpaRepository<BotDispatch, UUID> 
 
     List<BotDispatch> findAllByConversationIdInAndHandoffReasonIsNotNull(Collection<UUID> conversationIds);
 
+    /** 마지막 신호 이후 조회 가능해진 PENDING이 있는지(Slack 신호 판단). */
+    boolean existsByStatusAndSendAfterGreaterThanAndSendAfterLessThanEqual(
+            BotDispatchStatus status, LocalDateTime after, LocalDateTime upTo);
+
     /**
-     * 발송할 때가 된 PENDING(디바운스 끝 + 재시도 대기 끝) 1건을 잠근다. 다른 인스턴스가 잡은 행은 건너뛴다.
+     * 조회 가능한(디바운스 끝) PENDING을 오래된 순으로 limit건 잠근다. 다른 호출이 잡은 행은 건너뛴다(동시 조회 중복 방지).
      * 네이티브인 이유: JPQL에는 SKIP LOCKED가 없다. ID를 문자열로 받는 이유: 네이티브 UUID 스칼라는 DB마다 타입이 다르다.
      */
     @Query(value = """
             SELECT CAST(d.id AS VARCHAR(36)) FROM bot_dispatch d
             WHERE d.status = 'PENDING' AND d.send_after <= :now
-              AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= :now)
             ORDER BY d.send_after
-            LIMIT 1
+            LIMIT :limit
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    List<String> lockNextDueId(@Param("now") LocalDateTime now);
+    List<String> lockDueIds(@Param("now") LocalDateTime now, @Param("limit") int limit);
 
-    /** 답 없이 sent_at이 기준 시각 이전인 SENT. 같은 방에 더 새 dispatch가 있으면(대체됨) 제외. */
+    /** lease 기한이 지난 LEASED. 같은 방에 더 새 dispatch가 있으면(대체됨, 답변은 어차피 409) 제외. */
     @Query(value = """
             SELECT CAST(d.id AS VARCHAR(36)) FROM bot_dispatch d
-            WHERE d.status = 'SENT' AND d.sent_at <= :sentBefore
+            WHERE d.status = 'LEASED' AND d.leased_until <= :now
               AND NOT EXISTS (SELECT 1 FROM bot_dispatch n
                               WHERE n.conversation_id = d.conversation_id AND n.created_at > d.created_at)
             FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    List<String> lockTimedOutIds(@Param("sentBefore") LocalDateTime sentBefore);
+    List<String> lockExpiredLeaseIds(@Param("now") LocalDateTime now);
+
+    /** 조회 가능해진 뒤(send_after) 기준 시각까지 아무도 가져가지 않은 PENDING. */
+    @Query(value = """
+            SELECT CAST(d.id AS VARCHAR(36)) FROM bot_dispatch d
+            WHERE d.status = 'PENDING' AND d.send_after <= :dueBefore
+            FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    List<String> lockUnclaimedIds(@Param("dueBefore") LocalDateTime dueBefore);
 }

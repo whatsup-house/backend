@@ -192,7 +192,8 @@ public enum ErrorCode {
     BOT_REPLY_FORBIDDEN("요청한 문의방·메시지와 일치하지 않습니다.", HttpStatus.FORBIDDEN),
     BOT_REPLY_ALREADY_HANDLED("이미 처리된 봇 요청입니다.", HttpStatus.CONFLICT),
     BOT_DISPATCH_STALE("더 최신 문의가 있어 이전 답변은 등록하지 않습니다.", HttpStatus.CONFLICT),
-    BOT_DISPATCH_NOT_SENT("답변을 기다리는 상태가 아닙니다.", HttpStatus.CONFLICT),
+    BOT_DISPATCH_NOT_LEASED("조회(lease)되어 답변을 기다리는 문의가 아닙니다.", HttpStatus.CONFLICT),
+    BOT_LEASE_EXPIRED("조회 유효 시간(5분)이 지나 답변을 등록하지 않습니다.", HttpStatus.CONFLICT),
     BOT_ROOM_PAUSED("담당자가 응대 중인 문의방이라 봇 답변을 등록하지 않습니다.", HttpStatus.CONFLICT),
     BOT_IDEMPOTENCY_KEY_MISMATCH("Idempotency-Key가 eventId와 다릅니다.", HttpStatus.UNPROCESSABLE_ENTITY),
     BOT_REPLY_INVALID_TEXT("답변은 1자 이상 2000자 이하여야 합니다.", HttpStatus.UNPROCESSABLE_ENTITY);

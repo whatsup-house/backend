@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.HtmlUtils;
 
+import java.time.LocalDateTime;
+
 /**
  * 그록봇 답변 수신(POST /api/bot/replies, KAN-406). 봇이 할 수 있는 건 답변 게시와 담당자 이관 표시뿐.
  * dispatch 행을 잠근 한 트랜잭션에서 처리해 같은 eventId 동시 호출에도 메시지는 한 개.
@@ -33,7 +35,7 @@ public class BotReplyService {
 
     /**
      * 검증 순서: Idempotency-Key≠eventId 422 → dispatch 없음 404 → 방·메시지 불일치 403 → 이미 답함 409
-     * → 같은 방에 더 새 dispatch 409(오래된 답변 폐기) → SENT 아님 409 → 담당자 응대 중(botPaused) 409
+     * → 같은 방에 더 새 dispatch 409(오래된 답변 폐기) → LEASED 아님 409 → lease 기한 지남 409 → 담당자 응대 중(botPaused) 409
      * → text 비었거나 길이 초과 422.
      */
     @Transactional
@@ -53,8 +55,11 @@ public class BotReplyService {
         if (botDispatchRepository.existsByConversationIdAndCreatedAtAfter(dispatch.getConversationId(), dispatch.getCreatedAt())) {
             throw new CustomException(ErrorCode.BOT_DISPATCH_STALE);
         }
-        if (dispatch.getStatus() != BotDispatchStatus.SENT) {
-            throw new CustomException(ErrorCode.BOT_DISPATCH_NOT_SENT);
+        if (dispatch.getStatus() != BotDispatchStatus.LEASED) {
+            throw new CustomException(ErrorCode.BOT_DISPATCH_NOT_LEASED);
+        }
+        if (dispatch.isLeaseExpired(LocalDateTime.now())) {
+            throw new CustomException(ErrorCode.BOT_LEASE_EXPIRED);
         }
         if (chatService.isBotPaused(dispatch.getConversationId())) {
             throw new CustomException(ErrorCode.BOT_ROOM_PAUSED);

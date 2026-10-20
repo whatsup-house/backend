@@ -18,37 +18,53 @@ class BotDispatchSchedulerTest {
     @Mock
     private BotDispatchService botDispatchService;
 
+    @Mock
+    private BotSignalService botSignalService;
+
     @InjectMocks
     private BotDispatchScheduler botDispatchScheduler;
 
     @Test
-    @DisplayName("봇이 비활성(토글 OFF·설정 누락)이어도 무응답 이관은 돌고 발송만 건너뛴다")
-    void run_inactive_onlyTimeoutHandOff() {
+    @DisplayName("마스터 스위치만 켜져 있으면 lease 만료·미처리 이관은 토글과 무관하게 돈다")
+    void run_masterOn_expiresAndHandsOff() {
+        // given
+        given(botDispatchService.isMasterEnabled()).willReturn(true);
+
+        // when
+        botDispatchScheduler.run();
+
+        // then
+        then(botDispatchService).should().expireLeases(any());
+        then(botDispatchService).should().handOffUnclaimed(any());
+        then(botDispatchService).should(never()).isActive();
+    }
+
+    @Test
+    @DisplayName("봇이 비활성(토글 OFF·토큰 없음)이면 Slack 신호를 보내지 않는다")
+    void signal_inactive_noSignal() {
         // given
         given(botDispatchService.isMasterEnabled()).willReturn(true);
         given(botDispatchService.isActive()).willReturn(false);
 
         // when
-        botDispatchScheduler.run();
+        botDispatchScheduler.signal();
 
         // then
-        then(botDispatchService).should(never()).sendDue(any());
-        then(botDispatchService).should().handOffTimedOut(any());
+        then(botSignalService).should(never()).signalIfDue(any());
     }
 
     @Test
-    @DisplayName("활성이면 발송과 무응답 이관을 모두 돈다")
-    void run_active_sendsAndHandsOff() {
+    @DisplayName("활성이면 Slack 신호 판단을 돈다")
+    void signal_active_signals() {
         // given
         given(botDispatchService.isMasterEnabled()).willReturn(true);
         given(botDispatchService.isActive()).willReturn(true);
 
         // when
-        botDispatchScheduler.run();
+        botDispatchScheduler.signal();
 
         // then
-        then(botDispatchService).should().sendDue(any());
-        then(botDispatchService).should().handOffTimedOut(any());
+        then(botSignalService).should().signalIfDue(any());
     }
 
     @Test
@@ -59,9 +75,11 @@ class BotDispatchSchedulerTest {
 
         // when
         botDispatchScheduler.run();
+        botDispatchScheduler.signal();
 
         // then
-        then(botDispatchService).should(never()).sendDue(any());
-        then(botDispatchService).should(never()).handOffTimedOut(any());
+        then(botDispatchService).should(never()).expireLeases(any());
+        then(botDispatchService).should(never()).handOffUnclaimed(any());
+        then(botSignalService).should(never()).signalIfDue(any());
     }
 }
