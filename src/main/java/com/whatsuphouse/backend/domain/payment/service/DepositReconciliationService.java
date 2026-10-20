@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.payment.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
+import com.whatsuphouse.backend.domain.auth.service.DemoAccountService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.notification.event.AdminDepositNotifiedEvent;
@@ -342,8 +343,13 @@ public class DepositReconciliationService {
     }
 
     // 금액이 같고, 알림 이름이 입금자명과 같거나 그 앞부분(은행이 긴 이름을 자른다).
+    // 체험 계정 "김민준(심사용)"은 시뮬레이터가 전체 이름을 보내므로 정확히 같을 때만 본다. 실제 회원 "김민준" 입금과 겹치지 않게. (KAN-422)
     private static boolean isMatch(PendingPayment payment, String name, int amount) {
-        return payment.amount() == amount && payment.payerName() != null && payment.payerName().startsWith(name);
+        String payerName = payment.payerName();
+        if (payment.amount() != amount || payerName == null) {
+            return false;
+        }
+        return payerName.endsWith(DemoAccountService.NAME_SUFFIX) ? payerName.equals(name) : payerName.startsWith(name);
     }
 
     private PendingPayment findOwnPassTarget(UUID userId, UUID passId) {

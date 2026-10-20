@@ -225,6 +225,23 @@ class DepositReconciliationServiceTest {
     }
 
     @Test
+    @DisplayName("실제 회원 입금은 같은 이름의 체험 계정(심사용) 대기 건과 겹치지 않는다")
+    void reconcile_realName_ignoresDemoNameWithSamePrefix() {
+        // given
+        candidates(List.of(
+                new PendingPayment(PaymentTargetType.TICKET_PASS, passId, applicationId, "권재원", 9_900),
+                new PendingPayment(PaymentTargetType.TICKET_PASS, UUID.randomUUID(), UUID.randomUUID(), "권재원(심사용)", 9_900)),
+                List.of(), List.of());
+
+        // when
+        DepositNotificationResponse real = service.ingest(alert("권재원", "9,900"), DepositSource.MACRODROID, now);
+
+        // then
+        assertThat(real.getResult()).isEqualTo(DepositMatchResult.MATCHED);
+        then(ticketService).should().settlePass(passId, "WEBHOOK");
+    }
+
+    @Test
     @DisplayName("일반 모임 결제 대기 건이 매칭되면 기존 입금 확인 경로로 결제 완료한다")
     void reconcile_regularApplication_confirmsPayment() {
         // given
