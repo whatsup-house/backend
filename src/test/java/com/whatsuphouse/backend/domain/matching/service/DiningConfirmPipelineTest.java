@@ -1,6 +1,8 @@
 package com.whatsuphouse.backend.domain.matching.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
+import com.whatsuphouse.backend.domain.application.admin.service.ApplicationStatusLogService;
+import com.whatsuphouse.backend.domain.application.enums.StatusLogField;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
@@ -31,6 +33,7 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableDetailResponse;
+import com.whatsuphouse.backend.domain.matching.dto.response.NoticeLogResponse;
 import com.whatsuphouse.backend.domain.matching.entity.Attendance;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
@@ -39,6 +42,10 @@ import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeResult;
+import com.whatsuphouse.backend.domain.matching.enums.TableNoticeStatus;
 import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
@@ -75,6 +82,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.BDDMockito.willReturn;
@@ -98,6 +106,10 @@ class DiningConfirmPipelineTest {
 
     @Autowired
     private DiningConfirmService diningConfirmService;
+    @Autowired
+    private NoticeLogService noticeLogService;
+    @Autowired
+    private ApplicationStatusLogService applicationStatusLogService;
     @Autowired
     private DiningTableDetailService diningTableDetailService;
     @Autowired
@@ -339,6 +351,52 @@ class DiningConfirmPipelineTest {
         assertThat(exceptionCaseRepository.findAllByTypeAndTableIdAndStatus(
                 ExceptionCaseType.NOTIFICATION, table.getId(), ExceptionCaseStatus.RESOLVED))
                 .singleElement().satisfies(c -> assertThat(c.getResolutionNote()).isEqualTo("재시도 성공"));
+    }
+
+    @Test
+    @DisplayName("안내 발송 이력·상태 변경 이력(KAN-437): 채팅 실패·알림 성공을 시도마다 남기고, 재시도 성공이 테이블 안내 상태를 SENT로 바꾼다. 확정은 매칭 상태 이력으로 남는다")
+    void confirmNow_recordsNoticeAndStatusLogs() {
+        // given
+        DiningTable table = proposedTable(2);
+        willThrow(new CustomException(ErrorCode.USER_NOT_FOUND))
+                .given(adminChatService).createGroupRoom(any(), anyBoolean(), any());
+
+        // when
+        diningConfirmService.confirmNow(table.getId());
+
+        // then
+        assertThat(noticeLogService.listSessionNotices(session.getId()))
+                .extracting(NoticeLogResponse::getTableLabel, NoticeLogResponse::getKind, NoticeLogResponse::getChannel,
+                        NoticeLogResponse::getStatus, NoticeLogResponse::getAttempt)
+                .containsExactlyInAnyOrder(
+                        tuple("테이블 1", NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT, NoticeResult.FAILED, 1),
+                        tuple("테이블 1", NoticeKind.NOTIFICATION, NoticeChannel.IN_APP, NoticeResult.SUCCESS, 1));
+        assertThat(noticeLogService.findConfirmNoticeStatuses(List.of(table.getId())))
+                .containsEntry(table.getId(), TableNoticeStatus.FAILED);
+
+        // when: 장애가 풀린 뒤 재시도
+        reset(adminChatService);
+        diningConfirmService.retryChatRoom(table.getId(), admin.getId());
+
+        // then
+        assertThat(noticeLogService.listSessionNotices(session.getId()).get(0))
+                .satisfies(latest -> {
+                    assertThat(latest.getKind()).isEqualTo(NoticeKind.CONFIRM_MESSAGE);
+                    assertThat(latest.getStatus()).isEqualTo(NoticeResult.SUCCESS);
+                    assertThat(latest.getAttempt()).isEqualTo(2);
+                });
+        assertThat(noticeLogService.findConfirmNoticeStatuses(List.of(table.getId())))
+                .containsEntry(table.getId(), TableNoticeStatus.SENT);
+        UUID applicationId = diningTableMemberRepository.findByTableIdWithApplication(table.getId()).get(0)
+                .getApplication().getId();
+        assertThat(applicationStatusLogService.listHistory(applicationId))
+                .filteredOn(log -> log.getField() == StatusLogField.MATCH_STATUS)
+                .first()
+                .satisfies(log -> {
+                    assertThat(log.getTo()).isEqualTo("CONFIRMED");
+                    assertThat(log.getReason()).isEqualTo("테이블 확정");
+                    assertThat(log.getActorName()).isNull();
+                });
     }
 
     @Test

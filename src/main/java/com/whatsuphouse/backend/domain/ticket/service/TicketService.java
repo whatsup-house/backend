@@ -9,6 +9,7 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.application.client.service.MembershipWeekRule;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
@@ -161,6 +162,7 @@ public class TicketService {
                 Hibernate.initialize(paymentPending.getGathering());
                 eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
             }
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(paymentPending, "이용권 입금 확인"));
         }
         return pass;
     }
@@ -482,7 +484,17 @@ public class TicketService {
         ticketTransactionRepository
                 .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
                 .filter(use -> use.getStatus() == TicketDeductionStatus.REFUND_PROCESSING)
-                .ifPresent(use -> use.advanceRefund(TicketDeductionStatus.REFUNDED));
+                .ifPresent(use -> {
+                    use.advanceRefund(TicketDeductionStatus.REFUNDED);
+                    eventPublisher.publishEvent(new ApplicationStatusChangedEvent(use.getApplication(), "환불 송금 완료"));
+                });
+    }
+
+    /** 환불 실패(REFUND_FAILED)로 남은 이용권 차감 건수. 운영 대시보드용. (KAN-437) */
+    @Transactional(readOnly = true)
+    public long countRefundFailures() {
+        return ticketTransactionRepository.countByTransactionTypeAndStatus(
+                TicketTransactionType.USE, TicketDeductionStatus.REFUND_FAILED);
     }
 
     /**
@@ -513,6 +525,7 @@ public class TicketService {
             application.cancel();
             refundOneTicket(application);
             depositService.requestReturn(application.getId());
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "멤버십 환불"));
             eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
         });
         pass.cancel();

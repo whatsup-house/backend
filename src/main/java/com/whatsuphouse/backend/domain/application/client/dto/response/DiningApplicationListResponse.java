@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.application.client.dto.response;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
@@ -70,6 +71,9 @@ public class DiningApplicationListResponse {
                 example = "NEXT_SESSION_WAITING", nullable = true,
                 allowableValues = {"REGION_TOO_SMALL", "NOT_ENOUGH_PEOPLE", "AGE_GAP", "BLOCKED_PAIR", "NEXT_SESSION_WAITING"})
         private UnassignedReason unassignedReason;
+        @Schema(description = "통합 결제 상태(신청·이용권 차감·보증금·해결 선택에서 계산). "
+                + "PENDING|PAID|FAILED|REFUND_AVAILABLE|REFUND_REQUESTED|REFUND_PROCESSING|REFUNDED|REFUND_FAILED", example = "PAID")
+        private DiningPaymentStatus paymentStatus;
 
         public static Item of(Application application, List<GatheringSession> candidateSessions,
                               TicketDeductionStatus ticketStatus, DiningTable table, UUID resolutionId, Deposit deposit,
@@ -91,6 +95,8 @@ public class DiningApplicationListResponse {
                     .resolutionId(resolutionId)
                     .deposit(deposit != null ? new DepositInfo(deposit.getStatus(), deposit.getAmount(), deposit.getReturnAmount()) : null)
                     .unassignedReason(table == null ? unassignedReason : null)
+                    .paymentStatus(DiningPaymentStatus.of(application, ticketStatus,
+                            deposit != null ? deposit.getStatus() : null, resolutionId != null))
                     .build();
         }
     }

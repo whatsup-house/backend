@@ -18,6 +18,11 @@ public interface ExceptionCaseRepository extends JpaRepository<ExceptionCase, UU
         Long getCount();
     }
 
+    interface TypeCountProjection {
+        ExceptionCaseType getType();
+        Long getCount();
+    }
+
     // type/status가 null이면 그 조건은 걸지 않는다. 최신 건 우선.
     @Query("""
             select e from ExceptionCase e
@@ -37,6 +42,16 @@ public interface ExceptionCaseRepository extends JpaRepository<ExceptionCase, UU
               and e.sessionId in (select s.id from GatheringSession s where s.gathering.hidden = true)
             """)
     long countByStatusOnHiddenGatherings(@Param("status") ExceptionCaseStatus status);
+
+    // 유형별 건수. 숨김 종류(심사용) 회차에 걸린 건은 뺀다(countByStatus - countByStatusOnHiddenGatherings와 같은 기준). (KAN-437)
+    @Query("""
+            select e.type as type, count(e) as count from ExceptionCase e
+            where e.status = :status
+              and (e.sessionId is null
+                   or e.sessionId not in (select s.id from GatheringSession s where s.gathering.hidden = true))
+            group by e.type
+            """)
+    List<TypeCountProjection> countByStatusGroupByTypeExcludingHidden(@Param("status") ExceptionCaseStatus status);
 
     List<ExceptionCase> findAllByTypeAndTableIdAndStatus(ExceptionCaseType type, UUID tableId, ExceptionCaseStatus status);
 

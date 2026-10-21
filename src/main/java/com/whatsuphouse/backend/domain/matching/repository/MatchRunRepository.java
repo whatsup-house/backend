@@ -18,4 +18,6 @@ public interface MatchRunRepository extends JpaRepository<MatchRun, UUID> {
 
     @Query("select distinct r.sessionId from MatchRun r where r.sessionId in :sessionIds")
     List<UUID> findSessionIdsIn(@Param("sessionIds") Collection<UUID> sessionIds);
+
+    long countBySessionIdIn(Collection<UUID> sessionIds);
 }

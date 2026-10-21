@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
@@ -109,6 +110,7 @@ public class AdminApplicationService {
                 && !application.isSessionCancelled()) {
             ticketService.refundOneTicket(application);
         }
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "관리자 취소"));
 
         // 관리자 직접 삭제도 취소 알림 대상 (FR-NTF-04)
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
@@ -130,6 +132,7 @@ public class AdminApplicationService {
                     application.confirm();
                     eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
                 }
+                eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "관리자 승인"));
             }
             case REJECTED -> {
                 String reason = request.getRejectionReason();
@@ -148,6 +151,7 @@ public class AdminApplicationService {
                         ticketService.refundOneTicket(application);
                     }
                 }
+                eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "반려: " + reason.trim()));
             }
             case ATTENDED -> {
                 if (application.getStatus() == ApplicationStatus.ATTENDED) {
@@ -157,6 +161,7 @@ public class AdminApplicationService {
                 // 이미 CONFIRMED(좌석 보유)였다면 검사에서 통과된다.
                 enforceCapacityForNewSeat(application);
                 application.attend();
+                eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "관리자 출석 처리"));
                 return rewardAttendanceMileage(application);
             }
             default -> throw new CustomException(ErrorCode.INVALID_STATUS_TRANSITION);
@@ -210,6 +215,8 @@ public class AdminApplicationService {
         } else {
             application.cancelPayment();
         }
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application,
+                Boolean.TRUE.equals(request.getConfirmed()) ? "관리자 입금 확인" : "관리자 입금 확인 취소"));
         return ApplicationPaymentResponse.from(application);
     }
 

@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.gathering.admin.service;
 import com.whatsuphouse.backend.domain.application.client.service.ApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository.ApplicationSessionCountProjection;
 import com.whatsuphouse.backend.domain.notification.event.DiningSessionsCreatedEvent;
@@ -340,8 +341,10 @@ public class AdminGatheringService {
             // 우연한 식탁 회차가 취소되면 신청한 회원들에게 차감했던 이용권을 환불한다. (KAN-261)
             // 신청 상태는 그대로 두되, 이후 개별 취소 시 회차가 CANCELLED면 중복 환불하지 않는다.
             if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE) {
-                targets.stream()
-                        .forEach(ticketService::refundOneTicket);
+                targets.forEach(application -> {
+                    ticketService.refundOneTicket(application);
+                    eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "회차 취소"));
+                });
             }
 
             if (!targets.isEmpty()) {

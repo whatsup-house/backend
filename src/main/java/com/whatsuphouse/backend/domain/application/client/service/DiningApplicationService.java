@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSe
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.CancelWindow;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
@@ -255,6 +256,7 @@ public class DiningApplicationService {
         } else {
             depositService.requestReturn(applicationId, settlement.refundPercent());
         }
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "신청자 취소"));
         // 테이블(제안·확정)에 앉아 있었다면 빼고, 인원이 모자라면 충원·재배치한다. (설계 4.7)
         if (table != null) {
             diningTableService.rebalance(table.getId());

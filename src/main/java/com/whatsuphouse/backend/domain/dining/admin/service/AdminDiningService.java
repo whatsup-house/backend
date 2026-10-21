@@ -5,12 +5,16 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningApplicantResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningDashboardResponse;
 import com.whatsuphouse.backend.domain.dining.entity.Venue;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
+import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
+import com.whatsuphouse.backend.domain.dining.repository.SafetyReportRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
@@ -21,7 +25,12 @@ import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultRespo
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.MatchExclusionProvider;
+import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
 import com.whatsuphouse.backend.domain.matching.service.MatchingService;
+import com.whatsuphouse.backend.domain.payment.entity.Deposit;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.CsvWriter;
 import lombok.RequiredArgsConstructor;
@@ -69,6 +78,10 @@ public class AdminDiningService {
     private final ExceptionCaseRepository exceptionCaseRepository;
     private final VenueRepository venueRepository;
     private final MatchExclusionProvider matchExclusionProvider;
+    private final SafetyReportRepository safetyReportRepository;
+    private final TicketService ticketService;
+    private final DepositService depositService;
+    private final MatchResolutionService matchResolutionService;
 
     public DiningDashboardResponse getDashboard() {
         // 카드에는 심사용 숨김 종류 회차도 넣는다(hidden=true, 콘솔에서 매칭 실행용). 타일 집계에서는 뺀다. (KAN-407, KAN-416)
@@ -107,21 +120,72 @@ public class AdminDiningService {
                     tableCount, isMatchRunDone, openExceptions.getOrDefault(session.getId(), 0L), hidden));
         }
 
+        // 운영 지표(KAN-437): 신청·테이블은 타일과 같은 회차(숨김 제외)·신청(체험 회원 제외), 예외는 열린 예외 수와 같은 기준.
+        List<UUID> visibleSessionIds = sessionIds.stream().filter(id -> !hiddenSessionIds.contains(id)).toList();
+        List<Application> active = distinctApplications.values().stream()
+                .filter(application -> !CLOSED_APPLICATION_STATUSES.contains(application.getStatus()))
+                .toList();
+        long paidCount = distinctApplications.values().stream().filter(this::isPaid).count();
+        long confirmedPaidCount = distinctApplications.values().stream()
+                .filter(application -> isPaid(application) && application.getMatchStatus() == MatchStatus.CONFIRMED)
+                .count();
+        Map<ExceptionCaseType, Long> openByType = exceptionCaseRepository
+                .countByStatusGroupByTypeExcludingHidden(ExceptionCaseStatus.OPEN).stream()
+                .collect(Collectors.toMap(ExceptionCaseRepository.TypeCountProjection::getType,
+                        ExceptionCaseRepository.TypeCountProjection::getCount));
+
         return DiningDashboardResponse.builder()
                 .upcomingSessionCount(sessions.size() - hiddenSessionIds.size())
                 .waitingApplicantCount(distinctApplications.values().stream().filter(this::isWaitingForMatch).count())
-                .paidApplicantCount(distinctApplications.values().stream().filter(this::isPaid).count())
+                .paidApplicantCount(paidCount)
                 .proposedTableCount(sumTables(tableCounts, hiddenSessionIds, DiningTableStatus.PROPOSED))
                 .confirmedTableCount(sumTables(tableCounts, hiddenSessionIds, DiningTableStatus.CONFIRMED))
                 .openExceptionCount(exceptionCaseRepository.countByStatus(ExceptionCaseStatus.OPEN)
                         - exceptionCaseRepository.countByStatusOnHiddenGatherings(ExceptionCaseStatus.OPEN))
+                .totalApplicantCount(active.size())
+                .matchRunCount(matchingService.countMatchRuns(visibleSessionIds))
+                .matchedApplicantCount(countMatchStatus(active, Set.of(MatchStatus.CONFIRM_PENDING, MatchStatus.CONFIRMED)))
+                .reallocatedApplicantCount(countMatchStatus(active, Set.of(MatchStatus.REALLOCATING)))
+                .confirmedApplicantCount(countMatchStatus(active, Set.of(MatchStatus.CONFIRMED)))
+                .matchSuccessRate(paidCount == 0 ? 0 : (double) confirmedPaidCount / paidCount)
+                .resolutionPendingCount(matchResolutionService.findOfferedResolutionIds(
+                        active.stream().map(Application::getId).toList()).size())
+                .conflictCount(openByType.getOrDefault(ExceptionCaseType.CONFLICT, 0L))
+                .noVenueTableCount(matchingService.countConfirmedTablesWithoutVenue(visibleSessionIds))
+                .notificationFailureCount(openByType.getOrDefault(ExceptionCaseType.NOTIFICATION, 0L))
+                .refundFailureCount(openByType.getOrDefault(ExceptionCaseType.REFUND, 0L) + ticketService.countRefundFailures())
+                .noShowCandidateCount(diningAttendanceService.countNoShowCandidates(visibleSessionIds))
+                .openReportCount(openByType.getOrDefault(ExceptionCaseType.SAFETY, 0L))
                 .sessions(cards)
                 .build();
     }
 
+    private static long countMatchStatus(List<Application> applications, Set<MatchStatus> statuses) {
+        return applications.stream()
+                .filter(application -> application.getMatchStatus() != null && statuses.contains(application.getMatchStatus()))
+                .count();
+    }
+
     public List<DiningApplicantResponse> listApplicants(UUID sessionId) {
+        return listApplicants(sessionId, null, null, null);
+    }
+
+    /** 회차 신청자 표. 필터(null이면 조건 없음): 통합 결제 상태, 매칭 상태, 희망 지역 라벨(모르는 라벨이면 400 INVALID_REGION). */
+    public List<DiningApplicantResponse> listApplicants(UUID sessionId, DiningPaymentStatus paymentStatus,
+                                                        MatchStatus matchStatus, String region) {
+        DiningRegion regionFilter = region != null && !region.isBlank() ? DiningRegion.fromLabel(region.trim()) : null;
         gatheringService.findRandomTableSession(sessionId);
-        List<Application> applications = adminApplicationService.listSessionApplications(sessionId);
+        // 제외 관계는 필터와 상관없이 회차 신청자 전체끼리 본다.
+        List<Application> sessionApplications = adminApplicationService.listSessionApplications(sessionId);
+        Set<UUID> excludedUserIds = findUsersWithExcludedRelation(sessionApplications);
+        List<Application> filtered = sessionApplications.stream()
+                .filter(application -> matchStatus == null || application.getMatchStatus() == matchStatus)
+                .filter(application -> regionFilter == null || application.getCandidateRegions().contains(regionFilter))
+                .toList();
+        Map<UUID, DiningPaymentStatus> paymentStatuses = paymentStatuses(filtered);
+        List<Application> applications = filtered.stream()
+                .filter(application -> paymentStatus == null || paymentStatuses.get(application.getId()) == paymentStatus)
+                .toList();
         List<UUID> applicationIds = applications.stream().map(Application::getId).toList();
         Map<UUID, Map<String, Object>> answers = new HashMap<>();
         Map<UUID, Object> birthYears = new HashMap<>();
@@ -137,9 +201,12 @@ public class AdminDiningService {
         }
         Map<UUID, List<ApplicationCandidateSession>> candidates =
                 adminApplicationService.findCandidateSessions(applicationIds);
-        Map<UUID, Long> participation = diningAttendanceService.countAttendedByUserIds(applications.stream()
-                .map(Application::getUser).filter(Objects::nonNull).map(User::getId).distinct().toList());
-        Set<UUID> excludedUserIds = findUsersWithExcludedRelation(applications);
+        List<UUID> userIds = applications.stream()
+                .map(Application::getUser).filter(Objects::nonNull).map(User::getId).distinct().toList();
+        Map<UUID, Long> participation = diningAttendanceService.countAttendedByUserIds(userIds);
+        Map<UUID, Long> reportCounts = userIds.isEmpty() ? Map.of() : safetyReportRepository.countByReportedUserIds(userIds).stream()
+                .collect(Collectors.toMap(SafetyReportRepository.UserCountProjection::getUserId,
+                        SafetyReportRepository.UserCountProjection::getCount));
 
         return applications.stream()
                 .map(application -> {
@@ -152,9 +219,26 @@ public class AdminDiningService {
                             text(answer.get(MBTI_QUESTION_KEY)),
                             candidates.getOrDefault(application.getId(), List.of()),
                             userId != null ? participation.getOrDefault(userId, 0L) : 0L,
-                            userId != null && excludedUserIds.contains(userId));
+                            userId != null && excludedUserIds.contains(userId),
+                            paymentStatuses.get(application.getId()),
+                            userId != null ? reportCounts.getOrDefault(userId, 0L) : 0L);
                 })
                 .toList();
+    }
+
+    // 신청 ID → 통합 결제 상태(이용권 차감·보증금·해결 선택을 한 번씩 묶어 읽는다).
+    private Map<UUID, DiningPaymentStatus> paymentStatuses(List<Application> applications) {
+        List<UUID> ids = applications.stream().map(Application::getId).toList();
+        Map<UUID, TicketDeductionStatus> tickets = ticketService.findDeductionStatuses(ids);
+        Map<UUID, Deposit> deposits = depositService.findByApplicationIds(ids);
+        Map<UUID, UUID> offered = matchResolutionService.findOfferedResolutionIds(ids);
+        Map<UUID, DiningPaymentStatus> result = new HashMap<>();
+        for (Application application : applications) {
+            Deposit deposit = deposits.get(application.getId());
+            result.put(application.getId(), DiningPaymentStatus.of(application, tickets.get(application.getId()),
+                    deposit != null ? deposit.getStatus() : null, offered.containsKey(application.getId())));
+        }
+        return result;
     }
 
     // 이 회차의 진행 중(반려·취소 아님) 신청자끼리 제외 관계(피하고 싶음·신고)가 있는 회원. 관계는 한 방향만 있어도 양쪽 모두 표시한다.

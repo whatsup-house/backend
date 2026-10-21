@@ -294,7 +294,8 @@ class MatchResolutionServiceTest {
 
         then(ticketService).should().refundOneTicket(application);
         assertThat(application.getStatus()).isEqualTo(ApplicationStatus.CANCELLED);
-        then(eventPublisher).shouldHaveNoInteractions();
+        // 환불 알림은 없다(상태 변경 이력 이벤트만 나간다, KAN-437)
+        then(eventPublisher).should(never()).publishEvent(any(DiningResolutionEvent.class));
         then(depositService).should().requestReturn(application.getId());
     }
 

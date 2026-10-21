@@ -10,6 +10,8 @@ import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
 import com.whatsuphouse.backend.domain.matching.enums.DiningContentKind;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
 import com.whatsuphouse.backend.domain.matching.repository.DiningContentRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
@@ -68,6 +70,7 @@ public class DiningReminderService {
     private final ExceptionCaseService exceptionCaseService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
+    private final NoticeLogService noticeLogService;
 
     // ── 리마인드 ────────────────────────────────────────────────────────────
 
@@ -100,6 +103,8 @@ public class DiningReminderService {
                             .map(User::getId)
                             .distinct()
                             .toList()));
+            // 회원별 적재는 커밋 뒤 리스너가 3회까지 시도한다(실패는 예외함). 여기서는 발행을 남긴다.
+            noticeLogService.recordSuccess(tableId, NoticeKind.REMINDER, NoticeChannel.IN_APP);
             return table.getChatRoomId() == null ? null
                     : new ReminderNotice(table.getChatRoomId(), sessionId, diningConfirmService.tableNotice(table, REMINDER_HEADLINE));
         });
@@ -111,8 +116,10 @@ public class DiningReminderService {
                 chatService.postSystemNotice(notice.roomId(), notice.text());
                 return null;
             });
+            noticeLogService.recordSuccess(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT);
         } catch (Exception e) {
             log.warn("테이블 리마인드 채팅 안내 실패: tableId={}", tableId, e);
+            noticeLogService.recordFailure(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT, e);
             inNewTransaction(() -> exceptionCaseService.open(ExceptionCaseType.NOTIFICATION, notice.sessionId(), tableId, null,
                     REMINDER_FAILURE_PREFIX + "채팅방 리마인드 안내 실패: " + e.getMessage()));
         }
@@ -136,6 +143,7 @@ public class DiningReminderService {
                 });
             } catch (Exception e) {
                 log.error("테이블 대화 콘텐츠 게시 실패: tableId={}", table.getId(), e);
+                noticeLogService.recordFailure(table.getId(), NoticeKind.CONTENTS, NoticeChannel.CHAT, e);
             }
         }
     }
@@ -155,6 +163,7 @@ public class DiningReminderService {
                 new Random(tableId.getMostSignificantBits()));
         if (!picked.isEmpty()) {
             chatService.postSystemNotice(table.getChatRoomId(), contentsNotice(picked));
+            noticeLogService.recordSuccess(tableId, NoticeKind.CONTENTS, NoticeChannel.CHAT);
         }
     }
 

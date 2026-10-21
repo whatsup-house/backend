@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
@@ -103,6 +104,7 @@ public class MatchResolutionService {
             case REFUND -> refund(resolution, application, request.getRefundAccount());
         }
         resolution.resolve(request.getChoice(), chosenSessionId);
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "해결 선택: " + request.getChoice()));
         return MatchResolutionResponse.of(resolution, findOfferableSessions(resolution));
     }
 
@@ -123,6 +125,7 @@ public class MatchResolutionService {
         if (resolution.getApplication().getStatus() != ApplicationStatus.CANCELLED) {
             keepTicket(resolution.getApplication());
         }
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(resolution.getApplication(), "해결 선택 응답 기한 만료"));
     }
 
     /** 신청 ID → 응답 대기(OFFERED) 중인 해결 선택 ID. 없으면 결과에 없다. (내 신청 조회용) */
