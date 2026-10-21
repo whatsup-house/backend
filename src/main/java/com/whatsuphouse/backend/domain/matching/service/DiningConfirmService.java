@@ -301,11 +301,18 @@ public class DiningConfirmService {
                 + (time.getMinute() != 0 ? " " + time.getMinute() + "분" : "");
     }
 
-    private UUID systemAdminId() {
+    // 설정값이 활성 관리자가 아니면(없는 id·탈퇴·정지) 활성 관리자 첫 명으로 대신한다.
+    // 운영자 이름 메시지는 활성 계정만 보낼 수 있어서, 설정 실수 하나로 모든 채팅방 생성이 실패하지 않게 한다.
+    UUID systemAdminId() {
+        List<UUID> activeAdminIds = userService.listActiveAdminIds();
         if (systemAdminIdSetting != null && !systemAdminIdSetting.isBlank()) {
-            return UUID.fromString(systemAdminIdSetting.trim());
+            UUID configured = UUID.fromString(systemAdminIdSetting.trim());
+            if (activeAdminIds.contains(configured)) {
+                return configured;
+            }
+            log.warn("dining.system-admin-id 가 활성 관리자가 아니라 다른 활성 관리자로 대신합니다: {}", configured);
         }
-        return userService.listActiveAdminIds().stream().findFirst()
+        return activeAdminIds.stream().findFirst()
                 .orElseThrow(() -> new CustomException(ErrorCode.SYSTEM_ADMIN_NOT_FOUND));
     }
 
