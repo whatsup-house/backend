@@ -190,14 +190,16 @@ class DiningLifecycleTest {
                     });
         }
         // SYSTEM 공지가 아니라 운영자(TEXT) 메시지라 채팅 푸시도 간다(KAN-438)
-        assertThat(roomNotices(table)).noneMatch(text -> text.startsWith("우연한 식탁이 곧 열려요"));
+        assertThat(roomNotices(table)).noneMatch(text -> text.startsWith("내일 우연한 식탁이 열려요!"));
         assertThat(chatMessageRepository.findAll().stream()
                 .filter(message -> table.getChatRoomId().equals(message.getRoomId()) && message.getType() == ChatMessageType.TEXT)
-                .filter(message -> chatService.getMessageText(message.getId()).orElseThrow().startsWith("우연한 식탁이 곧 열려요"))
+                .filter(message -> chatService.getMessageText(message.getId()).orElseThrow().startsWith("내일 우연한 식탁이 열려요!"))
                 .toList())
                 .singleElement().satisfies(message -> {
                     assertThat(message.getSenderId()).isEqualTo(admin.getId());
-                    assertThat(chatService.getMessageText(message.getId()).orElseThrow()).contains("취소 정책");
+                    // 일시·식당 줄은 남고 취소 정책 줄은 없다(KAN-442)
+                    assertThat(chatService.getMessageText(message.getId()).orElseThrow()).contains("일시: ", "식당: ")
+                            .doesNotContain("취소 정책");
                 });
     }
 
@@ -213,8 +215,8 @@ class DiningLifecycleTest {
         diningReminderService.sendDueReminders();
 
         // then
-        assertThat(roomNotices(table)).filteredOn(text -> text.startsWith("우연한 식탁이 곧 열려요"))
-                .singleElement().satisfies(text -> assertThat(text).contains("취소 정책"));
+        assertThat(roomNotices(table)).filteredOn(text -> text.startsWith("내일 우연한 식탁이 열려요!"))
+                .singleElement().satisfies(text -> assertThat(text).doesNotContain("취소 정책"));
         assertThat(noticeLogService.listSessionNotices(session.getId()))
                 .filteredOn(n -> n.getKind() == NoticeKind.REMINDER && n.getChannel() == NoticeChannel.CHAT)
                 .singleElement().satisfies(n -> assertThat(n.getStatus()).isEqualTo(NoticeResult.SUCCESS));

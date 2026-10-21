@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.matching.repository;
 import com.whatsuphouse.backend.domain.matching.entity.Attendance;
 import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +18,10 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     Optional<Attendance> findByTableMemberId(UUID tableMemberId);
 
     List<Attendance> findByTableMemberIdIn(Collection<UUID> tableMemberIds);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Attendance a where a.tableMemberId in :tableMemberIds")
+    void deleteByTableMemberIdIn(@Param("tableMemberIds") Collection<UUID> tableMemberIds);
 
     interface MemberStatusProjection {
         UUID getTableMemberId();

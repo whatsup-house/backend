@@ -79,6 +79,8 @@ public class TicketService {
 
     private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
 
+    private static final String DEMO_RESET_ACTOR = "DEMO_RESET";
+
     // 멤버십으로 확정한 신청이 매칭에 실패하면 기간을 이만큼 연장한다. (KAN-401)
     private static final int MEMBERSHIP_FAILURE_EXTENSION_DAYS = 7;
 
@@ -165,6 +167,54 @@ public class TicketService {
             eventPublisher.publishEvent(new ApplicationStatusChangedEvent(paymentPending, "이용권 입금 확인"));
         }
         return pass;
+    }
+
+    /**
+     * 심사용 시드 신청(KAN-442) 결제: 결제 대기 신청에 연결된 1회권 구매(PENDING)를 만들고 입금 확인(settlePass)까지 정상 흐름 그대로 처리한다.
+     * 발급(ISSUE)·차감(USE, DEDUCTED) 기록이 남고 신청은 입금 확인·참가 확정(매칭 대기)이 된다. 판매 중인 1회권 상품이 없으면 TICKET_PRODUCT_NOT_FOUND.
+     */
+    public void settleDemoSeedTicket(User user, Application application) {
+        UUID productId = ticketProductRepository.findAllByDeletedAtIsNullOrderByPriceAscCreatedAtAsc().stream()
+                .filter(product -> product.getKind() == TicketProductKind.COUNT && product.getSessionCount() == 1)
+                .map(TicketProductOption::getId)
+                .findFirst()
+                .orElseThrow(() -> new CustomException(ErrorCode.TICKET_PRODUCT_NOT_FOUND));
+        settlePass(createPendingPass(user, application, productId).getId(), DEMO_RESET_ACTOR);
+    }
+
+    /** 심사용 회차 초기화(KAN-442): 이 신청들 전용 이용권(결제 대기 신청에서 구매해 신청에 연결된 횟수권) ID. 멤버십은 다른 회차에도 쓰므로 뺀다. */
+    @Transactional(readOnly = true)
+    public List<UUID> findDedicatedPassIds(Collection<UUID> applicationIds) {
+        return applicationIds.isEmpty() ? List.of()
+                : ticketPassRepository.findIdsByApplicationIdInAndNotKind(applicationIds, TicketProductKind.PERIOD);
+    }
+
+    /**
+     * 심사용 회차 초기화(KAN-442): 신청을 지우기 전에 이용권 쪽 연결을 정리한다. 이 이용권을 가리키는 송금 요청은 호출 측이 먼저 지운다.
+     * - 전용 이용권(dedicatedPassIds)은 거래와 함께 지운다.
+     * - 다른 이용권에서 아직 차감 상태인 사용은 신청 취소 복구와 같이 되돌리고(잔여 +1, REFUND 기록) 거래·이용권의 신청 연결을 끊는다.
+     *   원장(거래)은 남기므로 잔여 수와 거래 합계가 맞는다.
+     */
+    public void deleteApplicationTickets(Collection<UUID> applicationIds, Collection<UUID> dedicatedPassIds) {
+        if (applicationIds.isEmpty()) {
+            return;
+        }
+        ticketTransactionRepository.findByApplication_IdInAndTransactionType(applicationIds, TicketTransactionType.USE).stream()
+                .filter(TicketTransaction::isDeducted)
+                .filter(use -> !dedicatedPassIds.contains(use.getTicketPass().getId()))
+                .forEach(use -> {
+                    use.restore();
+                    TicketPass pass = use.getTicketPass();
+                    pass.refundOne();   // 멤버십은 횟수가 없어 잔여 그대로
+                    ticketTransactionRepository.save(TicketTransaction.of(pass, null, TicketTransactionType.REFUND,
+                            pass.isPeriod() ? 0 : 1, "심사용 회차 초기화로 신청 삭제 복구"));
+                });
+        if (!dedicatedPassIds.isEmpty()) {
+            ticketTransactionRepository.deleteByTicketPassIdIn(dedicatedPassIds);
+            ticketPassRepository.deleteByIdIn(dedicatedPassIds);
+        }
+        ticketTransactionRepository.unlinkApplications(applicationIds);
+        ticketPassRepository.unlinkApplications(applicationIds);
     }
 
     // 신청 경로와 같은 멤버십 조건: 마지막 희망 회차가 기간 안, 희망 회차가 한 주, 그 주에 다른 활성 신청 없음. 위반 사유 또는 null.

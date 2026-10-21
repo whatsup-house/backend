@@ -27,6 +27,7 @@ import com.whatsuphouse.backend.domain.chat.event.ChatNoticeChangedEvent;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMemberRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMessageRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMuteRepository;
+import com.whatsuphouse.backend.domain.chat.repository.ChatReactionRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatReportRepository;
 import com.whatsuphouse.backend.domain.chat.repository.ChatRoomRepository;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
@@ -64,6 +65,7 @@ public class AdminChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final ChatMuteRepository chatMuteRepository;
     private final ChatReportRepository chatReportRepository;
+    private final ChatReactionRepository chatReactionRepository;
     private final ChatAccessPolicy accessPolicy;
     private final ChatResponseAssembler assembler;
     private final UserService userService;
@@ -184,6 +186,25 @@ public class AdminChatService {
         ChatRoom room = findRoom(roomId);
         accessPolicy.checkManageGroup(room, isAdmin);
         room.delete();
+    }
+
+    /**
+     * 심사용 회차 초기화(KAN-442): 이 우연한 식탁 테이블들의 단체방(출처 DINING_TABLE)을 메시지·멤버·반응·신고와 함께 지운다(soft delete 아님).
+     * 지운 방 수를 돌려준다.
+     */
+    public int purgeDiningTableRooms(Collection<UUID> tableIds) {
+        List<UUID> roomIds = tableIds.isEmpty() ? List.of()
+                : chatRoomRepository.findIdsBySource(ChatSourceType.DINING_TABLE, tableIds);
+        if (roomIds.isEmpty()) {
+            return 0;
+        }
+        chatReactionRepository.deleteByRoomIdIn(roomIds);
+        chatReportRepository.deleteByRoomIdIn(roomIds);
+        chatMemberRepository.deleteByRoomIdIn(roomIds);
+        chatRoomRepository.clearNoticeByIdIn(roomIds);
+        chatMessageRepository.deleteByRoomIdIn(roomIds);
+        chatRoomRepository.deleteByIdIn(roomIds);
+        return roomIds.size();
     }
 
     public void muteUser(UUID userId, UUID adminId, boolean isAdmin, ChatMuteRequest request) {

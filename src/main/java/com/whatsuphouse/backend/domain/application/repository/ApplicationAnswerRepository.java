@@ -2,9 +2,11 @@ package com.whatsuphouse.backend.domain.application.repository;
 
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,4 +40,8 @@ public interface ApplicationAnswerRepository extends JpaRepository<ApplicationAn
             order by aa.createdAt desc
             """)
     List<ApplicationAnswer> findReservedAnswersByUserId(@Param("userId") UUID userId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ApplicationAnswer aa where aa.application.id in :applicationIds")
+    void deleteByApplicationIdIn(@Param("applicationIds") Collection<UUID> applicationIds);
 }

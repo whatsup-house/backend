@@ -18,6 +18,14 @@ import java.util.UUID;
 
 public interface DiningTableRepository extends JpaRepository<DiningTable, UUID> {
 
+    // 회차 초기화(KAN-442)용: 해체·삭제된 테이블까지 전부
+    @Query("select t.id from DiningTable t where t.session.id = :sessionId")
+    List<UUID> findAllIdsBySessionId(@Param("sessionId") UUID sessionId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from DiningTable t where t.session.id = :sessionId")
+    void deleteBySessionId(@Param("sessionId") UUID sessionId);
+
     interface SessionStatusCountProjection {
         UUID getSessionId();
         DiningTableStatus getStatus();

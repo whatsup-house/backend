@@ -15,6 +15,7 @@ import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChange
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
+import com.whatsuphouse.backend.domain.application.repository.ApplicationStatusLogRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
@@ -50,6 +51,7 @@ public class AdminApplicationService {
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnswerRepository applicationAnswerRepository;
     private final ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
+    private final ApplicationStatusLogRepository applicationStatusLogRepository;
     private final GatheringSessionRepository gatheringSessionRepository;
     private final MileageService mileageService;
     private final TicketService ticketService;
@@ -262,6 +264,27 @@ public class AdminApplicationService {
     /** 회차 신청자: 이 회차에 배정됐거나, 배정 전이고 이 회차를 희망 회차로 고른 활성 신청. 최신 신청 우선. */
     public List<Application> listSessionApplications(UUID sessionId) {
         return applicationRepository.findApplications(sessionId, null);
+    }
+
+    /** 심사용 회차 초기화(KAN-442) 대상: 이 회차에 배정됐거나, 배정 전이고 이 회차를 희망한 신청. 취소(soft delete)된 신청도 포함. */
+    public List<UUID> findSessionApplicationIdsIncludingCancelled(UUID sessionId) {
+        return applicationRepository.findIdsBySessionIdIncludingDeleted(sessionId);
+    }
+
+    /**
+     * 심사용 회차 초기화(KAN-442): 신청과 신청에만 딸린 행(상태 이력·답변·희망 회차·희망 지역)을 지운다.
+     * 신청을 가리키는 다른 도메인 행(테이블 멤버·해결 선택·이용권·보증금·송금 요청)은 호출 측이 먼저 지운다.
+     */
+    @Transactional
+    public void deleteApplications(Collection<UUID> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return;
+        }
+        applicationStatusLogRepository.deleteByApplicationIdIn(applicationIds);
+        applicationAnswerRepository.deleteByApplicationIdIn(applicationIds);
+        applicationCandidateSessionRepository.deleteByApplicationIdIn(applicationIds);
+        applicationRepository.deleteCandidateRegionsByApplicationIdIn(applicationIds);
+        applicationRepository.deleteByIdIn(applicationIds);
     }
 
     /** 신청별 답변(질문 fetch). 매칭 엔진이 reserved_key·매칭 설정으로 분류해 쓴다. */

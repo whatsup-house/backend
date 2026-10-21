@@ -235,10 +235,8 @@ class DiningConfirmPipelineTest {
         assertThat(table.getChatRoomId()).isNotNull();
         // 지도 링크가 없는 식당이면 링크 없이 끝난다
         assertThat(operatorMessages(table.getChatRoomId())).hasSize(2).last().asString().endsWith("와썹 비스트로에서 만나요!");
-        ChatMessage notice = chatMessageRepository.findFirstByRoomIdOrderByCreatedAtDescIdDesc(table.getChatRoomId())
-                .orElseThrow();
-        assertThat(notice.getSystemKind()).isEqualTo(ChatSystemKind.SYSTEM_NOTICE);
-        assertThat(notice.getSystemParams().get("text")).isEqualTo("취소 정책: " + DiningTableDetailService.CANCEL_POLICY);
+        // 취소 정책 시스템 공지는 보내지 않는다(KAN-442)
+        assertThat(systemNotices(table.getChatRoomId())).isEmpty();
         assertThat(openCases(table.getId())).isEmpty();
     }
 
@@ -286,7 +284,7 @@ class DiningConfirmPipelineTest {
     }
 
     @Test
-    @DisplayName("확정 채팅: 운영자 이름으로 장점 문구·일시/지역/식당/지도 링크 메시지 2개, 이어서 취소 정책 공지 한 줄. 다시 돌려도 더 보내지 않는다")
+    @DisplayName("확정 채팅: 운영자 이름으로 장점 문구·일시/지역/식당/지도 링크 메시지 2개만 보내고 취소 정책 시스템 공지는 없다. 다시 돌려도 더 보내지 않는다")
     void confirmNow_postsOperatorMessagesOnce() {
         // given
         Venue venue = venueRepository.save(Venue.builder().name("브리비트").address("서울 강남구 강남대로 1")
@@ -304,7 +302,7 @@ class DiningConfirmPipelineTest {
                         + " 강남/신논현 브리비트에서 만나요! https://localhost/map/1");
         assertThat(operatorMessages(roomId)).containsExactlyElementsOf(expected);
         assertThat(roomMessages(roomId, ChatMessageType.TEXT)).extracting(ChatMessage::getSenderId).containsOnly(admin.getId());
-        assertThat(cancelNotices(roomId)).containsExactly("취소 정책: " + DiningTableDetailService.CANCEL_POLICY);
+        assertThat(systemNotices(roomId)).isEmpty();
 
         // when: 채팅방 재시도·파이프라인 재실행
         diningConfirmService.retryChatRoom(table.getId(), admin.getId());
@@ -312,7 +310,7 @@ class DiningConfirmPipelineTest {
 
         // then
         assertThat(operatorMessages(roomId)).containsExactlyElementsOf(expected);
-        assertThat(cancelNotices(roomId)).hasSize(1);
+        assertThat(systemNotices(roomId)).isEmpty();
     }
 
     @Test
@@ -631,7 +629,7 @@ class DiningConfirmPipelineTest {
                 .toList();
     }
 
-    private List<Object> cancelNotices(UUID roomId) {
+    private List<Object> systemNotices(UUID roomId) {
         return roomMessages(roomId, ChatMessageType.SYSTEM).stream()
                 .filter(message -> message.getSystemKind() == ChatSystemKind.SYSTEM_NOTICE)
                 .map(message -> message.getSystemParams().get("text"))

@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSe
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -38,6 +39,10 @@ public interface ApplicationCandidateSessionRepository extends JpaRepository<App
 
     // 대체 회차 이동(KAN-347) 시 희망 회차를 통째로 교체한다.
     void deleteByApplication_Id(UUID applicationId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ApplicationCandidateSession c where c.application.id in :applicationIds")
+    void deleteByApplicationIdIn(@Param("applicationIds") Collection<UUID> applicationIds);
 
     // 신청들의 희망 회차(장소 포함), 우선순위 순. (KAN-342)
     @Query("""

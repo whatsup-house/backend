@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.chat.repository;
 
 import com.whatsuphouse.backend.domain.chat.entity.ChatMember;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -19,6 +20,10 @@ public interface ChatMemberRepository extends JpaRepository<ChatMember, UUID> {
     }
 
     Optional<ChatMember> findByRoomIdAndUserId(UUID roomId, UUID userId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ChatMember m where m.roomId in :roomIds")
+    void deleteByRoomIdIn(@Param("roomIds") Collection<UUID> roomIds);
 
     List<ChatMember> findAllByRoomIdAndLeftAtIsNull(UUID roomId);
 

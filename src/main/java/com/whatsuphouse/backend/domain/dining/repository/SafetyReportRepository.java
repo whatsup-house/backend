@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.dining.repository;
 
 import com.whatsuphouse.backend.domain.dining.entity.SafetyReport;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +12,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface SafetyReportRepository extends JpaRepository<SafetyReport, UUID> {
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from SafetyReport r where r.tableId in :tableIds")
+    void deleteByTableIdIn(@Param("tableIds") Collection<UUID> tableIds);
 
     Optional<SafetyReport> findByExceptionCaseId(UUID exceptionCaseId);
 

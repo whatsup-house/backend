@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.matching.repository;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,6 +17,14 @@ import java.util.UUID;
  * 제거된 행은 참석 기록(attendances)과 이력용으로만 남는다. (KAN-347)
  */
 public interface DiningTableMemberRepository extends JpaRepository<DiningTableMember, UUID> {
+
+    // 회차 초기화(KAN-442)용: 제거된 멤버 행까지 전부
+    @Query("select m.id from DiningTableMember m where m.table.id in :tableIds")
+    List<UUID> findAllIdsByTableIdIn(@Param("tableIds") Collection<UUID> tableIds);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from DiningTableMember m where m.table.id in :tableIds")
+    void deleteByTableIdIn(@Param("tableIds") Collection<UUID> tableIds);
 
     interface UserPairProjection {
         UUID getUserId();

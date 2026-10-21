@@ -6,12 +6,15 @@ import com.whatsuphouse.backend.domain.user.enums.Job;
 import com.whatsuphouse.backend.domain.user.repository.UserRepository;
 import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.common.enums.Mbti;
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.Year;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -40,8 +43,8 @@ public class DemoAccountService {
     private static final List<String> FEMALE_NAMES = List.of(
             "서연", "지우", "서윤", "하은", "민서", "지유", "윤서", "채원", "수아", "지민",
             "예린", "다은", "소연", "유진", "수빈", "은지", "혜원", "가은", "나연", "세아");
-    // 2030 직장인·학생으로 자연스러운 직업만 고른다 (고등학생·판사 같은 항목은 뺀다)
-    private static final List<Job> JOBS = List.of(
+    // 2030 직장인·학생으로 자연스러운 직업만 고른다 (고등학생·판사 같은 항목은 뺀다). 심사용 시드 신청자(KAN-442)도 여기서 고른다.
+    public static final List<Job> JOBS = List.of(
             Job.SOFTWARE_DEVELOPER, Job.DATA_ANALYST, Job.PRODUCT_MANAGER, Job.UX_UI_DESIGNER, Job.ILLUSTRATOR,
             Job.PHOTOGRAPHER, Job.EDITOR, Job.CONTENT_CREATOR, Job.BRAND_MARKETER, Job.MERCHANDISER,
             Job.BANKER, Job.ACCOUNTANT, Job.NURSE, Job.PHYSICAL_THERAPIST, Job.PHARMACIST,
@@ -57,26 +60,53 @@ public class DemoAccountService {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         Gender gender = random.nextBoolean() ? Gender.FEMALE : Gender.MALE;
-        String name = uniqueName(gender, suffix, random);
         int age = random.nextInt(MIN_AGE, MAX_AGE + 1);
+        User user = saveDemoUser("demo+" + suffix + "@whatsup.house", suffix, gender, age, LocalDate.now().minusYears(age),
+                Mbti.values()[random.nextInt(Mbti.values().length)], JOBS.get(random.nextInt(JOBS.size())));
+        return authService.issueLogin(user);
+    }
+
+    /**
+     * 심사용 회차 초기화(KAN-442)의 시드 신청자. 이 이메일의 체험 계정이 있으면 프로필(성별·나이·MBTI·직업)만 맞추고 참여 자격을 승인해 다시 쓰고,
+     * 없으면 체험 계정과 같은 방식(이름 "성+이름(심사용)"·고유 닉네임·가짜 전화·자격 승인)으로 만든다.
+     * 같은 이메일이 체험 계정이 아니면 건드리지 않고 DEMO_RESET_NOT_ALLOWED.
+     */
+    public User findOrCreateSeedUser(String email, Gender gender, int birthYear, Mbti mbti, Job job) {
+        int age = Year.now().getValue() - birthYear;
+        User existing = userRepository.findByEmail(email).orElse(null);
+        if (existing == null) {
+            return saveDemoUser(email, UUID.randomUUID().toString().substring(0, 8), gender, age,
+                    LocalDate.of(birthYear, 1, 1), mbti, job);
+        }
+        if (!existing.isDemo()) {
+            throw new CustomException(ErrorCode.DEMO_RESET_NOT_ALLOWED);
+        }
+        existing.updateProfile(existing.getNickname(), existing.getPhone(), existing.getName(), gender, age,
+                existing.getInstagramId(), mbti, job.name(), existing.getIntro());
+        existing.approveRandomTable();
+        return existing;
+    }
+
+    private User saveDemoUser(String email, String suffix, Gender gender, int age, LocalDate birthDate, Mbti mbti, Job job) {
+        String name = uniqueName(gender, suffix, ThreadLocalRandom.current());
         User user = User.builder()
-                .email("demo+" + suffix + "@whatsup.house")
+                .email(email)
                 .password(passwordEncoder.encode(UUID.randomUUID().toString()))
                 .name(name)
                 .nickname(name)
                 .gender(gender)
                 // applications.phone이 NOT NULL이라 전화번호 없는 체험 계정은 신청 시 500. 고유할 필요 없는 가짜 번호(11자리)를 넣는다.
-                .phone(String.format("0100000%04d", random.nextInt(10000)))
+                .phone(String.format("0100000%04d", ThreadLocalRandom.current().nextInt(10000)))
                 .age(age)
-                .birthDate(LocalDate.now().minusYears(age))
-                .mbti(Mbti.values()[random.nextInt(Mbti.values().length)])
-                .job(JOBS.get(random.nextInt(JOBS.size())).name())
+                .birthDate(birthDate)
+                .mbti(mbti)
+                .job(job.name())
                 .intro("심사용 체험 계정입니다.")
                 .build();
         user.markDemo();
         user.approveRandomTable();
         userRepository.save(user);
-        return authService.issueLogin(user);
+        return user;
     }
 
     // 닉네임은 UNIQUE이고, 이름이 겹치면 입금 시뮬레이터가 후보 여러 건으로 막힌다. 안 쓰인 이름을 고른다.
