@@ -333,7 +333,7 @@ public class DiningMatchService {
      */
     private RegionMatch matchByRegion(List<Application> candidates, List<MatchingEngine.Applicant> applicants,
                                       MatchingEngine.Rules rules, MatchingEngine.Relations relations, int minTablesPerRegion) {
-        Map<UUID, Set<DiningRegion>> wanted = candidates.stream()
+        Map<UUID, List<DiningRegion>> wanted = candidates.stream()
                 .collect(Collectors.toMap(Application::getId, Application::getCandidateRegions));
         Map<DiningRegion, Long> candidateCount = new EnumMap<>(DiningRegion.class);
         Map<DiningRegion, Long> onlyCount = new EnumMap<>(DiningRegion.class);
