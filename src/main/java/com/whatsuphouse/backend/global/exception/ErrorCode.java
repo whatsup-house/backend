@@ -78,6 +78,8 @@ public enum ErrorCode {
 
     // Dining (우연한 식탁 운영자 어드민)
     NOT_RANDOM_TABLE_SESSION("우연한 식탁 회차가 아닙니다.", HttpStatus.BAD_REQUEST),
+    INVALID_REGION("지원하지 않는 지역입니다.", HttpStatus.BAD_REQUEST),
+    REGION_REQUIRED("우연한 식탁은 희망 지역을 하나 이상 골라야 합니다.", HttpStatus.BAD_REQUEST),
     EXCEPTION_CASE_NOT_FOUND("존재하지 않는 예외 건입니다.", HttpStatus.NOT_FOUND),
     EXCEPTION_NOTE_REQUIRED("예외를 처리하려면 처리 메모가 필요합니다.", HttpStatus.BAD_REQUEST),
     EXCEPTION_ACTION_NOT_ALLOWED("조치는 안전(SAFETY) 예외를 처리할 때만 지정할 수 있습니다.", HttpStatus.BAD_REQUEST),
@@ -123,6 +125,7 @@ public enum ErrorCode {
 
     // Location
     LOCATION_NOT_FOUND("존재하지 않는 장소입니다.", HttpStatus.NOT_FOUND),
+    LOCATION_REQUIRED("우연한 식탁이 아닌 모임 회차는 장소가 필수입니다.", HttpStatus.BAD_REQUEST),
 
     // Review
     REVIEW_NOT_FOUND("존재하지 않는 후기입니다.", HttpStatus.NOT_FOUND),

@@ -35,8 +35,8 @@ public class GatheringSessionRequest {
     @Schema(example = "21:00:00")
     private LocalTime endTime;
 
-    @Schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
-    @NotNull
+    @Schema(example = "3fa85f64-5717-4562-b3fc-2c963f66afa6", nullable = true,
+            description = "장소 ID. 우연한 식탁 회차는 선택(지역은 신청 희망 지역·테이블이 정한다), 그 외 종류는 필수(LOCATION_REQUIRED)")
     private UUID locationId;
 
     @Schema(example = "10")
