@@ -22,6 +22,20 @@ final class DiningTableStrengths {
     private DiningTableStrengths() {
     }
 
+    /** 종합 매칭 점수(그룹 점수 ×100)가 이 값 이상이면 장점 문구 맨 앞에 점수 문구를 둔다. 확정 채팅 첫 메시지가 된다. */
+    static final int SCORE_MESSAGE_MIN = 70;
+
+    static List<String> withScore(MatchingEngine.Explanation explanation, List<String> strengths) {
+        int score = explanation.group().value().movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP).intValue();
+        if (score < SCORE_MESSAGE_MIN) {
+            return strengths;
+        }
+        List<String> withScore = new java.util.ArrayList<>(strengths.size() + 1);
+        withScore.add("이번 모임 매칭 점수는 " + score + "점이에요!");
+        withScore.addAll(strengths);
+        return withScore;
+    }
+
     static List<String> describe(MatchingEngine.Explanation explanation, List<MatchingEngine.Applicant> members,
                                  MatchingEngine.Relations relations) {
         Map<String, Double> avg = explanation.criteriaAvg();

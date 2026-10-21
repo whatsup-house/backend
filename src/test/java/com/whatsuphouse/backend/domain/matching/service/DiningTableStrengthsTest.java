@@ -89,4 +89,18 @@ class DiningTableStrengthsTest {
                 .containsExactly(DiningTableStrengths.ALL_FIRST_MEET);
         assertThat(describe(Map.of(), members, metBefore)).containsExactly(DiningTableStrengths.NEW_PEOPLE);
     }
+
+    @Test
+    @DisplayName("종합 매칭 점수가 70점 이상이면 점수 문구를 맨 앞에 두고, 미만이면 장점 문구만 둔다")
+    void withScore_onlyAtOrAbove70() {
+        List<String> strengths = List.of("대화 스타일 80% 일치하는 테이블이에요!");
+        MatchingEngine.Explanation high = new MatchingEngine.Explanation(List.of(),
+                new MatchingEngine.Score(new java.math.BigDecimal("0.7049"), null), Map.of());
+        MatchingEngine.Explanation low = new MatchingEngine.Explanation(List.of(),
+                new MatchingEngine.Score(new java.math.BigDecimal("0.6949"), null), Map.of());
+
+        assertThat(DiningTableStrengths.withScore(high, strengths))
+                .containsExactly("이번 모임 매칭 점수는 70점이에요!", "대화 스타일 80% 일치하는 테이블이에요!");
+        assertThat(DiningTableStrengths.withScore(low, strengths)).containsExactlyElementsOf(strengths);
+    }
 }
