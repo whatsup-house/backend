@@ -46,8 +46,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -66,10 +66,10 @@ import static org.mockito.BDDMockito.willReturn;
 /**
  * 확정 이후 흐름(설계 4.9, KAN-349): 체크인, 24시간 전 리마인드, 시작 시각 대화 콘텐츠, 종료 후 노쇼 후보·완료 처리, 운영자 참석 확정.
  * 스케줄러·알림 리스너의 트랜잭션 경계를 실제 DB(H2)로 확인한다. 끝나면 공유 H2를 비운다.
+ * 확정 채팅 운영자 메시지는 활성 회원만 보낼 수 있어 테스트마다 관리자(활성 관리자 중 첫 명)를 만든다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
-@TestPropertySource(properties = "dining.system-admin-id=00000000-0000-0000-0000-00000000a001")
 class DiningLifecycleTest {
 
     // H2에서는 application_answers.value가 예약어라 답변 조회가 실패한다. 답변 없음으로 둔다.
@@ -113,6 +113,9 @@ class DiningLifecycleTest {
     @BeforeEach
     void setUp() {
         willReturn(List.of()).given(adminApplicationService).findAnswers(any());
+        User admin = user();
+        ReflectionTestUtils.setField(admin, "isAdmin", true);
+        userRepository.save(admin);
         gathering = gatheringRepository.save(
                 Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
     }

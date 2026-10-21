@@ -14,6 +14,7 @@ import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.auth.event.GuestEmailVerificationConsumedEvent;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.form.admin.service.FormProvisionService;
 import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.form.enums.SystemQuestionKey;
@@ -53,6 +54,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,18 +109,19 @@ public class ApplicationService {
             locked.put(id, session);
         });
         return applyInternal(candidateIds.stream().map(locked::get).toList(), request.getAnswers(), userId,
-                request.getDepositReturnAccount());
+                request.getDepositReturnAccount(), request.getCandidateRegions());
     }
 
     // 기존 신청 경로: 경로의 gatheringId는 회차 ID다(마이그레이션된 회차는 옛 게더링 ID와 같다). 그 회차 하나를 고른 신청으로 처리한다.
+    // 희망 지역을 받지 않으므로 우연한 식탁은 REGION_REQUIRED다(POST /api/applications를 쓴다). (KAN-430)
     @Transactional
     public ApplicationResponse apply(UUID sessionId, ApplicationRequest request, UUID userId) {
-        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), userId, null);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), userId, null, null);
     }
 
     @Transactional
     public ApplicationResponse applyAsGuest(UUID sessionId, ApplicationRequest request) {
-        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), null, null);
+        return applyInternal(List.of(lockSession(sessionId)), request.getAnswers(), null, null, null);
     }
 
     private GatheringSession lockSession(UUID sessionId) {
@@ -128,9 +131,10 @@ public class ApplicationService {
 
     // applyInternal은 @Transactional 퍼블릭 메서드에서만 호출되므로 self-invocation 트랜잭션 누락 위험 없음
     // candidates: 같은 종류의 잠근 회차들, 희망 순위 순. depositReturnAccount: 보증금 대상 회원의 반환 계좌(KAN-402).
+    // candidateRegionLabels: 희망 지역 라벨(우연한 식탁만 쓴다, KAN-430).
     @SuppressWarnings("java:S6809")
     private ApplicationResponse applyInternal(List<GatheringSession> candidates, List<AnswerItem> answers, UUID userId,
-                                              RefundAccount depositReturnAccount) {
+                                              RefundAccount depositReturnAccount, List<String> candidateRegionLabels) {
         Gathering gathering = candidates.get(0).getGathering();
         boolean randomTable = gathering.getGatheringType() == GatheringType.RANDOM_TABLE;
         if (!randomTable && candidates.size() != 1) {
@@ -145,6 +149,9 @@ public class ApplicationService {
         if (randomTable && userId == null) {
             throw new CustomException(ErrorCode.RANDOM_TABLE_MEMBERS_ONLY);
         }
+
+        // 우연한 식탁 희망 지역: 1개 이상, 4개 라벨만, 중복은 하나로. 다른 종류는 무시한다. (KAN-430)
+        Set<DiningRegion> candidateRegions = randomTable ? resolveCandidateRegions(candidateRegionLabels) : Set.of();
 
         // 배정 회차: 일반 모임은 신청 회차, 우연한 식탁은 매칭 전이라 비워 둔다.
         GatheringSession session = randomTable ? null : candidates.get(0);
@@ -231,6 +238,7 @@ public class ApplicationService {
                 .phone(phone)
                 .email(email)
                 .formSnapshot(buildFormSnapshot(questions))
+                .candidateRegions(candidateRegions)
                 .build();
 
         // 노쇼 이력 회원은 보증금 입금 전까지 확정하지 않는다. 반환 계좌는 신청 시 필수. (KAN-402)
@@ -293,6 +301,14 @@ public class ApplicationService {
             eventPublisher.publishEvent(new ApplicationPendingEvent(saved));
         }
         return ApplicationResponse.from(saved);
+    }
+
+    private static Set<DiningRegion> resolveCandidateRegions(List<String> labels) {
+        if (labels == null || labels.isEmpty()) {
+            throw new CustomException(ErrorCode.REGION_REQUIRED);
+        }
+        return labels.stream().map(DiningRegion::fromLabel)
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(DiningRegion.class)));
     }
 
     private void validateRandomTableEligibility(User user) {

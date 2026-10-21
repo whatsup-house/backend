@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.application.entity;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.application.enums.PaymentStatus;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
@@ -14,11 +15,15 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -82,10 +87,19 @@ public class Application extends BaseEntity {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
+    // 우연한 식탁 희망 지역(복수). 다른 종류는 비어 있다. 회차 이동(TRANSFER)에도 그대로 남는다. (KAN-430)
+    @ElementCollection
+    @CollectionTable(name = "application_candidate_regions", joinColumns = @JoinColumn(name = "application_id"))
+    @Column(name = "region", nullable = false, length = 50)
+    @Convert(converter = DiningRegion.LabelConverter.class)
+    @BatchSize(size = 100)
+    private Set<DiningRegion> candidateRegions = new HashSet<>();
+
     // session이 있으면 종류는 그 회차의 종류. 회차 배정 전 우연한 식탁 신청은 session 없이 gathering만 넘긴다. (KAN-338)
     @Builder
     public Application(String bookingNumber, Gathering gathering, GatheringSession session, User user, String name,
-                       String phone, String email, Map<String, Object> formSnapshot) {
+                       String phone, String email, Map<String, Object> formSnapshot,
+                       Collection<DiningRegion> candidateRegions) {
         this.bookingNumber = bookingNumber;
         this.session = session;
         this.gathering = session != null ? session.getGathering() : gathering;
@@ -99,6 +113,9 @@ public class Application extends BaseEntity {
         this.email = email;
         this.formSnapshot = formSnapshot;
         this.status = ApplicationStatus.PENDING;
+        if (candidateRegions != null) {
+            this.candidateRegions.addAll(candidateRegions);
+        }
     }
 
     public void cancel() {

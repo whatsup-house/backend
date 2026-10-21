@@ -114,6 +114,11 @@ public class UserService {
         findActiveUser(userId).restrictRandomTable();
     }
 
+    /** 직업 코드 → 직업 캐릭터 이미지 URL. 우연한 식탁 멤버 표시용. (KAN-432) */
+    public String resolveCharacterUrl(String jobCode) {
+        return characterAssetResolver.resolve(jobCode);
+    }
+
     // 타 도메인이 UserRepository를 직접 주입하지 않도록 여는 조회. 호출자 트랜잭션에 참여한다. (KAN-393)
     public User findUser(UUID id) {
         return findActiveUser(id);

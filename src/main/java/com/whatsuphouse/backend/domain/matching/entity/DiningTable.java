@@ -186,11 +186,8 @@ public class DiningTable extends BaseEntity {
         }
     }
 
-    /** 표시용 지역. 테이블 값이 없으면 회차 장소 이름, 둘 다 없으면 null. */
+    /** 표시용 지역. 테이블 지역, 없으면 null. 회차는 지역에 묶이지 않아 회차 장소명은 쓰지 않는다. (KAN-430) */
     public String getDisplayRegion() {
-        if (region != null && !region.isBlank()) {
-            return region;
-        }
-        return session.getLocation() != null ? session.getLocation().getName() : null;
+        return region != null && !region.isBlank() ? region : null;
     }
 }

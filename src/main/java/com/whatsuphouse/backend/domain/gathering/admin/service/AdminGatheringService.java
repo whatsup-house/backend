@@ -186,7 +186,7 @@ public class AdminGatheringService {
     public List<GatheringSessionResponse> createSessions(UUID gatheringId, GatheringSessionCreateRequest request) {
         Gathering gathering = findGathering(gatheringId);
         validateSchedule(request.getEventDate());
-        Location location = findLocation(request.getLocationId());
+        Location location = resolveLocation(gathering, request.getLocationId());
         LocalDateTime deadline = request.getApplyDeadlineAt();
         LocalDateTime matchRunAt = request.getMatchRunAt();
         List<GatheringSession> sessions = IntStream.range(0, countWeeks(request))
@@ -210,8 +210,8 @@ public class AdminGatheringService {
                 .toList();
         // 우연한 식탁 새 회차 → 최근 참석자에게 다음 모집 알림. 숨김 종류는 알리지 않는다. (KAN-407) 반복 생성도 요청 1건에 이벤트 1건(회원당 알림 1건). (KAN-349)
         if (gathering.getGatheringType() == GatheringType.RANDOM_TABLE && !gathering.isHidden()) {
-            eventPublisher.publishEvent(new DiningSessionsCreatedEvent(
-                    gathering.getId(), gathering.getTitle(), location.getId(), location.getName()));
+            eventPublisher.publishEvent(new DiningSessionsCreatedEvent(gathering.getId(), gathering.getTitle(),
+                    location != null ? location.getId() : null, location != null ? location.getName() : null));
         }
         return created;
     }
@@ -240,7 +240,7 @@ public class AdminGatheringService {
     public GatheringSessionResponse updateSession(UUID sessionId, GatheringSessionRequest request) {
         validateSchedule(request.getEventDate());
         GatheringSession session = findSession(sessionId);
-        Location location = findLocation(request.getLocationId());
+        Location location = resolveLocation(session.getGathering(), request.getLocationId());
         session.update(location, request.getEventDate(), request.getStartTime(), request.getEndTime(),
                 request.getPriceOverride(), request.getMaxAttendees(), request.getApplyDeadlineAt());
         changeMatchingRules(session, request, request.getMatchRunAt());
@@ -268,9 +268,16 @@ public class AdminGatheringService {
                 .orElseThrow(() -> new CustomException(ErrorCode.SESSION_NOT_FOUND));
     }
 
-    private Location findLocation(UUID locationId) {
-        return locationRepository.findByIdAndDeletedAtIsNull(locationId)
-                .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
+    // 우연한 식탁 회차는 장소가 선택이다(모든 회차에 4개 지역이 열린다). 그 외 종류는 필수. (KAN-430)
+    private Location resolveLocation(Gathering gathering, UUID locationId) {
+        if (locationId != null) {
+            return locationRepository.findByIdAndDeletedAtIsNull(locationId)
+                    .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
+        }
+        if (gathering.getGatheringType() != GatheringType.RANDOM_TABLE) {
+            throw new CustomException(ErrorCode.LOCATION_REQUIRED);
+        }
+        return null;
     }
 
     /**

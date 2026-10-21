@@ -7,6 +7,7 @@ import com.whatsuphouse.backend.domain.dining.admin.dto.response.TableVenueRespo
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.VenueResponse;
 import com.whatsuphouse.backend.domain.dining.entity.SessionVenue;
 import com.whatsuphouse.backend.domain.dining.entity.Venue;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.repository.SessionVenueRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
@@ -42,13 +43,16 @@ public class AdminVenueService {
                 .toList();
     }
 
+    // 지역은 DiningRegion 라벨만(INVALID_REGION). 자동 배정이 테이블 지역과 같은 식당을 고른다. (KAN-431)
     @Transactional
     public VenueResponse createVenue(VenueRequest request) {
+        DiningRegion.fromLabel(request.getRegion());
         return VenueResponse.from(venueRepository.save(request.toEntity()));
     }
 
     @Transactional
     public VenueResponse updateVenue(UUID venueId, VenueRequest request) {
+        DiningRegion.fromLabel(request.getRegion());
         Venue venue = findVenue(venueId);
         venue.update(request.getName(), request.getAddress(), request.getMapUrl(), request.getPriceRange(),
                 request.getRegion(), request.getIsActive());

@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 import java.util.UUID;
 
-/** 모임 신청: 종류 + 희망 회차. 일반 모임은 회차 정확히 1개, 우연한 식탁은 1개 이상. (KAN-338) */
+/** 모임 신청: 종류 + 희망 회차(+ 우연한 식탁은 희망 지역). 일반 모임은 회차 정확히 1개, 우연한 식탁은 1개 이상. (KAN-338, KAN-430) */
 @Getter
 @NoArgsConstructor
 public class ApplicationCreateRequest extends ApplicationRequest {
@@ -26,6 +26,11 @@ public class ApplicationCreateRequest extends ApplicationRequest {
     @NotEmpty
     @Size(max = 20)
     private List<@NotNull UUID> candidateSessionIds;
+
+    @Schema(description = "희망 지역 라벨 목록(GET /api/dining/regions 값). 우연한 식탁은 1개 이상 필수(중복은 하나로 본다), 다른 종류는 무시",
+            example = "[\"홍대/합정\", \"강남/신논현\"]", nullable = true)
+    @Size(max = 10)
+    private List<String> candidateRegions;
 
     @Schema(description = "보증금 반환 계좌. 보증금 대상 회원의 우연한 식탁 신청이면 필수(KAN-402)", nullable = true)
     @Valid

@@ -24,6 +24,7 @@ import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepo
 import com.whatsuphouse.backend.domain.location.entity.Location;
 import com.whatsuphouse.backend.domain.location.enums.LocationStatus;
 import com.whatsuphouse.backend.domain.location.repository.LocationRepository;
+import com.whatsuphouse.backend.domain.notification.event.DiningSessionsCreatedEvent;
 import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.common.enums.Gender;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -640,6 +642,65 @@ class AdminGatheringServiceTest {
         assertThatThrownBy(() -> adminGatheringService.createSessions(gatheringId, request))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LOCATION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 회차는 장소 없이 만들 수 있고, 다음 모집 알림 이벤트의 장소도 비어 있다 (KAN-430)")
+    void createSessions_randomTableWithoutLocation_createsWithNullLocation() {
+        // given
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        ReflectionTestUtils.setField(randomTable, "id", gatheringId);
+        GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(24).build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(randomTable));
+        given(gatheringSessionRepository.saveAll(anyList())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        List<GatheringSessionResponse> result = adminGatheringService.createSessions(gatheringId, request);
+
+        // then
+        assertThat(result).singleElement().satisfies(created -> assertThat(created.getLocation()).isNull());
+        ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+        then(eventPublisher).should().publishEvent(event.capture());
+        assertThat(event.getValue()).isInstanceOfSatisfying(DiningSessionsCreatedEvent.class, created -> {
+            assertThat(created.getLocationId()).isNull();
+            assertThat(created.getLocationName()).isNull();
+        });
+        then(locationRepository).should(never()).findByIdAndDeletedAtIsNull(any());
+    }
+
+    @Test
+    @DisplayName("우연한 식탁이 아닌 회차를 장소 없이 만들면 LOCATION_REQUIRED (KAN-430)")
+    void createSessions_regularWithoutLocation_throwsLocationRequired() {
+        // given
+        GatheringSessionCreateRequest request = GatheringSessionCreateRequest.builder()
+                .eventDate(LocalDate.now().plusDays(7)).maxAttendees(10).build();
+        given(gatheringRepository.findByIdAndDeletedAtIsNull(gatheringId)).willReturn(Optional.of(gathering));
+
+        // when & then
+        assertThatThrownBy(() -> adminGatheringService.createSessions(gatheringId, request))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.LOCATION_REQUIRED);
+        then(gatheringSessionRepository).should(never()).saveAll(anyList());
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 회차를 장소 없이 수정하면 장소를 비운다 (KAN-430)")
+    void updateSession_randomTableWithoutLocation_clearsLocation() {
+        // given
+        ReflectionTestUtils.setField(gathering, "gatheringType", GatheringType.RANDOM_TABLE);
+        GatheringSessionRequest request = GatheringSessionRequest.builder()
+                .eventDate(LocalDate.now().plusDays(10)).maxAttendees(24).build();
+        given(gatheringSessionRepository.findByIdAndDeletedAtIsNull(sessionId)).willReturn(Optional.of(session));
+        given(gatheringService.toSessionResponses(List.of(session)))
+                .willAnswer(inv -> List.of(GatheringSessionResponse.from(session, 0)));
+
+        // when
+        adminGatheringService.updateSession(sessionId, request);
+
+        // then
+        assertThat(session.getLocation()).isNull();
+        assertThat(session.getMaxAttendees()).isEqualTo(24);
     }
 
     // ── updateSession() / deleteSession() ────────────────────────────────────

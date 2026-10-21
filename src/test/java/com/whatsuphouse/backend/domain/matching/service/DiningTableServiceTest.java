@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.entity.MatchingWeights;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
@@ -441,6 +442,43 @@ class DiningTableServiceTest {
 
         assertThatThrownBy(() -> diningTableService.moveMember(source.getId(), UUID.randomUUID(), target.getId(), null, adminId))
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TABLE_SESSION_MISMATCH);
+    }
+
+    @Test
+    @DisplayName("이동·병합: 지역이 다른 테이블끼리는 409 REGION_MISMATCH (KAN-431)")
+    void move_otherRegion_conflict() {
+        // given
+        DiningTable source = table(session, DiningTableStatus.PROPOSED);
+        DiningTable target = table(session, DiningTableStatus.PROPOSED);
+        ReflectionTestUtils.setField(source, "region", "홍대/합정");
+        ReflectionTestUtils.setField(target, "region", "잠실");
+
+        // when & then
+        assertThatThrownBy(() -> diningTableService.moveMember(source.getId(), UUID.randomUUID(), target.getId(), null, adminId))
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REGION_MISMATCH);
+        assertThatThrownBy(() -> diningTableService.mergeTables(List.of(source.getId(), target.getId()), null, adminId))
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REGION_MISMATCH);
+        assertThat(source.isLocked()).isFalse();
+    }
+
+    @Test
+    @DisplayName("이동: 같은 지역 테이블이어도 옮길 멤버가 그 지역을 희망하지 않으면 409 REGION_MISMATCH (KAN-431)")
+    void move_memberNotWantingRegion_conflict() {
+        // given
+        DiningTable source = table(session, DiningTableStatus.PROPOSED);
+        DiningTable target = table(session, DiningTableStatus.PROPOSED);
+        ReflectionTestUtils.setField(source, "region", "홍대/합정");
+        ReflectionTestUtils.setField(target, "region", "홍대/합정");
+        Application jamsilOnly = application(1995);
+        jamsilOnly.getCandidateRegions().add(DiningRegion.JAMSIL);
+        DiningTableMember moving = member(source, jamsilOnly);
+        given(diningTableMemberRepository.findByIdAndRemovedAtIsNull(moving.getId())).willReturn(Optional.of(moving));
+        given(diningTableMemberRepository.countByTable_IdAndRemovedAtIsNull(target.getId())).willReturn(3);
+
+        // when & then
+        assertThatThrownBy(() -> diningTableService.moveMember(source.getId(), moving.getId(), target.getId(), null, adminId))
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REGION_MISMATCH);
+        assertThat(target.isLocked()).isFalse();
     }
 
     @Test

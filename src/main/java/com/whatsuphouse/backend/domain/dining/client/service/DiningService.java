@@ -158,8 +158,7 @@ public class DiningService {
                             .tableId(table.getId())
                             .sessionId(session.getId())
                             .eventDate(session.getEventDate())
-                            // 회차에 지역 컬럼이 없어 장소명을 지역으로 쓴다(DiningApplicationListResponse와 같은 규칙).
-                            .region(session.getLocation() != null ? session.getLocation().getName() : null)
+                            .region(table.getDisplayRegion())
                             // v1 테이블은 식당 풀 대신 이름을 직접 적어 두었다.
                             .venueName(table.getVenueId() != null
                                     ? venueNames.get(table.getVenueId()) : table.getRestaurantName())
@@ -185,8 +184,9 @@ public class DiningService {
             if (attendance.get(member.getId()) == AttendanceStatus.ATTENDED) {
                 GatheringSession past = member.getTable().getSession();
                 pastDays.add(past.getEventDate().getDayOfWeek());
-                if (past.getLocation() != null) {
-                    pastRegions.add(past.getLocation().getName());
+                // 지난 지역은 앉았던 테이블의 지역이다. (KAN-430)
+                if (member.getTable().getDisplayRegion() != null) {
+                    pastRegions.add(member.getTable().getDisplayRegion());
                 }
             }
         }
@@ -196,6 +196,7 @@ public class DiningService {
                 .filter(session -> visible.test(session.getGathering()))
                 .filter(session -> session.getEffectiveSessionStatus() == GatheringSessionStatus.OPEN
                         && (session.getApplyDeadlineAt() == null || session.getApplyDeadlineAt().isAfter(now)))
+                // 다가오는 회차는 지역이 없어(장소 선택) 장소를 둔 회차만 장소명이 지난 지역과 같은지 본다. 나머지는 이 기준에서 동률.
                 .sorted(Comparator
                         .comparing((GatheringSession session) -> session.getLocation() != null
                                 && pastRegions.contains(session.getLocation().getName()) ? 0 : 1)

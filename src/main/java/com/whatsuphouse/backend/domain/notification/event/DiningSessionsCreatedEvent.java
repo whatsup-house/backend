@@ -11,6 +11,7 @@ import java.util.UUID;
 public class DiningSessionsCreatedEvent {
     private final UUID gatheringId;
     private final String gatheringTitle;
+    // 회차 장소. 우연한 식탁 회차는 장소가 선택이라 null일 수 있다. (KAN-430)
     private final UUID locationId;
     private final String locationName;
 }

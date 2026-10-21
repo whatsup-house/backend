@@ -6,16 +6,22 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSe
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.whatsuphouse.backend.domain.chat.entity.ChatMessage;
+import com.whatsuphouse.backend.domain.chat.enums.ChatMessageType;
 import com.whatsuphouse.backend.domain.chat.enums.ChatSystemKind;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMessageRepository;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
+import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.entity.ExceptionCase;
+import com.whatsuphouse.backend.domain.dining.entity.MatchingRuleSetting;
 import com.whatsuphouse.backend.domain.dining.entity.SessionVenue;
 import com.whatsuphouse.backend.domain.dining.entity.Venue;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
+import com.whatsuphouse.backend.domain.dining.repository.MatchingRuleSettingRepository;
 import com.whatsuphouse.backend.domain.dining.repository.SessionVenueRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
@@ -55,13 +61,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -77,10 +84,10 @@ import static org.mockito.Mockito.reset;
 /**
  * 자동 확정 파이프라인(설계 4.6) 통합 테스트. 단계별 트랜잭션 경계("이후 단계 실패는 확정을 되돌리지 않음")를 실제 DB(H2)로 확인한다.
  * 테스트마다 새 회차·회원을 만들어 검증하고(트랜잭션 롤백 없음), 끝나면 공유 H2를 비운다.
+ * 확정 채팅의 운영자 메시지는 활성 회원만 보낼 수 있어, dining.system-admin-id 대신 테스트마다 만든 관리자(활성 관리자 중 첫 명)가 보낸다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
-@TestPropertySource(properties = "dining.system-admin-id=00000000-0000-0000-0000-00000000a001")
 class DiningConfirmPipelineTest {
 
     @MockitoSpyBean
@@ -119,21 +126,31 @@ class DiningConfirmPipelineTest {
     @Autowired
     private SessionVenueRepository sessionVenueRepository;
     @Autowired
+    private MatchingRuleSettingRepository matchingRuleSettingRepository;
+    @Autowired
     private ExceptionCaseRepository exceptionCaseRepository;
     @Autowired
     private NotificationRepository notificationRepository;
     @Autowired
     private ChatMessageRepository chatMessageRepository;
     @Autowired
+    private ChatService chatService;
+    @Autowired
+    private ObjectMapper objectMapper;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     private Gathering gathering;
     private GatheringSession session;
+    private User admin;
 
     // 회차: 2~4인 테이블, 최소 점수 0(답변이 없어 점수는 0), 유예 0분
     @BeforeEach
     void setUp() {
         willReturn(List.of()).given(adminApplicationService).findAnswers(any());
+        admin = user();
+        ReflectionTestUtils.setField(admin, "isAdmin", true);
+        admin = userRepository.save(admin);
         gathering = gatheringRepository.save(
                 Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
         session = newSession(null);
@@ -155,8 +172,12 @@ class DiningConfirmPipelineTest {
         // given
         GatheringSession due = newSession(LocalDateTime.now().minusMinutes(1));
         List<Application> applications = IntStream.range(0, 3).mapToObj(i -> waitingApplication(due)).toList();
+        // 3명이라 테이블 1개: 지역 최소 테이블 수를 1로 둔다(KAN-431). 식당은 테이블 지역(강남/신논현) 식당.
+        MatchingRuleSetting rule = MatchingRuleSetting.defaults();
+        rule.changeMinTablesPerRegion(1);
+        matchingRuleSettingRepository.save(rule);
         Venue venue = venueRepository.save(Venue.builder().name("와썹 비스트로").address("서울 강남구 테헤란로 1")
-                .region("강남").isActive(true).build());
+                .region(DiningRegion.GANGNAM.getLabel()).isActive(true).build());
         sessionVenueRepository.save(new SessionVenue(due.getId(), venue.getId(), 1));
 
         // when
@@ -191,10 +212,12 @@ class DiningConfirmPipelineTest {
                 .extracting(Attendance::getStatus).containsOnly(AttendanceStatus.SCHEDULED);
 
         assertThat(table.getChatRoomId()).isNotNull();
+        // 지도 링크가 없는 식당이면 링크 없이 끝난다
+        assertThat(operatorMessages(table.getChatRoomId())).hasSize(2).last().asString().endsWith("와썹 비스트로에서 만나요!");
         ChatMessage notice = chatMessageRepository.findFirstByRoomIdOrderByCreatedAtDescIdDesc(table.getChatRoomId())
                 .orElseThrow();
         assertThat(notice.getSystemKind()).isEqualTo(ChatSystemKind.SYSTEM_NOTICE);
-        assertThat(notice.getSystemParams().get("text").toString()).contains("와썹 비스트로", "취소 정책");
+        assertThat(notice.getSystemParams().get("text")).isEqualTo("취소 정책: " + DiningTableDetailService.CANCEL_POLICY);
         assertThat(openCases(table.getId())).isEmpty();
     }
 
@@ -221,10 +244,10 @@ class DiningConfirmPipelineTest {
     }
 
     @Test
-    @DisplayName("회차 식당 풀에 자리가 없으면 확정은 유지하고 예외함에 VENUE를 남긴다")
+    @DisplayName("회차 식당 풀에 자리가 없으면 확정은 유지하고 예외함에 VENUE를 남기며, 채팅 안내는 식당이 정해지면 알려 준다고 한다")
     void confirmNow_noVenue_keepsConfirmedAndOpensVenueCase() {
         // given
-        DiningTable table = proposedTable(3);
+        DiningTable table = proposedTable(session, "을지로/종로", 3);
 
         // when
         diningConfirmService.confirmNow(table.getId());
@@ -235,6 +258,54 @@ class DiningConfirmPipelineTest {
         assertThat(reloaded.getVenueId()).isNull();
         assertThat(reloaded.getChatRoomId()).isNotNull();
         assertThat(openCases(table.getId())).extracting(ExceptionCase::getType).containsExactly(ExceptionCaseType.VENUE);
+        assertThat(operatorMessages(reloaded.getChatRoomId())).containsExactly(
+                DiningTableStrengths.ALL_FIRST_MEET,
+                DiningConfirmService.meetingTime(session.getEventDate(), LocalTime.of(19, 0))
+                        + " 을지로/종로에서 만나요! 식당은 정해지면 이 방에서 알려드릴게요.");
+    }
+
+    @Test
+    @DisplayName("확정 채팅: 운영자 이름으로 장점 문구·일시/지역/식당/지도 링크 메시지 2개, 이어서 취소 정책 공지 한 줄. 다시 돌려도 더 보내지 않는다")
+    void confirmNow_postsOperatorMessagesOnce() {
+        // given
+        Venue venue = venueRepository.save(Venue.builder().name("브리비트").address("서울 강남구 강남대로 1")
+                .mapUrl("https://localhost/map/1").region("강남/신논현").isActive(true).build());
+        sessionVenueRepository.save(new SessionVenue(session.getId(), venue.getId(), 1));
+        DiningTable table = proposedTable(session, "강남/신논현", 2);
+
+        // when
+        diningConfirmService.confirmNow(table.getId());
+
+        // then
+        UUID roomId = diningTableRepository.findById(table.getId()).orElseThrow().getChatRoomId();
+        List<String> expected = List.of(DiningTableStrengths.ALL_FIRST_MEET,
+                DiningConfirmService.meetingTime(session.getEventDate(), LocalTime.of(19, 0))
+                        + " 강남/신논현 브리비트에서 만나요! https://localhost/map/1");
+        assertThat(operatorMessages(roomId)).containsExactlyElementsOf(expected);
+        assertThat(roomMessages(roomId, ChatMessageType.TEXT)).extracting(ChatMessage::getSenderId).containsOnly(admin.getId());
+        assertThat(cancelNotices(roomId)).containsExactly("취소 정책: " + DiningTableDetailService.CANCEL_POLICY);
+
+        // when: 채팅방 재시도·파이프라인 재실행
+        diningConfirmService.retryChatRoom(table.getId(), admin.getId());
+        diningConfirmService.confirmTable(table.getId());
+
+        // then
+        assertThat(operatorMessages(roomId)).containsExactlyElementsOf(expected);
+        assertThat(cancelNotices(roomId)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("만남 일시 문구: 'M월 d일 E요일 오전/오후 h시', 분이 0이 아니면 ' m분'")
+    void meetingTime_format() {
+        // given
+        LocalDate thursday = LocalDate.of(2026, 10, 22);
+
+        // when & then
+        assertThat(DiningConfirmService.meetingTime(thursday, LocalTime.of(19, 0))).isEqualTo("10월 22일 목요일 오후 7시");
+        assertThat(DiningConfirmService.meetingTime(thursday, LocalTime.of(19, 30))).isEqualTo("10월 22일 목요일 오후 7시 30분");
+        assertThat(DiningConfirmService.meetingTime(thursday, LocalTime.of(12, 0))).isEqualTo("10월 22일 목요일 오후 12시");
+        assertThat(DiningConfirmService.meetingTime(thursday, LocalTime.of(0, 5))).isEqualTo("10월 22일 목요일 오전 12시 5분");
+        assertThat(DiningConfirmService.meetingTime(thursday, null)).isEqualTo("10월 22일 목요일");
     }
 
     @Test
@@ -260,7 +331,7 @@ class DiningConfirmPipelineTest {
 
         // when: 장애가 풀린 뒤 재시도
         reset(adminChatService);
-        UUID adminId = UUID.randomUUID();
+        UUID adminId = admin.getId();
         UUID roomId = diningConfirmService.retryChatRoom(table.getId(), adminId).getRoomId();
 
         // then
@@ -307,7 +378,7 @@ class DiningConfirmPipelineTest {
 
     @Test
     @DisplayName("테이블 상세: 멤버에게는 닉네임·MBTI·관심사와 내 참석을 보여주고, 멤버가 아니거나 확정 전이면 403, 없으면 404")
-    void getTable_accessRules() {
+    void getTable_accessRules() throws Exception {
         // given
         DiningTable table = proposedTable(2);
         UUID memberId = memberUserId(table);
@@ -328,6 +399,11 @@ class DiningConfirmPipelineTest {
                 .extracting(DiningTableDetailResponse.MemberView::getUserId).contains(memberId);
         assertThat(detail.getMyAttendance().getStatus()).isEqualTo(AttendanceStatus.SCHEDULED);
         assertThat(detail.getCancelPolicy()).isEqualTo(DiningTableDetailService.CANCEL_POLICY);
+        // 장점 문구와 직업 캐릭터만 더해지고, 쌍별·그룹 점수와 다른 멤버 응답 원문은 없다(MAT-12)
+        assertThat(detail.getStrengths()).containsExactly(DiningTableStrengths.ALL_FIRST_MEET);
+        assertThat(detail.getMembers()).allSatisfy(m -> assertThat(m.getCharacterUrl()).endsWith("DEFAULT_SUIT.png"));
+        assertThat(objectMapper.writeValueAsString(detail)).doesNotContain(
+                "\"pairs\"", "\"groupScore\"", "\"scoreDetail\"", "\"criteriaAvg\"", "\"components\"", "\"answers\"", "\"score\"");
 
         assertThatThrownBy(() -> diningTableDetailService.getTable(table.getId(), outsider.getId()))
                 .isInstanceOf(CustomException.class)
@@ -356,11 +432,16 @@ class DiningConfirmPipelineTest {
         return userRepository.save(user);
     }
 
-    // 결제 완료·매칭 대기 신청 + 희망 회차
+    // 결제 완료·매칭 대기 신청 + 희망 회차(희망 지역 강남/신논현)
     private Application waitingApplication(GatheringSession wish) {
+        return waitingApplication(wish, DiningRegion.GANGNAM);
+    }
+
+    // 희망 지역을 테이블 지역과 맞춰야 확정 재검증(지역 조건)을 통과한다
+    private Application waitingApplication(GatheringSession wish, DiningRegion region) {
         User user = user();
         Application application = Application.builder().bookingNumber("WH-" + user.getNickname()).gathering(gathering)
-                .user(user).name(user.getName()).phone("01012345678").build();
+                .user(user).name(user.getName()).phone("01012345678").candidateRegions(List.of(region)).build();
         application.confirm();
         application = applicationRepository.save(application);
         applicationCandidateSessionRepository.save(new ApplicationCandidateSession(application, wish, 1));
@@ -369,11 +450,17 @@ class DiningConfirmPipelineTest {
 
     // 확정 시각이 이미 지난 제안 테이블
     private DiningTable proposedTable(int memberCount) {
-        DiningTable table = diningTableRepository.save(DiningTable.builder().session(session).eventDate(session.getEventDate())
+        return proposedTable(session, null, memberCount);
+    }
+
+    private DiningTable proposedTable(GatheringSession tableSession, String region, int memberCount) {
+        DiningTable table = diningTableRepository.save(DiningTable.builder().session(tableSession)
+                .eventDate(tableSession.getEventDate()).region(region)
                 .groupSize(memberCount).algorithmVersion(MatchingEngine.ALGORITHM_VERSION)
                 .confirmAt(LocalDateTime.now().minusMinutes(1)).build());
         for (int seat = 1; seat <= memberCount; seat++) {
-            Application application = waitingApplication(session);
+            Application application = waitingApplication(tableSession,
+                    region == null ? DiningRegion.GANGNAM : DiningRegion.fromLabel(region));
             application.changeMatchStatus(MatchStatus.CONFIRM_PENDING);
             diningTableMemberRepository.save(DiningTableMember.builder().application(applicationRepository.save(application))
                     .table(table).seatOrder(seat).assignReason(AssignReason.INITIAL).build());
@@ -384,6 +471,27 @@ class DiningConfirmPipelineTest {
     private UUID memberUserId(DiningTable table) {
         return diningTableMemberRepository.findByTableIdWithApplication(table.getId()).get(0)
                 .getApplication().getUser().getId();
+    }
+
+    private List<ChatMessage> roomMessages(UUID roomId, ChatMessageType type) {
+        return chatMessageRepository.findAll().stream()
+                .filter(message -> roomId.equals(message.getRoomId()) && message.getType() == type)
+                .sorted(Comparator.comparing(ChatMessage::getCreatedAt))
+                .toList();
+    }
+
+    // 운영자(TEXT) 메시지 본문, 보낸 순
+    private List<String> operatorMessages(UUID roomId) {
+        return roomMessages(roomId, ChatMessageType.TEXT).stream()
+                .map(message -> chatService.getMessageText(message.getId()).orElseThrow())
+                .toList();
+    }
+
+    private List<Object> cancelNotices(UUID roomId) {
+        return roomMessages(roomId, ChatMessageType.SYSTEM).stream()
+                .filter(message -> message.getSystemKind() == ChatSystemKind.SYSTEM_NOTICE)
+                .map(message -> message.getSystemParams().get("text"))
+                .toList();
     }
 
     private List<ExceptionCase> openCases(UUID tableId) {

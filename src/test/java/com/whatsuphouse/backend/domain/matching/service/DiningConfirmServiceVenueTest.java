@@ -100,11 +100,11 @@ class DiningConfirmServiceVenueTest {
                 priceAnswer(0, List.of(LOW, MID)),
                 priceAnswer(1, List.of(MID, HIGH)),
                 priceAnswer(2, List.of(MID)));
-        given(sessionVenueService.useFirstAvailableVenue(sessionId, Set.of(MID))).willReturn(Optional.of(venueId));
+        given(sessionVenueService.useFirstAvailableVenue(sessionId, null, Set.of(MID))).willReturn(Optional.of(venueId));
 
         diningConfirmService.assignVenue(tableId);
 
-        verify(sessionVenueService).useFirstAvailableVenue(sessionId, Set.of(MID));
+        verify(sessionVenueService).useFirstAvailableVenue(sessionId, null, Set.of(MID));
         assertThat(table.getVenueId()).isEqualTo(venueId);
     }
 
@@ -113,7 +113,7 @@ class DiningConfirmServiceVenueTest {
     void assignVenue_noAnswers_noPreference() {
         UUID venueId = UUID.randomUUID();
         answers = List.of();
-        given(sessionVenueService.useFirstAvailableVenue(sessionId, Set.of())).willReturn(Optional.of(venueId));
+        given(sessionVenueService.useFirstAvailableVenue(sessionId, null, Set.of())).willReturn(Optional.of(venueId));
 
         diningConfirmService.assignVenue(tableId);
 
@@ -124,11 +124,11 @@ class DiningConfirmServiceVenueTest {
     @DisplayName("교집합이 비면 선호 없음으로 본다")
     void assignVenue_disjointAnswers_noPreference() {
         answers = List.of(priceAnswer(0, List.of(LOW)), priceAnswer(1, List.of(MID)));
-        given(sessionVenueService.useFirstAvailableVenue(sessionId, Set.of())).willReturn(Optional.of(UUID.randomUUID()));
+        given(sessionVenueService.useFirstAvailableVenue(sessionId, null, Set.of())).willReturn(Optional.of(UUID.randomUUID()));
 
         diningConfirmService.assignVenue(tableId);
 
-        verify(sessionVenueService).useFirstAvailableVenue(sessionId, Set.of());
+        verify(sessionVenueService).useFirstAvailableVenue(sessionId, null, Set.of());
     }
 
     @Test
@@ -138,11 +138,11 @@ class DiningConfirmServiceVenueTest {
                 priceAnswer(0, List.of(HIGH)),
                 priceAnswer(1, List.of(MID)),
                 priceAnswer(2, List.of(LOW, MID)));
-        given(sessionVenueService.useFirstAvailableVenue(sessionId, Set.of(MID))).willReturn(Optional.of(UUID.randomUUID()));
+        given(sessionVenueService.useFirstAvailableVenue(sessionId, null, Set.of(MID))).willReturn(Optional.of(UUID.randomUUID()));
 
         diningConfirmService.assignVenue(tableId);
 
-        verify(sessionVenueService).useFirstAvailableVenue(sessionId, Set.of(MID));
+        verify(sessionVenueService).useFirstAvailableVenue(sessionId, null, Set.of(MID));
     }
 
     private ApplicationAnswer priceAnswer(int applicationNo, List<String> choices) {

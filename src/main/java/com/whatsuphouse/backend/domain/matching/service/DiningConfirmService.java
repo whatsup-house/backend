@@ -1,9 +1,12 @@
 package com.whatsuphouse.backend.domain.matching.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
+import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatGroupRoomCreateRequest;
+import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageSendRequest;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
+import com.whatsuphouse.backend.domain.chat.enums.ChatMessageType;
 import com.whatsuphouse.backend.domain.chat.enums.ChatSourceType;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
@@ -38,7 +41,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,7 +61,7 @@ import java.util.stream.Collectors;
  * 우연한 식탁 자동 확정 파이프라인. (설계 4.6, KAN-346)
  * 1~2. 하드 조건 최종 검증 → 테이블 CONFIRMED, 멤버 신청 CONFIRMED(배정 회차 = 테이블 회차), 참석 SCHEDULED. 여기까지 한 트랜잭션.
  *      위반이면 보류(상태·confirm_at 유지) + 예외함 CONFLICT(그 테이블에 열린 CONFLICT가 없을 때만).
- * 3. 식당 배정, 4. 채팅방 + 확정 안내, 5. 확정 알림. 단계마다 새 트랜잭션이라 실패해도 확정은 되돌아가지 않고 예외함에 남는다.
+ * 3. 식당 배정, 4. 채팅방 + 운영자 메시지 2개·취소 정책 공지, 5. 확정 알림. 단계마다 새 트랜잭션이라 실패해도 확정은 되돌아가지 않고 예외함에 남는다.
  * 모든 단계가 REQUIRES_NEW라 호출 측 트랜잭션과 섞이지 않는다.
  */
 @Slf4j
@@ -71,6 +76,7 @@ public class DiningConfirmService {
     private static final int ROOM_NAME_MAX_LENGTH = 100;
     private static final DateTimeFormatter NOTICE_DATE = DateTimeFormatter.ofPattern("M/d(E)", Locale.KOREAN);
     private static final DateTimeFormatter NOTICE_TIME = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter MEETING_DATE = DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN);
 
     private final DiningTableRepository diningTableRepository;
     private final DiningTableMemberRepository diningTableMemberRepository;
@@ -82,6 +88,7 @@ public class DiningConfirmService {
     private final ExceptionCaseService exceptionCaseService;
     private final AdminChatService adminChatService;
     private final ChatService chatService;
+    private final DiningTableExplanationService diningTableExplanationService;
     private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
@@ -164,7 +171,7 @@ public class DiningConfirmService {
             // 보류: 매 주기 다시 검증한다. 운영자가 멤버를 고치면 다음 주기에 확정된다.
             if (exceptionCaseService.listOpen(ExceptionCaseType.CONFLICT, tableId, "").isEmpty()) {
                 exceptionCaseService.open(ExceptionCaseType.CONFLICT, sessionId, tableId, null,
-                        "하드 조건(인원·나이 차·제외 관계) 위반으로 자동 확정을 보류했습니다. 멤버를 조정해 주세요.");
+                        "하드 조건(인원·나이 차·제외 관계·희망 지역) 위반으로 자동 확정을 보류했습니다. 멤버를 조정해 주세요.");
             }
             return false;
         }
@@ -194,9 +201,11 @@ public class DiningConfirmService {
                     return; // 유예 중 운영자가 미리 배정
                 }
                 UUID sessionId = table.getSession().getId();
-                sessionVenueService.useFirstAvailableVenue(sessionId, preferredPriceRanges(tableId)).ifPresentOrElse(table::assignVenue,
-                        () -> exceptionCaseService.open(ExceptionCaseType.VENUE, sessionId, tableId, null,
-                                "이번 회차 식당에 남은 자리가 없어 식당을 배정하지 못했습니다."));
+                // 테이블 지역 식당 중에서 고른다(지역 매칭 전 테이블은 region null → 풀 전체). (KAN-431)
+                sessionVenueService.useFirstAvailableVenue(sessionId, table.getDisplayRegion(), preferredPriceRanges(tableId))
+                        .ifPresentOrElse(table::assignVenue,
+                                () -> exceptionCaseService.open(ExceptionCaseType.VENUE, sessionId, tableId, null,
+                                        "이번 회차 식당에 남은 자리가 없어 식당을 배정하지 못했습니다."));
             });
         } catch (Exception e) {
             log.warn("테이블 식당 배정 실패: tableId={}", tableId, e);
@@ -241,7 +250,8 @@ public class DiningConfirmService {
         }
     }
 
-    // 채팅방이 없으면 만들고 확정 안내 1건을 남긴다. 방·chat_room_id·안내가 한 트랜잭션이라 중간에 실패하면 모두 되돌아간다.
+    // 채팅방이 없으면 만들고 개설자(운영자) 이름으로 메시지 2개(장점 문구, 일시·지역·식당) + 취소 정책 공지를 남긴다. (설계 6.4)
+    // 방·chat_room_id·메시지가 한 트랜잭션이라 중간에 실패하면 모두 되돌아간다. 방이 이미 있으면 다시 보내지 않는다.
     private UUID openChatRoom(UUID tableId, UUID creatorId) {
         DiningTable table = findTable(tableId);
         if (table.getChatRoomId() != null) {
@@ -250,15 +260,59 @@ public class DiningConfirmService {
         UUID roomId = adminChatService.createGroupRoom(creatorId, true, new ChatGroupRoomCreateRequest(
                 roomName(table), findMemberUserIds(tableId), ChatSourceType.DINING_TABLE, tableId)).getRoomId();
         table.linkChatRoom(roomId);
-        chatService.postSystemNotice(roomId, tableNotice(table, "우연한 식탁 테이블이 확정되었어요."));
+        List<Application> applications = findActiveMembers(tableId).stream().map(DiningTableMember::getApplication).toList();
+        sendAsOperator(roomId, creatorId, diningTableExplanationService.explain(table, applications).strengths().get(0));
+        sendAsOperator(roomId, creatorId, meetingMessage(table));
+        chatService.postSystemNotice(roomId, "취소 정책: " + DiningTableDetailService.CANCEL_POLICY);
         return roomId;
     }
 
-    private UUID systemAdminId() {
-        if (systemAdminIdSetting != null && !systemAdminIdSetting.isBlank()) {
-            return UUID.fromString(systemAdminIdSetting.trim());
+    private void sendAsOperator(UUID roomId, UUID senderId, String text) {
+        chatService.sendMessage(roomId, senderId, true, new ChatMessageSendRequest(ChatMessageType.TEXT, text));
+    }
+
+    // 예: "10월 22일 목요일 오후 7시 강남/신논현 브리비트에서 만나요! https://naver.me/…"
+    // 식당이 없으면 정해지면 알려 준다는 안내, 지도 링크가 없으면 링크를 뺀다.
+    private String meetingMessage(DiningTable table) {
+        Venue venue = table.getVenueId() == null ? null : sessionVenueService.findVenue(table.getVenueId()).orElse(null);
+        List<String> parts = new ArrayList<>();
+        parts.add(meetingTime(table.getSession().getEventDate(), table.getSession().getStartTime()));
+        if (table.getDisplayRegion() != null) {
+            parts.add(table.getDisplayRegion());
         }
-        return userService.listActiveAdminIds().stream().findFirst()
+        if (venue != null) {
+            parts.add(venue.getName());
+        }
+        String message = String.join(" ", parts) + "에서 만나요!";
+        if (venue == null) {
+            return message + " 식당은 정해지면 이 방에서 알려드릴게요.";
+        }
+        return venue.getMapUrl() == null || venue.getMapUrl().isBlank() ? message : message + " " + venue.getMapUrl();
+    }
+
+    // "10월 22일 목요일 오후 7시", 분이 0이 아니면 " 30분"을 붙인다. 시작 시간이 없으면 날짜만.
+    static String meetingTime(LocalDate date, LocalTime time) {
+        String day = date.format(MEETING_DATE);
+        if (time == null) {
+            return day;
+        }
+        int hour = time.getHour() % 12 == 0 ? 12 : time.getHour() % 12;
+        return day + (time.getHour() < 12 ? " 오전 " : " 오후 ") + hour + "시"
+                + (time.getMinute() != 0 ? " " + time.getMinute() + "분" : "");
+    }
+
+    // 설정값이 활성 관리자가 아니면(없는 id·탈퇴·정지) 활성 관리자 첫 명으로 대신한다.
+    // 운영자 이름 메시지는 활성 계정만 보낼 수 있어서, 설정 실수 하나로 모든 채팅방 생성이 실패하지 않게 한다.
+    UUID systemAdminId() {
+        List<UUID> activeAdminIds = userService.listActiveAdminIds();
+        if (systemAdminIdSetting != null && !systemAdminIdSetting.isBlank()) {
+            UUID configured = UUID.fromString(systemAdminIdSetting.trim());
+            if (activeAdminIds.contains(configured)) {
+                return configured;
+            }
+            log.warn("dining.system-admin-id 가 활성 관리자가 아니라 다른 활성 관리자로 대신합니다: {}", configured);
+        }
+        return activeAdminIds.stream().findFirst()
                 .orElseThrow(() -> new CustomException(ErrorCode.SYSTEM_ADMIN_NOT_FOUND));
     }
 

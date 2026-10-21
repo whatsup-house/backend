@@ -63,7 +63,7 @@ public class MatchResolutionResponse {
         @Schema(description = "종료 시간", example = "21:00:00")
         private LocalTime endTime;
 
-        @Schema(description = "지역(회차 장소명). 장소가 없으면 null", example = "강남")
+        @Schema(description = "지역. 회차는 지역에 묶이지 않아 항상 null(이동해도 신청의 희망 지역이 유지된다)", nullable = true)
         private String region;
 
         static SessionView from(GatheringSession session) {
@@ -72,8 +72,6 @@ public class MatchResolutionResponse {
                     .eventDate(session.getEventDate())
                     .startTime(session.getStartTime())
                     .endTime(session.getEndTime())
-                    // 우연한 식탁 회차의 장소 = 지역 (DiningApplicationListResponse와 같은 규칙)
-                    .region(session.getLocation() != null ? session.getLocation().getName() : null)
                     .build();
         }
     }

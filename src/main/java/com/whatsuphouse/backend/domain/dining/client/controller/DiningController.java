@@ -5,6 +5,7 @@ import com.whatsuphouse.backend.domain.dining.client.dto.request.SafetyReportCre
 import com.whatsuphouse.backend.domain.dining.client.dto.response.DiningHistoryResponse;
 import com.whatsuphouse.backend.domain.dining.client.dto.response.DiningRecommendationResponse;
 import com.whatsuphouse.backend.domain.dining.client.service.DiningService;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +32,14 @@ import java.util.UUID;
 public class DiningController {
 
     private final DiningService diningService;
+
+    @Operation(summary = "우연한 식탁 지역 목록",
+            description = "신청 희망 지역으로 고를 수 있는 지역 라벨(고정 4곳), 표시 순서대로. 인증 없이 조회할 수 있습니다. "
+                    + "신청 candidateRegions에는 이 값을 그대로 보냅니다.")
+    @GetMapping("/regions")
+    public ResponseEntity<ApiResult<List<String>>> listRegions() {
+        return ResponseEntity.ok(ApiResult.success(DiningRegion.labels()));
+    }
 
     @Operation(summary = "테이블 피드백",
             description = "확정·종료 테이블이고 회차 날짜가 지났거나 당일 종료 시각이 지난 뒤에 멤버당 1회 남길 수 있습니다. "

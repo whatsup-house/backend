@@ -14,7 +14,10 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
-/** 참가자 테이블 상세. 멤버는 회원 ID·닉네임·MBTI·관심사만(연락처·실명·출생연도 제외, INF-06). */
+/**
+ * 참가자 테이블 상세. 멤버는 회원 ID·닉네임·캐릭터·MBTI·관심사만(연락처·실명·출생연도 제외, INF-06).
+ * 매칭 근거는 장점 문구만 준다. 쌍별·그룹 점수와 다른 멤버의 응답 원문은 넣지 않는다(MAT-12, KAN-432).
+ */
 @Getter
 @Builder
 public class DiningTableDetailResponse {
@@ -29,6 +32,8 @@ public class DiningTableDetailResponse {
     private VenueView venue;
     @Schema(description = "테이블 채팅방 ID. 아직 없으면 null", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID chatRoomId;
+    @Schema(description = "이 테이블의 장점 문구 1~2개", example = "[\"대화 스타일 80% 일치하는 테이블이에요!\"]")
+    private List<String> strengths;
     @Schema(description = "멤버(본인 포함), 좌석 순")
     private List<MemberView> members;
     @Schema(description = "취소 정책 안내 문구", example = "회차 전전날 23:59까지 취소하면 전액, 그 뒤 전날까지는 50% 환불돼요. 당일 취소와 노쇼는 환불되지 않아요.")
@@ -78,6 +83,8 @@ public class DiningTableDetailResponse {
         private UUID userId;
         @Schema(description = "닉네임", example = "와썹러")
         private String nickname;
+        @Schema(description = "직업 캐릭터 이미지 URL", example = "https://example.supabase.co/storage/v1/object/public/assets/characters/IT_DEV.png")
+        private String characterUrl;
         @Schema(description = "MBTI. 답하지 않았으면 null", example = "ENFP")
         private String mbti;
         @Schema(description = "관심사", example = "[\"여행\", \"음악\"]")

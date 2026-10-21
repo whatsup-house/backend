@@ -18,6 +18,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.offset;
+import static org.assertj.core.api.Assertions.tuple;
 
 /** 입력 순서와 고정 ID만으로 결과가 정해진다(무작위 없음). */
 class MatchingEngineTest {
@@ -354,5 +356,66 @@ class MatchingEngineTest {
         assertThat(result.unassigned()).isEmpty();
         assertThat(result.tables().stream().mapToInt(t -> t.seats().size()).sum()).isEqualTo(60);
         assertHardConditions(result, people);
+    }
+
+    // ── 매칭 근거 (KAN-432) ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("explain: 매칭이 고른 테이블 멤버로 다시 계산한 그룹 점수·내역은 match 점수와 같고, 쌍 평균은 pairAvg와 같다")
+    void explain_matchesMatchScore() {
+        // given: 이전 만남 한 쌍(페널티)까지 포함
+        List<MatchingEngine.Applicant> people = IntStream.range(0, 10)
+                .mapToObj(i -> new MatchingEngine.Applicant(new UUID(0, i), new UUID(1, i), 1993 + i % 4,
+                        i % 3 == 0 ? "MALE" : "FEMALE", MatchingEngine.MBTI_TYPES.get((i * 3) % 16),
+                        Set.of("관심사" + (i % 3), "와인"), Set.of("스타일" + (i % 2)), Set.of("스타일" + (i * 5 % 2)),
+                        "직군" + (i % 2), Map.of()))
+                .toList();
+        MatchingEngine.Relations relations = new MatchingEngine.Relations(Map.of(),
+                Map.of(people.get(0).userId(), Set.of(people.get(1).userId(), people.get(2).userId())));
+        Map<UUID, MatchingEngine.Applicant> byId = people.stream()
+                .collect(Collectors.toMap(MatchingEngine.Applicant::applicationId, a -> a));
+
+        // when
+        MatchingEngine.Result result = engine.match(people, rules(), relations);
+
+        // then
+        assertThat(result.tables()).isNotEmpty();
+        for (MatchingEngine.TableResult table : result.tables()) {
+            List<MatchingEngine.Applicant> members = table.seats().stream().map(seat -> byId.get(seat.applicationId())).toList();
+            MatchingEngine.Explanation explanation = engine.explain(members, rules(), relations);
+            int n = members.size();
+            assertThat(explanation.group()).isEqualTo(table.score());
+            assertThat(explanation.group()).isEqualTo(engine.score(members, rules(), relations));
+            assertThat(explanation.pairs()).hasSize(n * (n - 1) / 2);
+            assertThat(explanation.pairs().stream().mapToDouble(MatchingEngine.PairScore::score).average().orElseThrow())
+                    .isCloseTo(table.score().detail().pairAvg(), offset(1e-3));
+        }
+    }
+
+    @Test
+    @DisplayName("explain: components는 값 있는 항목만, criteriaAvg는 그 항목 값이 있는 쌍만의 평균")
+    void explain_componentsAndCriteriaAvg() {
+        // given: B는 MBTI 없음, C는 관심사 없음, 원하는 스타일·커스텀은 아무도 없음
+        MatchingEngine.Applicant a = new MatchingEngine.Applicant(new UUID(0, 0), new UUID(1, 0), 1995, "MALE", "ENFP",
+                Set.of("영화"), Set.of(), Set.of(), null, Map.of());
+        MatchingEngine.Applicant b = new MatchingEngine.Applicant(new UUID(0, 1), new UUID(1, 1), 1995, "FEMALE", null,
+                Set.of("영화"), Set.of(), Set.of(), null, Map.of());
+        MatchingEngine.Applicant c = new MatchingEngine.Applicant(new UUID(0, 2), new UUID(1, 2), 1995, "FEMALE", "INFJ",
+                Set.of(), Set.of(), Set.of(), null, Map.of());
+
+        // when
+        MatchingEngine.Explanation explanation = engine.explain(List.of(a, b, c), rules(), MatchingEngine.Relations.none());
+
+        // then
+        assertThat(explanation.pairs()).extracting(MatchingEngine.PairScore::a, MatchingEngine.PairScore::b)
+                .containsExactly(tuple(a.applicationId(), b.applicationId()),
+                        tuple(a.applicationId(), c.applicationId()),
+                        tuple(b.applicationId(), c.applicationId()));
+        assertThat(explanation.pairs().get(0).components()).isEqualTo(Map.of("gender", 1.0, "interests", 1.0));
+        assertThat(explanation.pairs().get(0).score()).isEqualTo(1.0);
+        assertThat(explanation.pairs().get(1).components()).containsOnlyKeys("gender", "mbti", "interests")
+                .containsEntry("mbti", 1.0).containsEntry("interests", 0.0);
+        assertThat(explanation.criteriaAvg()).containsOnlyKeys("gender", "mbti", "interests")
+                .containsEntry("gender", 0.6667).containsEntry("mbti", 1.0).containsEntry("interests", 0.3333);
     }
 }

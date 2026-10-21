@@ -55,12 +55,12 @@ class DiningRecommendationTest {
     private final Location hongdae = location("홍대");
     private final UserPrincipal viewer = new UserPrincipal(UUID.randomUUID(), "u@example.com", false);
 
-    // 지난주에 강남에서 참석한 사용자. 오늘 기준 +1일부터 회차가 열려 있다.
+    // 지난주에 강남 테이블에 참석한 사용자. 지난 지역은 테이블 지역이다(지난 회차는 장소 없음, KAN-430). 오늘 기준 +1일부터 회차가 열려 있다.
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(gathering, "id", UUID.randomUUID());
-        GatheringSession past = session(gangnam, LocalDate.now().minusDays(7));
-        DiningTable table = DiningTable.builder().session(past).eventDate(past.getEventDate()).groupSize(4)
+        GatheringSession past = session(null, LocalDate.now().minusDays(7));
+        DiningTable table = DiningTable.builder().session(past).eventDate(past.getEventDate()).region("강남").groupSize(4)
                 .algorithmVersion("rule-v2").build();
         DiningTableMember member = DiningTableMember.builder().table(table).seatOrder(1)
                 .assignReason(AssignReason.INITIAL).build();
