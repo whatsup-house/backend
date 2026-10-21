@@ -122,6 +122,17 @@ public class MatchingEngine {
                          int splitCount, int mergeCount, int reallocatedCount) {
     }
 
+    /** 페어 점수 항목 키. 순서는 가중치(MatchingWeights)·pairScore 항목 순서와 같다. */
+    static final List<String> CRITERIA = List.of("gender", "mbti", "interests", "wantedStyle", "custom");
+
+    /** 쌍별 점수. a·b = applicationId, components = CRITERIA 항목 값(답이 없어 계산할 수 없는 항목은 키 없음). */
+    public record PairScore(UUID a, UUID b, double score, Map<String, Double> components) {
+    }
+
+    /** 매칭 근거(KAN-432). criteriaAvg = 항목별 쌍 평균(그 항목 값이 있는 쌍만), 값 있는 항목만 CRITERIA 순. */
+    public record Explanation(List<PairScore> pairs, Score group, Map<String, Double> criteriaAvg) {
+    }
+
     public Result match(List<Applicant> applicants, Rules rules, Relations relations) {
         return new Run(applicants, rules, relations).execute();
     }
@@ -129,6 +140,11 @@ public class MatchingEngine {
     /** 이미 정해진 멤버 구성의 그룹 점수(수동 조정 후 재계산용). */
     public Score score(List<Applicant> members, Rules rules, Relations relations) {
         return new Run(members, rules, relations).score(IntStream.range(0, members.size()).boxed().toList());
+    }
+
+    /** 이미 정해진 멤버 구성의 쌍별 점수·항목 값과 그룹 점수. 저장하지 않고 조회 때 현재 멤버로 계산한다. (KAN-432) */
+    public Explanation explain(List<Applicant> members, Rules rules, Relations relations) {
+        return new Run(members, rules, relations).explain();
     }
 
     /** 하드 조건(설계 4.3) 항목. 수동 조정·재조정 재검증의 위반 사유로 노출된다. */
@@ -741,16 +757,39 @@ public class MatchingEngine {
             }).toArray();
         }
 
+        // 멤버 전원(입력 순서)의 쌍별 점수, 그룹 점수, 항목별 쌍 평균. 값은 pairScore·score와 같은 계산이다.
+        Explanation explain() {
+            List<PairScore> pairs = new ArrayList<>();
+            double[] sums = new double[CRITERIA.size()];
+            int[] counts = new int[CRITERIA.size()];
+            for (int i = 0; i < people.size(); i++) {
+                for (int j = i + 1; j < people.size(); j++) {
+                    Double[] items = items(people.get(i), people.get(j));
+                    Map<String, Double> components = new LinkedHashMap<>();
+                    for (int k = 0; k < items.length; k++) {
+                        if (items[k] != null) {
+                            components.put(CRITERIA.get(k), round(items[k]));
+                            sums[k] += items[k];
+                            counts[k]++;
+                        }
+                    }
+                    pairs.add(new PairScore(people.get(i).applicationId(), people.get(j).applicationId(),
+                            round(pair[i][j]), components));
+                }
+            }
+            Map<String, Double> criteriaAvg = new LinkedHashMap<>();
+            for (int k = 0; k < sums.length; k++) {
+                if (counts[k] > 0) {
+                    criteriaAvg.put(CRITERIA.get(k), round(sums[k] / counts[k]));
+                }
+            }
+            return new Explanation(pairs, score(IntStream.range(0, people.size()).boxed().toList()), criteriaAvg);
+        }
+
         private double pairScore(Applicant a, Applicant b) {
             MatchingWeights w = rules.weights();
             double[] weights = {w.getGender(), w.getMbti(), w.getInterests(), w.getWantedStyle(), w.getCustom()};
-            Double[] items = {
-                    a.gender() != null && b.gender() != null ? (a.gender().equals(b.gender()) ? 0.0 : 1.0) : null,
-                    mbtiCompatibility(a.mbti(), b.mbti()),
-                    jaccard(a.interests(), b.interests()),
-                    average(wantedMatch(a, b), wantedMatch(b, a)),
-                    customScore(a, b)
-            };
+            Double[] items = items(a, b);
             double sum = 0;
             double weight = 0;
             for (int k = 0; k < items.length; k++) {
@@ -760,6 +799,17 @@ public class MatchingEngine {
                 }
             }
             return weight > 0 ? sum / weight : 0;
+        }
+
+        // 페어 점수 항목 값(CRITERIA 순). 답이 없어 계산할 수 없는 항목은 null.
+        private Double[] items(Applicant a, Applicant b) {
+            return new Double[]{
+                    a.gender() != null && b.gender() != null ? (a.gender().equals(b.gender()) ? 0.0 : 1.0) : null,
+                    mbtiCompatibility(a.mbti(), b.mbti()),
+                    jaccard(a.interests(), b.interests()),
+                    average(wantedMatch(a, b), wantedMatch(b, a)),
+                    customScore(a, b)
+            };
         }
 
         // 내 WANTED_STYLE 중 상대 MY_STYLE에 있는 비율. 원하는 스타일을 고르지 않았으면 계산하지 않는다.
@@ -789,14 +839,15 @@ public class MatchingEngine {
             }
             return weight > 0 ? sum / weight : null;
         }
+    }
 
-        private static boolean related(Map<UUID, Set<UUID>> relation, Applicant a, Applicant b) {
-            if (a.userId() == null || b.userId() == null) {
-                return false;
-            }
-            return relation.getOrDefault(a.userId(), Set.of()).contains(b.userId())
-                    || relation.getOrDefault(b.userId(), Set.of()).contains(a.userId());
+    // 관계(blocked·metBefore·again)는 한 방향만 있어도 양방향으로 본다. 장점 문구의 이전 만남 판정도 쓴다.
+    static boolean related(Map<UUID, Set<UUID>> relation, Applicant a, Applicant b) {
+        if (a.userId() == null || b.userId() == null) {
+            return false;
         }
+        return relation.getOrDefault(a.userId(), Set.of()).contains(b.userId())
+                || relation.getOrDefault(b.userId(), Set.of()).contains(a.userId());
     }
 
     private static final class Draft {

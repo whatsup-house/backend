@@ -5,6 +5,8 @@ import com.whatsuphouse.backend.domain.matching.dto.request.DiningTableMergeRequ
 import com.whatsuphouse.backend.domain.matching.dto.request.DiningTableMoveRequest;
 import com.whatsuphouse.backend.domain.matching.dto.request.DiningTableSplitRequest;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableAdjustResponse;
+import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableExplanationResponse;
+import com.whatsuphouse.backend.domain.matching.service.DiningTableExplanationService;
 import com.whatsuphouse.backend.domain.matching.service.DiningTableService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
@@ -15,6 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-@Tag(name = "우연한 식탁 테이블 조정 (관리자)", description = "테이블 멤버 이동·분리·병합·해체")
+@Tag(name = "우연한 식탁 테이블 조정 (관리자)", description = "테이블 매칭 근거 조회, 멤버 이동·분리·병합·해체")
 @RestController
 @RequestMapping("/api/admin/dining/tables")
 @RequiredArgsConstructor
@@ -35,6 +38,16 @@ public class AdminDiningTableController {
             + "확정 테이블이 끼면 사유 필수(400)이며 채팅방 멤버도 맞춘다. 테이블·멤버가 없으면 404.";
 
     private final DiningTableService diningTableService;
+    private final DiningTableExplanationService diningTableExplanationService;
+
+    @Operation(summary = "매칭 근거", description = "현재 멤버로 매칭 엔진을 다시 계산한 그룹 점수·점수 내역(0보다 큰 페널티만)·항목별 쌍 평균·장점 문구, "
+            + "멤버(직업 캐릭터·출생연도·성별·MBTI·신청서 응답 원문, 이름·연락처·이메일 제외), 모든 쌍의 점수와 항목 값"
+            + "(gender, mbti, interests, wantedStyle, custom 중 값 있는 것). 저장값이 아니라 조회 시점 계산이다. 테이블이 없으면 404.")
+    @GetMapping("/{id}/explanation")
+    public ResponseEntity<ApiResult<DiningTableExplanationResponse>> getExplanation(
+            @Parameter(description = "테이블 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(diningTableExplanationService.getExplanation(id)));
+    }
 
     @Operation(summary = "멤버 이동", description = "멤버를 같은 회차 다른 테이블로 옮긴다." + RULES)
     @PostMapping("/{id}/members/{memberId}/move")
