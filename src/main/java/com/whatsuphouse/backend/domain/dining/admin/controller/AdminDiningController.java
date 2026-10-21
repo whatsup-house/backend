@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.dining.admin.dto.request.SessionVenueRequ
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.TableVenueRequest;
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.VenueRequest;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningApplicantResponse;
+import com.whatsuphouse.backend.domain.dining.admin.dto.response.DemoResetResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningDashboardResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.ExceptionCaseResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.FeedbackSummaryResponse;
@@ -18,6 +19,7 @@ import com.whatsuphouse.backend.domain.dining.admin.dto.response.MatchingRuleRes
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.SessionVenueResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.TableVenueResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.VenueResponse;
+import com.whatsuphouse.backend.domain.dining.admin.service.AdminDiningDemoService;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminDiningService;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminExceptionCaseService;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminFeedbackService;
@@ -72,6 +74,7 @@ public class AdminDiningController {
     private static final MediaType TEXT_CSV = new MediaType("text", "csv", StandardCharsets.UTF_8);
 
     private final AdminDiningService adminDiningService;
+    private final AdminDiningDemoService adminDiningDemoService;
     private final AdminExceptionCaseService adminExceptionCaseService;
     private final AdminFeedbackService adminFeedbackService;
     private final AdminMatchingRuleService adminMatchingRuleService;
@@ -140,6 +143,16 @@ public class AdminDiningController {
             @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(ApiResult.success(
                 diningMatchService.runMatch(id, MatchRunTrigger.MANUAL, principal.getUserId(), null)));
+    }
+
+    @Operation(summary = "심사용 회차 데이터 초기화", description = "숨김(심사용) 우연한 식탁 모임 회차만. 이 회차의 테이블·단체방·매칭 실행·안내 이력·관련 예외와 "
+            + "이 회차 신청(배정됐거나 배정 전 희망, 취소 포함)과 그 결제·이용권 기록을 지우고(회원 계정은 남긴다), 자동 매칭 예정 시각을 비운 뒤 "
+            + "심사용 신청자 16명(지역 2곳 × 8명, 결제 완료·매칭 대기)을 넣는다. 매칭은 '매칭 실행'으로 직접 돌린다. 여러 번 눌러도 같은 결과. "
+            + "숨김 우연한 식탁 회차가 아니면 409(아무것도 지우지 않음), 회차가 없으면 404.")
+    @PostMapping("/sessions/{sessionId}/demo-reset")
+    public ResponseEntity<ApiResult<DemoResetResponse>> resetDemoSession(
+            @Parameter(description = "회차 ID") @PathVariable UUID sessionId) {
+        return ResponseEntity.ok(ApiResult.success(adminDiningDemoService.resetSession(sessionId)));
     }
 
     @Operation(summary = "회차 테이블", description = "해체되지 않은 테이블(점수 내역·멤버), 최신 실행의 미배정(사유), 최신 실행 집계")

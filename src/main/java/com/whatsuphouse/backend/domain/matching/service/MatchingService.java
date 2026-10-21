@@ -14,9 +14,12 @@ import com.whatsuphouse.backend.domain.matching.entity.MatchRun;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
 import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
+import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
+import com.whatsuphouse.backend.domain.matching.repository.MatchResolutionRepository;
 import com.whatsuphouse.backend.domain.matching.repository.MatchRunRepository;
+import com.whatsuphouse.backend.domain.matching.repository.NoticeLogRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
@@ -54,6 +57,40 @@ public class MatchingService {
     private final MatchRunRepository matchRunRepository;
     private final DiningMatchService diningMatchService;
     private final DiningAttendanceService diningAttendanceService;
+    private final AttendanceRepository attendanceRepository;
+    private final MatchResolutionRepository matchResolutionRepository;
+    private final NoticeLogRepository noticeLogRepository;
+
+    /** 회차의 테이블(해체·삭제 포함) ID와 그 테이블의 멤버 행(제거된 멤버 포함) ID. 회차 초기화(KAN-442)가 FK 순서대로 지울 때 쓴다. */
+    public record SessionTables(List<UUID> tableIds, List<UUID> memberIds) {
+    }
+
+    @Transactional(readOnly = true)
+    public SessionTables findSessionTables(UUID sessionId) {
+        List<UUID> tableIds = diningTableRepository.findAllIdsBySessionId(sessionId);
+        return new SessionTables(tableIds,
+                tableIds.isEmpty() ? List.of() : diningTableMemberRepository.findAllIdsByTableIdIn(tableIds));
+    }
+
+    /**
+     * 심사용 회차 초기화(KAN-442): 회차의 매칭 데이터를 지운다 — 참석 → 테이블 멤버 → 테이블 → 매칭 실행 → 안내 발송 이력, 그리고 이 신청들의 해결 선택.
+     * 테이블 멤버를 가리키는 피드백, 테이블을 가리키는 선호·신고는 호출 측이 먼저 지운다. 다른 회차 테이블의 멤버 행은 건드리지 않는다.
+     */
+    @Transactional
+    public void deleteSessionMatching(UUID sessionId, SessionTables tables, Collection<UUID> applicationIds) {
+        if (!tables.memberIds().isEmpty()) {
+            attendanceRepository.deleteByTableMemberIdIn(tables.memberIds());
+        }
+        if (!tables.tableIds().isEmpty()) {
+            diningTableMemberRepository.deleteByTableIdIn(tables.tableIds());
+        }
+        diningTableRepository.deleteBySessionId(sessionId);
+        matchRunRepository.deleteBySessionId(sessionId);
+        noticeLogRepository.deleteBySessionId(sessionId);
+        if (!applicationIds.isEmpty()) {
+            matchResolutionRepository.deleteByApplicationIdIn(applicationIds);
+        }
+    }
 
     /**
      * 기존 API 호환(KAN-338 전까지): 경로의 gatheringId는 회차 ID다.

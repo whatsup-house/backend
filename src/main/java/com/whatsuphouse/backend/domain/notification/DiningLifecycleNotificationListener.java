@@ -86,7 +86,7 @@ public class DiningLifecycleNotificationListener {
     @TransactionalEventListener(fallbackExecution = true)
     public void onTableLifecycle(DiningTableLifecycleEvent event) {
         boolean isReminder = event.getType() == NotificationType.DINING_REMINDER;
-        String title = isReminder ? "우연한 식탁이 곧 열려요" : "오늘 우연한 식탁은 어떠셨나요?";
+        String title = isReminder ? "내일 우연한 식탁이 열려요" : "오늘 우연한 식탁은 어떠셨나요?";
         String content = isReminder
                 ? "하루 앞으로 다가왔어요. 테이블 상세에서 시간과 식당을 확인해 주세요."
                 : "함께한 테이블에 대한 피드백을 남겨 주세요. 다음 매칭에 반영돼요.";

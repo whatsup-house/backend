@@ -46,7 +46,7 @@ import java.util.stream.Collectors;
 
 /**
  * 우연한 식탁 확정 테이블의 회차 전후 안내. (설계 4.9, KAN-349)
- * - 리마인드: 회차 시작 23~25시간 전, 멤버에게 DINING_REMINDER + 채팅방 안내(시간·지역·식당·취소 정책, 시스템 관리자 이름 메시지). 테이블마다 1회(reminder_sent_at).
+ * - 리마인드: 회차 시작 23~25시간 전, 멤버에게 DINING_REMINDER + 채팅방 안내(시간·지역·식당, 시스템 관리자 이름 메시지). 테이블마다 1회(reminder_sent_at).
  * - 대화 콘텐츠: 회차 시작 ±10분, 채팅방에 대화 주제 3개 + 아이스브레이킹 1개. 테이블마다 1회(contents_posted_at), 채팅방이 없으면 건너뛴다.
  * 테이블마다 새 트랜잭션이라 한 테이블의 실패가 다른 테이블을 막지 않는다.
  */
@@ -60,7 +60,7 @@ public class DiningReminderService {
     private static final Duration REMINDER_FROM = Duration.ofHours(23);
     private static final Duration REMINDER_TO = Duration.ofHours(25);
     private static final Duration CONTENTS_WINDOW = Duration.ofMinutes(10);
-    private static final String REMINDER_HEADLINE = "우연한 식탁이 곧 열려요. 일정과 식당을 다시 확인해 주세요.";
+    private static final String REMINDER_HEADLINE = "내일 우연한 식탁이 열려요! 일정과 식당을 다시 확인해 주세요.";
 
     private final DiningTableRepository diningTableRepository;
     private final DiningTableMemberRepository diningTableMemberRepository;

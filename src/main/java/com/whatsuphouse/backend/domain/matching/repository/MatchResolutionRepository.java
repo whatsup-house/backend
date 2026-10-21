@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.matching.entity.MatchResolution;
 import com.whatsuphouse.backend.domain.matching.enums.ResolutionStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -24,6 +25,10 @@ public interface MatchResolutionRepository extends JpaRepository<MatchResolution
     @Query("select r.id from MatchResolution r where r.status = :status and r.respondBy < :now")
     List<UUID> findIdsByStatusAndRespondByBefore(@Param("status") ResolutionStatus status,
                                                  @Param("now") LocalDateTime now);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from MatchResolution r where r.application.id in :applicationIds")
+    void deleteByApplicationIdIn(@Param("applicationIds") Collection<UUID> applicationIds);
 
     List<MatchResolution> findByApplication_IdInAndStatus(Collection<UUID> applicationIds, ResolutionStatus status);
 }

@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.matching.repository;
 
 import com.whatsuphouse.backend.domain.matching.entity.MatchRun;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,4 +21,8 @@ public interface MatchRunRepository extends JpaRepository<MatchRun, UUID> {
     List<UUID> findSessionIdsIn(@Param("sessionIds") Collection<UUID> sessionIds);
 
     long countBySessionIdIn(Collection<UUID> sessionIds);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from MatchRun r where r.sessionId = :sessionId")
+    void deleteBySessionId(@Param("sessionId") UUID sessionId);
 }

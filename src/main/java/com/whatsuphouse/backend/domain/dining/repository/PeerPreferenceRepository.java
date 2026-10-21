@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.dining.repository;
 import com.whatsuphouse.backend.domain.dining.entity.PeerPreference;
 import com.whatsuphouse.backend.domain.dining.enums.PeerPreferenceKind;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +12,10 @@ import java.util.List;
 import java.util.UUID;
 
 public interface PeerPreferenceRepository extends JpaRepository<PeerPreference, UUID> {
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from PeerPreference p where p.tableId in :tableIds")
+    void deleteByTableIdIn(@Param("tableIds") Collection<UUID> tableIds);
 
     interface UserPairProjection {
         UUID getUserId();

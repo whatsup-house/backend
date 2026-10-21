@@ -113,10 +113,10 @@ class DiningNotificationPushTest {
                 UUID.randomUUID(), List.of(member.getId(), withdrawn.getId())));
 
         // then
-        then(userNotificationService).should().create(member, NotificationType.DINING_REMINDER, "우연한 식탁이 곧 열려요",
+        then(userNotificationService).should().create(member, NotificationType.DINING_REMINDER, "내일 우연한 식탁이 열려요",
                 "하루 앞으로 다가왔어요. 테이블 상세에서 시간과 식당을 확인해 주세요.", NotificationLink.DINING_TABLE, tableId);
         then(chatPushService).should().pushToUsers(List.of(member.getId()), new ChatPushService.Payload(
-                "우연한 식탁이 곧 열려요", "하루 앞으로 다가왔어요. 테이블 상세에서 시간과 식당을 확인해 주세요.",
+                "내일 우연한 식탁이 열려요", "하루 앞으로 다가왔어요. 테이블 상세에서 시간과 식당을 확인해 주세요.",
                 "/dining/tables/" + tableId));
 
         // when: 피드백 요청
