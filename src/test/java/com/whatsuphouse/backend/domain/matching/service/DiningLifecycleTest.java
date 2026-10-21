@@ -26,6 +26,9 @@ import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
 import com.whatsuphouse.backend.domain.matching.enums.DiningContentKind;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeResult;
 import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningContentRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
@@ -88,6 +91,8 @@ class DiningLifecycleTest {
     private DiningTableDetailService diningTableDetailService;
     @Autowired
     private ChatService chatService;
+    @Autowired
+    private NoticeLogService noticeLogService;
 
     @Autowired
     private UserRepository userRepository;
@@ -194,6 +199,25 @@ class DiningLifecycleTest {
                     assertThat(message.getSenderId()).isEqualTo(admin.getId());
                     assertThat(chatService.getMessageText(message.getId()).orElseThrow()).contains("취소 정책");
                 });
+    }
+
+    @Test
+    @DisplayName("리마인드: 시스템 관리자가 방에 없어 운영자 메시지가 실패하면 SYSTEM 공지로 대신 보내고, 발송 이력은 REMINDER/CHAT 성공 1건만 남긴다")
+    void sendDueReminders_operatorFails_fallsBackToSystemNotice() {
+        // given: 시스템 관리자가 단체방을 나갔다
+        GatheringSession session = session(LocalDateTime.now().plusHours(24), null);
+        DiningTable table = confirmedTable(session, 2);
+        chatService.leaveRoom(table.getChatRoomId(), admin.getId());
+
+        // when
+        diningReminderService.sendDueReminders();
+
+        // then
+        assertThat(roomNotices(table)).filteredOn(text -> text.startsWith("우연한 식탁이 곧 열려요"))
+                .singleElement().satisfies(text -> assertThat(text).contains("취소 정책"));
+        assertThat(noticeLogService.listSessionNotices(session.getId()))
+                .filteredOn(n -> n.getKind() == NoticeKind.REMINDER && n.getChannel() == NoticeChannel.CHAT)
+                .singleElement().satisfies(n -> assertThat(n.getStatus()).isEqualTo(NoticeResult.SUCCESS));
     }
 
     @Test

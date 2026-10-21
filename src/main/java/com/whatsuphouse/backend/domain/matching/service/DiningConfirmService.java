@@ -137,6 +137,8 @@ public class DiningConfirmService {
         UUID roomId;
         try {
             roomId = inNewTransaction(() -> {
+                // 자동 재시도와 겹쳐 방이 두 개 생기지 않게 행을 먼저 잠근다. 잠근 뒤 읽어야 chat_room_id가 최신이다.
+                diningTableRepository.findByIdForUpdate(tableId);
                 requireConfirmed(tableId);
                 return openChatRoom(tableId, adminId);
             });

@@ -119,7 +119,21 @@ public class DiningReminderService {
                 return null;
             });
             noticeLogService.recordSuccess(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT);
-        } catch (Exception e) {
+        } catch (Exception operatorFailure) {
+            // 시스템 관리자가 방 멤버가 아니면(관리자 수동 재시도로 만든 방 등) 운영자 메시지가 실패한다 → 예전처럼 SYSTEM 공지로 대신 보낸다
+            log.warn("테이블 리마인드 운영자 메시지 실패, 시스템 공지로 대체: tableId={}", tableId, operatorFailure);
+            try {
+                inNewTransaction(() -> {
+                    chatService.postSystemNotice(notice.roomId(), notice.text());
+                    return null;
+                });
+                // 안내는 전달됐으므로 리마인드 채팅 1건 성공으로 남긴다(앞선 운영자 메시지 실패는 따로 남기지 않는다).
+                noticeLogService.recordSuccess(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT);
+                return;
+            } catch (Exception noticeFailure) {
+                operatorFailure.addSuppressed(noticeFailure);
+            }
+            Exception e = operatorFailure;
             log.warn("테이블 리마인드 채팅 안내 실패: tableId={}", tableId, e);
             noticeLogService.recordFailure(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT, e);
             inNewTransaction(() -> exceptionCaseService.open(ExceptionCaseType.NOTIFICATION, notice.sessionId(), tableId, null,
