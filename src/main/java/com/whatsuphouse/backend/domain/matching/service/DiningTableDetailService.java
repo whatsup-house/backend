@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
+import com.whatsuphouse.backend.domain.user.service.UserService;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -38,8 +39,9 @@ public class DiningTableDetailService {
     private final DiningTableRepository diningTableRepository;
     private final DiningTableMemberRepository diningTableMemberRepository;
     private final AttendanceRepository attendanceRepository;
-    private final DiningMatchService diningMatchService;
+    private final DiningTableExplanationService diningTableExplanationService;
     private final SessionVenueService sessionVenueService;
+    private final UserService userService;
 
     /** 본인이 멤버(취소하지 않은 신청)인 확정·완료 테이블만. 없으면 404, 그 외는 403. */
     public DiningTableDetailResponse getTable(UUID tableId, UUID userId) {
@@ -58,7 +60,8 @@ public class DiningTableDetailService {
             throw new CustomException(ErrorCode.DINING_TABLE_FORBIDDEN);
         }
 
-        Map<UUID, MatchingEngine.Applicant> profiles = diningMatchService.findProfiles(
+        // 장점 문구만 내보낸다. 쌍별·그룹 점수와 다른 멤버의 응답 원문은 주지 않는다(MAT-12).
+        DiningTableExplanationService.Insight insight = diningTableExplanationService.explain(table,
                 members.stream().map(DiningTableMember::getApplication).toList());
         GatheringSession session = table.getSession();
         return DiningTableDetailResponse.builder()
@@ -73,21 +76,23 @@ public class DiningTableDetailService {
                 .venue(table.getVenueId() == null ? null : sessionVenueService.findVenue(table.getVenueId())
                         .map(DiningTableDetailResponse.VenueView::from).orElse(null))
                 .chatRoomId(table.getChatRoomId())
-                .members(members.stream().map(member -> toMemberView(member, profiles)).toList())
+                .strengths(insight.strengths())
+                .members(members.stream().map(member -> toMemberView(member, insight.profiles())).toList())
                 .cancelPolicy(CANCEL_POLICY)
                 .myAttendance(attendanceRepository.findByTableMemberId(me.getId())
                         .map(DiningTableDetailResponse.AttendanceView::from).orElse(null))
                 .build();
     }
 
-    private static DiningTableDetailResponse.MemberView toMemberView(DiningTableMember member,
-                                                                     Map<UUID, MatchingEngine.Applicant> profiles) {
+    private DiningTableDetailResponse.MemberView toMemberView(DiningTableMember member,
+                                                              Map<UUID, MatchingEngine.Applicant> profiles) {
         Application application = member.getApplication();
         User user = application.getUser();
         MatchingEngine.Applicant profile = profiles.get(application.getId());
         return DiningTableDetailResponse.MemberView.builder()
                 .userId(user != null ? user.getId() : null)
                 .nickname(user != null ? user.getNickname() : null)
+                .characterUrl(userService.resolveCharacterUrl(user != null ? user.getJob() : null))
                 .mbti(profile != null ? profile.mbti() : null)
                 .interests(profile != null ? List.copyOf(profile.interests()) : List.of())
                 .build();
