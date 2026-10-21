@@ -8,6 +8,7 @@ import com.whatsuphouse.backend.domain.gathering.common.dto.response.GatheringSe
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
+import com.whatsuphouse.backend.domain.gathering.enums.GatheringStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
@@ -234,12 +235,17 @@ public class GatheringService {
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> pickRepresentative(entry.getValue()).orElseThrow()));
     }
 
-    // 대표 회차: 오늘 이후 취소되지 않은 가장 이른 회차, 없으면 가장 최근 회차.
-    private static Optional<GatheringSession> pickRepresentative(List<GatheringSession> sessions) {
+    // 대표 회차: 지금 모집중(신청 마감 전)인 가장 이른 회차 → 오늘 이후 취소되지 않은 가장 이른 회차 → 가장 최근 회차.
+    // 가장 가까운 회차가 마감돼도 다음 모집 회차가 있으면 홈·배너에 모집중으로 보인다.
+    static Optional<GatheringSession> pickRepresentative(List<GatheringSession> sessions) {
         LocalDate today = LocalDate.now();
+        Comparator<GatheringSession> byDate = Comparator.comparing(GatheringSession::getEventDate);
         return sessions.stream()
-                .filter(s -> !s.getEventDate().isBefore(today) && s.getStatus() != GatheringSessionStatus.CANCELLED)
-                .min(Comparator.comparing(GatheringSession::getEventDate))
-                .or(() -> sessions.stream().max(Comparator.comparing(GatheringSession::getEventDate)));
+                .filter(s -> s.getDisplayStatus() == GatheringStatus.OPEN)
+                .min(byDate)
+                .or(() -> sessions.stream()
+                        .filter(s -> !s.getEventDate().isBefore(today) && s.getStatus() != GatheringSessionStatus.CANCELLED)
+                        .min(byDate))
+                .or(() -> sessions.stream().max(byDate));
     }
 }
