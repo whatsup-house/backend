@@ -4,11 +4,13 @@ import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicatio
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.dto.request.ResolutionChooseRequest;
+import com.whatsuphouse.backend.domain.matching.dto.response.MatchResolutionResponse;
 import com.whatsuphouse.backend.domain.payment.entity.RefundAccount;
 import com.whatsuphouse.backend.domain.matching.entity.MatchResolution;
 import com.whatsuphouse.backend.domain.matching.enums.ResolutionChoice;
@@ -184,6 +186,47 @@ class MatchResolutionServiceTest {
                 new ResolutionChooseRequest(ResolutionChoice.TRANSFER, wished.getId())))
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RESOLUTION_SESSION_NOT_OFFERED);
         assertThat(resolution.getStatus()).isEqualTo(ResolutionStatus.OFFERED);
+    }
+
+    @Test
+    @DisplayName("TRANSFER regions: 보낸 지망 순으로 희망 지역을 바꾸고, 응답 offeredRegions는 새 희망 지역에 없는 지역(선언 순) (KAN-436)")
+    void choose_transfer_withRegions_replacesRegions() {
+        // given
+        application.changeCandidateRegions(List.of(DiningRegion.HONGDAE));
+        MatchResolution resolution = offered(List.of(alternative.getId()));
+        givenSessions();
+
+        // when
+        MatchResolutionResponse response = matchResolutionService.chooseResolution(resolution.getId(), userId,
+                new ResolutionChooseRequest(ResolutionChoice.TRANSFER, alternative.getId(), null, List.of("잠실", "홍대/합정", "잠실")));
+
+        // then
+        then(adminApplicationService).should().transferApplication(application, alternative);
+        assertThat(application.getCandidateRegions()).containsExactly(DiningRegion.JAMSIL, DiningRegion.HONGDAE);
+        assertThat(response.getOfferedRegions()).containsExactly("강남/신논현", "을지로/종로");
+    }
+
+    @Test
+    @DisplayName("TRANSFER regions 생략이면 희망 지역 유지, 모르는 지역 라벨은 INVALID_REGION이고 아무것도 바꾸지 않는다 (KAN-436)")
+    void choose_transfer_regionsOmittedOrInvalid() {
+        // given
+        application.changeCandidateRegions(List.of(DiningRegion.GANGNAM, DiningRegion.HONGDAE));
+        MatchResolution resolution = offered(List.of(alternative.getId()));
+        givenSessions();
+
+        // when & then: 모르는 라벨
+        assertThatThrownBy(() -> matchResolutionService.chooseResolution(resolution.getId(), userId,
+                new ResolutionChooseRequest(ResolutionChoice.TRANSFER, alternative.getId(), null, List.of("부산"))))
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REGION);
+        then(adminApplicationService).should(never()).transferApplication(any(), any());
+
+        // when: 생략
+        MatchResolutionResponse response = matchResolutionService.chooseResolution(resolution.getId(), userId,
+                new ResolutionChooseRequest(ResolutionChoice.TRANSFER, alternative.getId()));
+
+        // then
+        assertThat(application.getCandidateRegions()).containsExactly(DiningRegion.GANGNAM, DiningRegion.HONGDAE);
+        assertThat(response.getOfferedRegions()).containsExactly("잠실", "을지로/종로");
     }
 
     @Test

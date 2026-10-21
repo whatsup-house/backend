@@ -97,6 +97,10 @@ public class Application extends BaseEntity {
     @BatchSize(size = 100)
     private List<CandidateRegion> candidateRegions = new ArrayList<>();
 
+    // 매칭 상태가 REALLOCATING으로 바뀐 횟수. 이미 REALLOCATING인데 다시 바꾸면 세지 않는다. (KAN-436)
+    @Column(name = "reallocation_count", nullable = false)
+    private int reallocationCount = 0;
+
     // session이 있으면 종류는 그 회차의 종류. 회차 배정 전 우연한 식탁 신청은 session 없이 gathering만 넘긴다. (KAN-338)
     @Builder
     public Application(String bookingNumber, Gathering gathering, GatheringSession session, User user, String name,
@@ -166,6 +170,9 @@ public class Application extends BaseEntity {
     }
 
     public void changeMatchStatus(MatchStatus matchStatus) {
+        if (matchStatus == MatchStatus.REALLOCATING && this.matchStatus != MatchStatus.REALLOCATING) {
+            reallocationCount++;
+        }
         this.matchStatus = matchStatus;
     }
 

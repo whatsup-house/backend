@@ -46,6 +46,10 @@ public class DiningTableListResponse {
         private ScoreDetail scoreDetail;
         @Schema(description = "자동 확정 예정 시각", example = "2026-10-08T23:00:00")
         private LocalDateTime confirmAt;
+        @Schema(description = "매칭(테이블 생성) 시각", example = "2026-10-08T22:30:00", nullable = true)
+        private LocalDateTime matchedAt;
+        @Schema(description = "확정 시각. 확정 전이면 null", example = "2026-10-08T23:00:00", nullable = true)
+        private LocalDateTime confirmedAt;
         @Schema(description = "잠금 여부(재실행 시 유지)", example = "false")
         private boolean locked;
         @Schema(description = "배정 식당 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
@@ -78,6 +82,8 @@ public class DiningTableListResponse {
         @Schema(description = "수동 배정 여부", example = "false")
         @JsonProperty("isManual")
         private boolean isManual;
+        @Schema(description = "재배치 대기(REALLOCATING)로 바뀐 횟수", example = "1")
+        private int reallocationCount;
     }
 
     @Getter
@@ -89,6 +95,10 @@ public class DiningTableListResponse {
         private String nickname;
         @Schema(description = "미배정 사유", example = "REGION_TOO_SMALL")
         private UnassignedReason reason;
+        @Schema(description = "재배치 대기(REALLOCATING)로 바뀐 횟수. 신청을 찾지 못하면 0", example = "1")
+        private int reallocationCount;
+        @Schema(description = "미배정된 매칭 실행 시각", example = "2026-10-08T22:30:00")
+        private LocalDateTime failedAt;
     }
 
     @Getter

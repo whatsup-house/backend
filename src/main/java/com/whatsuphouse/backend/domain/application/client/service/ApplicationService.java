@@ -302,8 +302,8 @@ public class ApplicationService {
         return ApplicationResponse.from(saved);
     }
 
-    // 보낸 순서가 지망 순위다. 중복은 앞의 것만 남긴다.
-    private static List<DiningRegion> resolveCandidateRegions(List<String> labels) {
+    // 보낸 순서가 지망 순위다. 중복은 앞의 것만 남긴다. 대기 중 지역 바꾸기(DiningApplicationService)도 쓴다.
+    static List<DiningRegion> resolveCandidateRegions(List<String> labels) {
         if (labels == null || labels.isEmpty()) {
             throw new CustomException(ErrorCode.REGION_REQUIRED);
         }

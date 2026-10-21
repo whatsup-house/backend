@@ -303,6 +303,90 @@ class DiningMatchServiceTest {
                 new MatchRun.RegionResult("잠실", 8, 2, true));
     }
 
+    // ── 같은 날짜 다른 지역 마무리 패스 (KAN-436) ──────────────────────────────
+
+    // 홍대만 4명(0~3) + 홍대>잠실 1명(4, 홍대 4명 모두와 같은 테이블 금지) + 잠실만 4명(5~8). 홍대·잠실 모두 1테이블로 채택되고
+    // 4번은 홍대에서 BLOCKED_PAIR로 남는다.
+    private Application givenBlockedSecondChoice() {
+        List<Application> hongdaeOnly = applications(0, 4, DiningRegion.HONGDAE);
+        Application movable = application(4, DiningRegion.HONGDAE, DiningRegion.JAMSIL);
+        applications = Stream.of(hongdaeOnly, List.of(movable), applications(5, 9, DiningRegion.JAMSIL))
+                .flatMap(List::stream).toList();
+        Set<UUID> hongdaeUsers = new HashSet<>();
+        hongdaeOnly.forEach(a -> hongdaeUsers.add(a.getUser().getId()));
+        blocked = Map.of(movable.getUser().getId(), hongdaeUsers);
+        givenRun(1, List.of());
+        given(diningTableRepository.save(any(DiningTable.class))).willAnswer(invocation -> invocation.getArgument(0));
+        return movable;
+    }
+
+    @Test
+    @DisplayName("마무리 패스: 채택 지역에서 못 앉은 사람을 다음 지망 채택 지역에 넣어 다시 돌리고, 기존 착석자가 그대로면 채택한다")
+    void runMatch_finishingPass_seatsInNextAdoptedRegion() {
+        // given: 테이블 4~5명이라 잠실은 4번을 더해도 5명 한 테이블
+        session.changeMatchingRules(null, 30, 4, 5, BigDecimal.ZERO, null);
+        Application movable = givenBlockedSecondChoice();
+        ArgumentCaptor<DiningTableMember> seats = ArgumentCaptor.forClass(DiningTableMember.class);
+
+        // when
+        MatchRunResponse response = diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        assertThat(response.getUnassignedCount()).isZero();
+        then(diningTableMemberRepository).should(times(9)).save(seats.capture());
+        assertThat(seats.getAllValues()).filteredOn(m -> m.getTable().getRegion().equals("잠실"))
+                .extracting(m -> m.getApplication().getId())
+                .containsExactlyInAnyOrder(new UUID(0, 4), new UUID(0, 5), new UUID(0, 6), new UUID(0, 7), new UUID(0, 8));
+        assertThat(movable.getMatchStatus()).isEqualTo(MatchStatus.CONFIRM_PENDING);
+        assertThat(savedRun().getRegionResults()).containsExactly(
+                new MatchRun.RegionResult("홍대/합정", 4, 1, true),
+                new MatchRun.RegionResult("잠실", 5, 1, true));
+    }
+
+    @Test
+    @DisplayName("마무리 패스: 다시 돌린 결과에서 기존 착석자가 빠지면 원래 결과를 유지하고 사유도 원래 지역 사유로 남는다")
+    void runMatch_finishingPass_keepsOriginalWhenSeatedDisplaced() {
+        // given: 테이블 4명 고정이라 잠실에 4번을 더하면 누군가 한 명은 빠진다
+        Application movable = givenBlockedSecondChoice();
+        ArgumentCaptor<DiningTableMember> seats = ArgumentCaptor.forClass(DiningTableMember.class);
+
+        // when
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        then(diningTableMemberRepository).should(times(8)).save(seats.capture());
+        assertThat(seats.getAllValues()).filteredOn(m -> m.getTable().getRegion().equals("잠실"))
+                .extracting(m -> m.getApplication().getId())
+                .containsExactlyInAnyOrder(new UUID(0, 5), new UUID(0, 6), new UUID(0, 7), new UUID(0, 8));
+        assertThat(movable.getMatchStatus()).isEqualTo(MatchStatus.ALTERNATIVE_OFFERED);
+        MatchRun run = savedRun();
+        assertThat(run.getUnassignedReasons())
+                .containsExactly(new MatchRun.Unassigned(new UUID(0, 4), UnassignedReason.BLOCKED_PAIR));
+        assertThat(run.getRegionResults()).containsExactly(
+                new MatchRun.RegionResult("홍대/합정", 5, 1, true),
+                new MatchRun.RegionResult("잠실", 4, 1, true));
+    }
+
+    @Test
+    @DisplayName("재배치 횟수: REALLOCATING으로 바뀔 때마다 +1, 같은 회차 재실행으로 이미 REALLOCATING인 신청은 세지 않는다 (KAN-436)")
+    void runMatch_reallocationCount_countsTransitionsOnly() {
+        // given
+        givenRun(true);
+        given(matchRunRepository.findSessionIdsIn(anyCollection())).willReturn(List.of());
+        Application last = applications.get(4);
+
+        // when: 첫 실행에서 REALLOCATING, 같은 회차 재실행에서 다시 미배정
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        assertThat(last.getMatchStatus()).isEqualTo(MatchStatus.REALLOCATING);
+        assertThat(last.getReallocationCount()).isEqualTo(1);
+        last.changeMatchStatus(MatchStatus.CONFIRM_PENDING);
+        last.changeMatchStatus(MatchStatus.REALLOCATING);
+        assertThat(last.getReallocationCount()).isEqualTo(2);
+    }
+
     @Test
     @DisplayName("확정 재검증: 테이블 지역을 희망하지 않는 멤버가 있으면 불통과, 지역 없는 과거 테이블은 지역을 보지 않는다")
     void satisfiesHardConditions_requiresRegionWish() {

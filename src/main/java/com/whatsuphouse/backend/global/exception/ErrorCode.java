@@ -76,6 +76,8 @@ public enum ErrorCode {
     RESOLUTION_ALREADY_HANDLED("이미 처리된 해결 선택입니다.", HttpStatus.CONFLICT),
     RESOLUTION_SESSION_REQUIRED("회차 이동은 옮길 회차를 골라야 합니다.", HttpStatus.BAD_REQUEST),
     RESOLUTION_SESSION_NOT_OFFERED("제안된 회차 중 아직 모집 중인 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
+    // 대기 중 일정·지역 바꾸기 (KAN-436)
+    WISH_CHANGE_NOT_ALLOWED("매칭 대기 중인 신청만, 아직 매칭 전인 회차로만 일정을 바꿀 수 있습니다.", HttpStatus.CONFLICT),
 
     // Dining (우연한 식탁 운영자 어드민)
     NOT_RANDOM_TABLE_SESSION("우연한 식탁 회차가 아닙니다.", HttpStatus.BAD_REQUEST),

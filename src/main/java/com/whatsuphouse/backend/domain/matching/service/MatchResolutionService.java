@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicatio
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
@@ -97,7 +98,7 @@ public class MatchResolutionService {
         }
         UUID chosenSessionId = null;
         switch (request.getChoice()) {
-            case TRANSFER -> chosenSessionId = transfer(resolution, request.getSessionId());
+            case TRANSFER -> chosenSessionId = transfer(resolution, request.getSessionId(), request.getRegions());
             case KEEP_TICKET -> keepTicket(application);
             case REFUND -> refund(resolution, application, request.getRefundAccount());
         }
@@ -136,7 +137,8 @@ public class MatchResolutionService {
     // ── 선택 처리 ────────────────────────────────────────────────────────────
 
     // 희망 회차를 고른 회차 1개로 바꾸고 매칭 대기로 돌린다. 결제(차감)·보증금은 신청을 따라 새 회차로 간다.
-    private UUID transfer(MatchResolution resolution, UUID sessionId) {
+    // regionLabels가 있으면 희망 지역을 그 순서(지망 순)로 바꾸고, 없으면 그대로 둔다. (KAN-436)
+    private UUID transfer(MatchResolution resolution, UUID sessionId, List<String> regionLabels) {
         if (sessionId == null) {
             throw new CustomException(ErrorCode.RESOLUTION_SESSION_REQUIRED);
         }
@@ -144,7 +146,12 @@ public class MatchResolutionService {
                 .filter(s -> s.getId().equals(sessionId))
                 .findFirst()
                 .orElseThrow(() -> new CustomException(ErrorCode.RESOLUTION_SESSION_NOT_OFFERED));
+        List<DiningRegion> regions = regionLabels == null ? List.of()
+                : regionLabels.stream().map(DiningRegion::fromLabel).distinct().toList();
         adminApplicationService.transferApplication(resolution.getApplication(), session);
+        if (!regions.isEmpty()) {
+            resolution.getApplication().changeCandidateRegions(regions);
+        }
         eventPublisher.publishEvent(new DiningResolutionEvent(resolution.getApplication(), NotificationType.DINING_TRANSFERRED));
         return sessionId;
     }
