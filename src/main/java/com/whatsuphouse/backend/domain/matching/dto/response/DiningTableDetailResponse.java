@@ -2,7 +2,9 @@ package com.whatsuphouse.backend.domain.matching.dto.response;
 
 import com.whatsuphouse.backend.domain.dining.entity.Venue;
 import com.whatsuphouse.backend.domain.matching.entity.Attendance;
+import com.whatsuphouse.backend.domain.matching.entity.DiningContent;
 import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
+import com.whatsuphouse.backend.domain.matching.enums.DiningContentKind;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -30,6 +32,8 @@ public class DiningTableDetailResponse {
     private SessionView session;
     @Schema(description = "배정 식당. 아직 없으면 null")
     private VenueView venue;
+    @Schema(description = "집합 시각(회차 시작 10분 전). 식당이 배정되기 전이면 null", example = "2026-10-10T18:50:00")
+    private LocalDateTime gatherAt;
     @Schema(description = "테이블 채팅방 ID. 아직 없으면 null", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID chatRoomId;
     @Schema(description = "이 테이블의 장점 문구 1~2개", example = "[\"대화 스타일 80% 일치하는 테이블이에요!\"]")
@@ -40,6 +44,8 @@ public class DiningTableDetailResponse {
     private String cancelPolicy;
     @Schema(description = "내 참석. 참석 기록이 없으면 null")
     private AttendanceView myAttendance;
+    @Schema(description = "채팅방에 올린 대화 주제·아이스브레이킹(올린 순). 올리기 전이면 빈 배열")
+    private List<ContentView> contents;
 
     @Getter
     @Builder
@@ -65,14 +71,30 @@ public class DiningTableDetailResponse {
         private String mapUrl;
         @Schema(description = "가격대", example = "1~2만원")
         private String priceRange;
+        @Schema(description = "예약자명", example = "와썹하우스")
+        private String reservationName;
 
-        public static VenueView from(Venue venue) {
+        public static VenueView of(Venue venue, String reservationName) {
             return VenueView.builder()
                     .name(venue.getName())
                     .address(venue.getAddress())
                     .mapUrl(venue.getMapUrl())
                     .priceRange(venue.getPriceRange())
+                    .reservationName(reservationName)
                     .build();
+        }
+    }
+
+    @Getter
+    @Builder
+    public static class ContentView {
+        @Schema(description = "종류(TOPIC|ICEBREAKER)", example = "TOPIC")
+        private DiningContentKind kind;
+        @Schema(description = "본문", example = "요즘 가장 기다려지는 일은 무엇인가요?")
+        private String body;
+
+        public static ContentView from(DiningContent content) {
+            return ContentView.builder().kind(content.getKind()).body(content.getBody()).build();
         }
     }
 

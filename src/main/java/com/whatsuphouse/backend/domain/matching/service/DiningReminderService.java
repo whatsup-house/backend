@@ -32,6 +32,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -45,7 +46,7 @@ import java.util.stream.Collectors;
 
 /**
  * 우연한 식탁 확정 테이블의 회차 전후 안내. (설계 4.9, KAN-349)
- * - 리마인드: 회차 시작 23~25시간 전, 멤버에게 DINING_REMINDER + 채팅방 안내(시간·지역·식당·취소 정책). 테이블마다 1회(reminder_sent_at).
+ * - 리마인드: 회차 시작 23~25시간 전, 멤버에게 DINING_REMINDER + 채팅방 안내(시간·지역·식당·취소 정책, 시스템 관리자 이름 메시지). 테이블마다 1회(reminder_sent_at).
  * - 대화 콘텐츠: 회차 시작 ±10분, 채팅방에 대화 주제 3개 + 아이스브레이킹 1개. 테이블마다 1회(contents_posted_at), 채팅방이 없으면 건너뛴다.
  * 테이블마다 새 트랜잭션이라 한 테이블의 실패가 다른 테이블을 막지 않는다.
  */
@@ -112,12 +113,27 @@ public class DiningReminderService {
             return;
         }
         try {
+            // SYSTEM 공지는 채팅 푸시가 가지 않아 시스템 관리자 이름 메시지로 보낸다. (KAN-438)
             inNewTransaction(() -> {
-                chatService.postSystemNotice(notice.roomId(), notice.text());
+                diningConfirmService.sendAsOperator(notice.roomId(), diningConfirmService.systemAdminId(), notice.text());
                 return null;
             });
             noticeLogService.recordSuccess(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT);
-        } catch (Exception e) {
+        } catch (Exception operatorFailure) {
+            // 시스템 관리자가 방 멤버가 아니면(관리자 수동 재시도로 만든 방 등) 운영자 메시지가 실패한다 → 예전처럼 SYSTEM 공지로 대신 보낸다
+            log.warn("테이블 리마인드 운영자 메시지 실패, 시스템 공지로 대체: tableId={}", tableId, operatorFailure);
+            try {
+                inNewTransaction(() -> {
+                    chatService.postSystemNotice(notice.roomId(), notice.text());
+                    return null;
+                });
+                // 안내는 전달됐으므로 리마인드 채팅 1건 성공으로 남긴다(앞선 운영자 메시지 실패는 따로 남기지 않는다).
+                noticeLogService.recordSuccess(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT);
+                return;
+            } catch (Exception noticeFailure) {
+                operatorFailure.addSuppressed(noticeFailure);
+            }
+            Exception e = operatorFailure;
             log.warn("테이블 리마인드 채팅 안내 실패: tableId={}", tableId, e);
             noticeLogService.recordFailure(tableId, NoticeKind.REMINDER, NoticeChannel.CHAT, e);
             inNewTransaction(() -> exceptionCaseService.open(ExceptionCaseType.NOTIFICATION, notice.sessionId(), tableId, null,
@@ -155,12 +171,21 @@ public class DiningReminderService {
         }
         DiningTable table = findTable(tableId);
         List<Application> applications = findActiveMembers(tableId).stream().map(DiningTableMember::getApplication).toList();
-        List<Set<String>> interests = diningMatchService.findProfiles(applications).values().stream()
-                .map(MatchingEngine.Applicant::interests)
+        List<MatchingEngine.Applicant> profiles = List.copyOf(diningMatchService.findProfiles(applications).values());
+        // 멤버마다 MY_STYLE·WANTED_STYLE 답을 합쳐 한 번만 센다.
+        List<Set<String>> styles = profiles.stream()
+                .map(profile -> {
+                    Set<String> style = new HashSet<>(profile.myStyle());
+                    style.addAll(profile.wantedStyle());
+                    return style;
+                })
                 .toList();
         // 테이블마다 다른 조합이 나오도록 테이블 ID로 섞는다(같은 테이블은 재시도해도 같은 조합).
-        List<DiningContent> picked = pickContents(diningContentRepository.findAll(), interests,
+        List<DiningContent> picked = pickContents(diningContentRepository.findAll(),
+                profiles.stream().map(MatchingEngine.Applicant::interests).toList(), styles,
                 new Random(tableId.getMostSignificantBits()));
+        // 참가자 테이블 상세가 채팅방과 같은 콘텐츠를 보여 주도록 올린 콘텐츠를 남긴다. (KAN-438)
+        table.recordPostedContents(picked.stream().map(DiningContent::getId).toList());
         if (!picked.isEmpty()) {
             chatService.postSystemNotice(table.getChatRoomId(), contentsNotice(picked));
             noticeLogService.recordSuccess(tableId, NoticeKind.CONTENTS, NoticeChannel.CHAT);
@@ -168,20 +193,16 @@ public class DiningReminderService {
     }
 
     /**
-     * 대화 주제 3개 + 아이스브레이킹 1개. 주제는 멤버 두 명 이상이 고른 관심사(많이 겹친 순)마다 그 태그 주제 1개씩 먼저 넣고,
-     * 모자라면 범용(태그 없음) 주제로 채운다. 같은 조건 안에서는 random 순서로 고른다.
+     * 대화 주제 3개 + 아이스브레이킹 1개. 주제는 태그마다 1개씩, 이 순서로 채운다. (KAN-438)
+     * 1) 멤버 두 명 이상이 고른 관심사(많이 겹친 순) 2) 멤버 성향(MY_STYLE·WANTED_STYLE 답, 많이 고른 순) 3) 범용(태그 없음).
+     * 같은 조건 안에서는 random 순서로 고른다.
      */
-    static List<DiningContent> pickContents(List<DiningContent> contents, List<Set<String>> memberInterests, Random random) {
-        Map<String, Long> tagCounts = memberInterests.stream()
-                .flatMap(Set::stream)
-                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
-        List<String> commonTags = tagCounts.entrySet().stream()
-                .filter(entry -> entry.getValue() >= 2)
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
-                .map(Map.Entry::getKey)
-                .toList();
+    static List<DiningContent> pickContents(List<DiningContent> contents, List<Set<String>> memberInterests,
+                                            List<Set<String>> memberStyles, Random random) {
         List<DiningContent> picked = new ArrayList<>();
-        for (String tag : commonTags) {
+        List<String> tags = new ArrayList<>(rankedTags(memberInterests, 2));
+        tags.addAll(rankedTags(memberStyles, 1));
+        for (String tag : tags) {
             if (picked.size() == TOPIC_COUNT) {
                 break;
             }
@@ -194,6 +215,18 @@ public class DiningReminderService {
         shuffled(contents, c -> c.getKind() == DiningContentKind.ICEBREAKER, random).stream()
                 .findFirst().ifPresent(picked::add);
         return picked;
+    }
+
+    // minCount명 이상이 고른 값, 많이 고른 순(같으면 가나다순)
+    private static List<String> rankedTags(List<Set<String>> memberTags, int minCount) {
+        Map<String, Long> tagCounts = memberTags.stream()
+                .flatMap(Set::stream)
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        return tagCounts.entrySet().stream()
+                .filter(entry -> entry.getValue() >= minCount)
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .map(Map.Entry::getKey)
+                .toList();
     }
 
     private static List<DiningContent> shuffled(List<DiningContent> contents, Predicate<DiningContent> filter, Random random) {

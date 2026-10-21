@@ -18,6 +18,8 @@ class DiningReminderServiceTest {
             topic("여행", "여행 1"), topic("여행", "여행 2"),
             topic("음악", "음악 1"),
             topic("영화·드라마", "영화 1"),
+            topic("깊은 대화를 좋아함", "깊은 대화 1"),
+            topic("경청을 잘 함", "경청 1"),
             topic(null, "범용 1"), topic(null, "범용 2"), topic(null, "범용 3"),
             new DiningContent(DiningContentKind.ICEBREAKER, null, "아이스 1"),
             new DiningContent(DiningContentKind.ICEBREAKER, null, "아이스 2"));
@@ -30,7 +32,7 @@ class DiningReminderServiceTest {
                 Set.of("여행", "음악"), Set.of("여행", "음악"), Set.of("여행", "영화·드라마"), Set.of());
 
         // when
-        List<DiningContent> picked = DiningReminderService.pickContents(contents, interests, new Random(1));
+        List<DiningContent> picked = DiningReminderService.pickContents(contents, interests, List.of(), new Random(1));
 
         // then
         assertThat(picked).hasSize(4);
@@ -46,7 +48,7 @@ class DiningReminderServiceTest {
     void pickContents_noCommonInterest_usesGeneric() {
         // when
         List<DiningContent> picked = DiningReminderService.pickContents(contents,
-                List.of(Set.of("여행"), Set.of("음악")), new Random(1));
+                List.of(Set.of("여행"), Set.of("음악")), List.of(), new Random(1));
 
         // then
         assertThat(picked.subList(0, 3)).allSatisfy(content -> {
@@ -54,6 +56,31 @@ class DiningReminderServiceTest {
             assertThat(content.getInterestTag()).isNull();
         });
         assertThat(picked.get(3).getKind()).isEqualTo(DiningContentKind.ICEBREAKER);
+    }
+
+    @Test
+    @DisplayName("공통 관심사 주제가 모자라면 멤버 성향(많이 고른 순) 주제로 채우고, 그래도 모자라면 범용 주제로 채운다")
+    void pickContents_commonInterestThenStyleThenGeneric() {
+        // given: 공통 관심사는 여행(2명)뿐, 성향은 경청 2명·깊은 대화 1명, 성향 주제가 없는 성향(활기)도 있다
+        List<Set<String>> interests = List.of(Set.of("여행"), Set.of("여행", "음악"), Set.of());
+        List<Set<String>> styles = List.of(
+                Set.of("경청을 잘 함", "깊은 대화를 좋아함"), Set.of("경청을 잘 함"), Set.of("활기차고 에너지 있는 편"));
+
+        // when
+        List<DiningContent> picked = DiningReminderService.pickContents(contents, interests, styles, new Random(1));
+
+        // then
+        assertThat(picked).extracting(DiningContent::getInterestTag)
+                .containsExactly("여행", "경청을 잘 함", "깊은 대화를 좋아함", null);
+        assertThat(picked.get(3).getKind()).isEqualTo(DiningContentKind.ICEBREAKER);
+
+        // when: 성향 주제가 하나만 맞으면 나머지는 범용
+        List<DiningContent> withGeneric = DiningReminderService.pickContents(contents, interests,
+                List.of(Set.of("깊은 대화를 좋아함")), new Random(1));
+
+        // then
+        assertThat(withGeneric.subList(0, 3)).extracting(DiningContent::getInterestTag)
+                .containsExactly("여행", "깊은 대화를 좋아함", null);
     }
 
     private static DiningContent topic(String tag, String body) {

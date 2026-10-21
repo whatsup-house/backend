@@ -7,7 +7,9 @@ import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.chat.entity.ChatMessage;
+import com.whatsuphouse.backend.domain.chat.enums.ChatMessageType;
 import com.whatsuphouse.backend.domain.chat.repository.ChatMessageRepository;
+import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
@@ -24,6 +26,9 @@ import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
 import com.whatsuphouse.backend.domain.matching.enums.DiningContentKind;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeResult;
 import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningContentRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
@@ -82,6 +87,12 @@ class DiningLifecycleTest {
     private DiningAttendanceService diningAttendanceService;
     @Autowired
     private DiningReminderService diningReminderService;
+    @Autowired
+    private DiningTableDetailService diningTableDetailService;
+    @Autowired
+    private ChatService chatService;
+    @Autowired
+    private NoticeLogService noticeLogService;
 
     @Autowired
     private UserRepository userRepository;
@@ -109,13 +120,14 @@ class DiningLifecycleTest {
     private JdbcTemplate jdbcTemplate;
 
     private Gathering gathering;
+    private User admin;
 
     @BeforeEach
     void setUp() {
         willReturn(List.of()).given(adminApplicationService).findAnswers(any());
-        User admin = user();
+        admin = user();
         ReflectionTestUtils.setField(admin, "isAdmin", true);
-        userRepository.save(admin);
+        admin = userRepository.save(admin);
         gathering = gatheringRepository.save(
                 Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build());
     }
@@ -159,7 +171,7 @@ class DiningLifecycleTest {
     }
 
     @Test
-    @DisplayName("리마인드: 시작 24시간 전 확정 테이블 멤버에게 DINING_REMINDER와 채팅 안내를 테이블마다 한 번만 보낸다")
+    @DisplayName("리마인드: 시작 24시간 전 확정 테이블 멤버에게 DINING_REMINDER와 시스템 관리자 이름의 채팅 안내를 테이블마다 한 번만 보낸다")
     void sendDueReminders_oncePerTable() {
         // given
         DiningTable table = confirmedTable(session(LocalDateTime.now().plusHours(24), null), 2);
@@ -177,12 +189,39 @@ class DiningLifecycleTest {
                         assertThat(n.getLinkId()).isEqualTo(table.getId());
                     });
         }
-        assertThat(roomNotices(table)).filteredOn(text -> text.startsWith("우연한 식탁이 곧 열려요"))
-                .singleElement().satisfies(text -> assertThat(text).contains("취소 정책"));
+        // SYSTEM 공지가 아니라 운영자(TEXT) 메시지라 채팅 푸시도 간다(KAN-438)
+        assertThat(roomNotices(table)).noneMatch(text -> text.startsWith("우연한 식탁이 곧 열려요"));
+        assertThat(chatMessageRepository.findAll().stream()
+                .filter(message -> table.getChatRoomId().equals(message.getRoomId()) && message.getType() == ChatMessageType.TEXT)
+                .filter(message -> chatService.getMessageText(message.getId()).orElseThrow().startsWith("우연한 식탁이 곧 열려요"))
+                .toList())
+                .singleElement().satisfies(message -> {
+                    assertThat(message.getSenderId()).isEqualTo(admin.getId());
+                    assertThat(chatService.getMessageText(message.getId()).orElseThrow()).contains("취소 정책");
+                });
     }
 
     @Test
-    @DisplayName("대화 콘텐츠: 시작 시각에 채팅방에 주제 3개 + 아이스브레이킹 1개를 한 번만 올린다")
+    @DisplayName("리마인드: 시스템 관리자가 방에 없어 운영자 메시지가 실패하면 SYSTEM 공지로 대신 보내고, 발송 이력은 REMINDER/CHAT 성공 1건만 남긴다")
+    void sendDueReminders_operatorFails_fallsBackToSystemNotice() {
+        // given: 시스템 관리자가 단체방을 나갔다
+        GatheringSession session = session(LocalDateTime.now().plusHours(24), null);
+        DiningTable table = confirmedTable(session, 2);
+        chatService.leaveRoom(table.getChatRoomId(), admin.getId());
+
+        // when
+        diningReminderService.sendDueReminders();
+
+        // then
+        assertThat(roomNotices(table)).filteredOn(text -> text.startsWith("우연한 식탁이 곧 열려요"))
+                .singleElement().satisfies(text -> assertThat(text).contains("취소 정책"));
+        assertThat(noticeLogService.listSessionNotices(session.getId()))
+                .filteredOn(n -> n.getKind() == NoticeKind.REMINDER && n.getChannel() == NoticeChannel.CHAT)
+                .singleElement().satisfies(n -> assertThat(n.getStatus()).isEqualTo(NoticeResult.SUCCESS));
+    }
+
+    @Test
+    @DisplayName("대화 콘텐츠: 시작 시각에 채팅방에 주제 3개 + 아이스브레이킹 1개를 한 번만 올리고, 올린 뒤에만 테이블 상세에 보인다")
     void postDueContents_oncePerTable() {
         // given
         diningContentRepository.saveAll(List.of(
@@ -191,6 +230,8 @@ class DiningLifecycleTest {
                 new DiningContent(DiningContentKind.TOPIC, null, "주제 C"),
                 new DiningContent(DiningContentKind.ICEBREAKER, null, "아이스 A")));
         DiningTable table = confirmedTable(session(LocalDateTime.now(), null), 2);
+        UUID memberId = memberUserId(table, 0);
+        assertThat(diningTableDetailService.getTable(table.getId(), memberId).getContents()).isEmpty();
 
         // when
         diningReminderService.postDueContents();
@@ -199,6 +240,13 @@ class DiningLifecycleTest {
         // then
         assertThat(roomNotices(table)).filteredOn(text -> text.startsWith("오늘의 대화 주제")).singleElement()
                 .satisfies(text -> assertThat(text).contains("주제 A", "주제 B", "주제 C", "아이스브레이킹: 아이스 A"));
+        assertThat(diningTableDetailService.getTable(table.getId(), memberId).getContents())
+                .extracting(DiningTableDetailResponse.ContentView::getKind, DiningTableDetailResponse.ContentView::getBody)
+                .containsExactlyInAnyOrder(
+                        tuple(DiningContentKind.TOPIC, "주제 A"), tuple(DiningContentKind.TOPIC, "주제 B"),
+                        tuple(DiningContentKind.TOPIC, "주제 C"), tuple(DiningContentKind.ICEBREAKER, "아이스 A"));
+        assertThat(diningTableDetailService.getTable(table.getId(), memberId).getContents().get(3).getKind())
+                .isEqualTo(DiningContentKind.ICEBREAKER);
     }
 
     @Test

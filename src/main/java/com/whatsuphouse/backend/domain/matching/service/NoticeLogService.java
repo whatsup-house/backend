@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -46,18 +47,34 @@ public class NoticeLogService {
     private final PlatformTransactionManager transactionManager;
 
     public void recordSuccess(UUID tableId, NoticeKind kind, NoticeChannel channel) {
-        record(tableId, kind, channel, null);
+        record(tableId, kind, channel, null, false);
     }
 
     public void recordFailure(UUID tableId, NoticeKind kind, NoticeChannel channel, Exception error) {
+        record(tableId, kind, channel, errorMessage(error), false);
+    }
+
+    /**
+     * 커밋 뒤 리스너(@TransactionalEventListener AFTER_COMMIT)에서 남길 때. error가 null이면 성공.
+     * 끝난 트랜잭션에 참여하면 INSERT가 커밋되지 않아 항상 새 트랜잭션으로 남긴다. (KAN-438 웹 푸시)
+     */
+    public void recordAfterCommit(UUID tableId, NoticeKind kind, NoticeChannel channel, Exception error) {
+        record(tableId, kind, channel, error == null ? null : errorMessage(error), true);
+    }
+
+    private static String errorMessage(Exception error) {
         String message = error.getMessage();
-        record(tableId, kind, channel, message != null && !message.isBlank() ? message : error.getClass().getSimpleName());
+        return message != null && !message.isBlank() ? message : error.getClass().getSimpleName();
     }
 
     // 테이블이 없으면(삭제) 남기지 않는다.
-    private void record(UUID tableId, NoticeKind kind, NoticeChannel channel, String error) {
+    private void record(UUID tableId, NoticeKind kind, NoticeChannel channel, String error, boolean newTransaction) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        if (newTransaction) {
+            template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        }
         try {
-            new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+            template.executeWithoutResult(status ->
                     diningTableRepository.findSessionIdById(tableId).ifPresent(sessionId -> {
                         int attempt = (int) noticeLogRepository.countByTableIdAndKindAndChannel(tableId, kind, channel) + 1;
                         noticeLogRepository.save(NoticeLog.of(sessionId, tableId, kind, channel, attempt, error));
