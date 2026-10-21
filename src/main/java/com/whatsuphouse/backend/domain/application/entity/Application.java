@@ -21,7 +21,9 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -87,13 +89,13 @@ public class Application extends BaseEntity {
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
 
-    // 우연한 식탁 희망 지역(복수). 다른 종류는 비어 있다. 회차 이동(TRANSFER)에도 그대로 남는다. (KAN-430)
+    // 우연한 식탁 희망 지역(복수, 지망 순). 다른 종류는 비어 있다. 회차 이동(TRANSFER)에도 그대로 남는다. (KAN-430)
+    @Getter(AccessLevel.NONE)
     @ElementCollection
     @CollectionTable(name = "application_candidate_regions", joinColumns = @JoinColumn(name = "application_id"))
-    @Column(name = "region", nullable = false, length = 50)
-    @Convert(converter = DiningRegion.LabelConverter.class)
+    @OrderBy("priority ASC")
     @BatchSize(size = 100)
-    private Set<DiningRegion> candidateRegions = new HashSet<>();
+    private List<CandidateRegion> candidateRegions = new ArrayList<>();
 
     // session이 있으면 종류는 그 회차의 종류. 회차 배정 전 우연한 식탁 신청은 session 없이 gathering만 넘긴다. (KAN-338)
     @Builder
@@ -114,7 +116,21 @@ public class Application extends BaseEntity {
         this.formSnapshot = formSnapshot;
         this.status = ApplicationStatus.PENDING;
         if (candidateRegions != null) {
-            this.candidateRegions.addAll(candidateRegions);
+            changeCandidateRegions(candidateRegions);
+        }
+    }
+
+    /** 희망 지역, 1지망부터. */
+    public List<DiningRegion> getCandidateRegions() {
+        return candidateRegions.stream().map(CandidateRegion::getRegion).toList();
+    }
+
+    /** 넘긴 순서가 지망 순위다(중복은 앞의 것만). */
+    public void changeCandidateRegions(Collection<DiningRegion> regions) {
+        candidateRegions.clear();
+        int priority = 1;
+        for (DiningRegion region : new LinkedHashSet<>(regions)) {
+            candidateRegions.add(new CandidateRegion(region, priority++));
         }
     }
 

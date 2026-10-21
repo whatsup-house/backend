@@ -657,7 +657,7 @@ class ApplicationServiceTest {
     // ── 희망 지역 (KAN-430) ──────────────────────────────────────────────────
 
     @Test
-    @DisplayName("우연한 식탁 희망 지역은 중복을 하나로 합쳐 신청에 저장한다")
+    @DisplayName("우연한 식탁 희망 지역은 보낸 순서(지망)대로, 중복은 앞의 것만 남겨 저장한다")
     void applyWithCandidates_randomTable_savesDistinctRegions() {
         // given
         Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
@@ -671,7 +671,7 @@ class ApplicationServiceTest {
 
         // then
         assertThat(saved.getValue().getCandidateRegions())
-                .containsExactlyInAnyOrder(DiningRegion.EULJIRO, DiningRegion.HONGDAE);
+                .containsExactly(DiningRegion.EULJIRO, DiningRegion.HONGDAE);
     }
 
     @Test

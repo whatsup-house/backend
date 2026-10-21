@@ -42,9 +42,9 @@ public enum DiningRegion {
         return Arrays.stream(values()).map(DiningRegion::getLabel).toList();
     }
 
-    /** 지역들을 선언 순서로 정렬한 라벨. 응답 표시용. */
+    /** 넘긴 순서(지망 순) 그대로 라벨로 바꾼다. 응답 표시용. */
     public static List<String> labelsOf(Collection<DiningRegion> regions) {
-        return regions.stream().sorted().map(DiningRegion::getLabel).toList();
+        return regions.stream().map(DiningRegion::getLabel).toList();
     }
 
     /** DB 컬럼에는 라벨을 저장한다. */
