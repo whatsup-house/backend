@@ -111,7 +111,7 @@ class DiningTableExplanationServiceTest {
         assertThat(response.getPairs()).singleElement().satisfies(pair -> {
             assertThat(pair.getA()).isEqualTo(first.getId());
             assertThat(pair.getB()).isEqualTo(second.getId());
-            assertThat(pair.getComponents()).containsOnlyKeys("gender", "mbti", "interests");
+            assertThat(pair.getComponents()).containsOnlyKeys("ageBand", "gender", "mbti", "interests");
         });
         assertThat(response.getStrengths()).isNotEmpty();
         assertThat(response.getMembers()).extracting(DiningTableExplanationResponse.MemberView::getJob,

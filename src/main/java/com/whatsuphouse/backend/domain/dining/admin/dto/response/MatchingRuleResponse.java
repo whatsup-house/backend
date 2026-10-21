@@ -48,11 +48,13 @@ public class MatchingRuleResponse {
     @Getter
     @Builder
     public static class Weights {
-        @Schema(description = "성별 다양성", example = "1.0")
+        @Schema(description = "연령대(출생연도) 근접", example = "5.0")
+        private double ageBand;
+        @Schema(description = "성별 다양성", example = "4.0")
         private double gender;
-        @Schema(description = "MBTI 궁합", example = "1.0")
+        @Schema(description = "MBTI 궁합", example = "3.0")
         private double mbti;
-        @Schema(description = "관심사 겹침", example = "1.0")
+        @Schema(description = "관심사 겹침", example = "2.0")
         private double interests;
         @Schema(description = "원하는 스타일 일치", example = "1.0")
         private double wantedStyle;
@@ -61,6 +63,7 @@ public class MatchingRuleResponse {
 
         static Weights from(MatchingWeights weights) {
             return Weights.builder()
+                    .ageBand(weights.getAgeBand())
                     .gender(weights.getGender())
                     .mbti(weights.getMbti())
                     .interests(weights.getInterests())

@@ -155,9 +155,9 @@ class MatchingEngineTest {
     @Test
     @DisplayName("점수가 낮은 조합도 하드 조건만 맞으면 테이블이 되고, LOW_SCORE 미배정은 생기지 않는다 (KAN-420)")
     void match_lowScoreCombination_stillFormsTable() {
-        // 전원 남성(−0.30) + 관심사 겹침 없음 → 0점
-        List<MatchingEngine.Applicant> people = List.of(person(0, 1995, "MALE", "영화"), person(1, 1995, "MALE", "음악"),
-                person(2, 1995, "MALE", "독서"), person(3, 1995, "MALE", "여행"), person(4, 1995, "MALE", "운동"));
+        // 전원 남성(성비 균형 0, −0.30) + 관심사 겹침 없음 + 나이대 2년 간격(1991~1999) → 0점
+        List<MatchingEngine.Applicant> people = List.of(person(0, 1991, "MALE", "영화"), person(1, 1993, "MALE", "음악"),
+                person(2, 1995, "MALE", "독서"), person(3, 1997, "MALE", "여행"), person(4, 1999, "MALE", "운동"));
 
         MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
 
@@ -191,11 +191,12 @@ class MatchingEngineTest {
         MatchingEngine.Score met = engine.score(people, rules(),
                 new MatchingEngine.Relations(Map.of(), block(people.get(0), List.of(people.get(1)))));
 
-        // 페어: 남녀 4쌍 1.0, 동성 2쌍 0.5 → 0.7 × 5/6 + 0.3 × 0.5
-        assertThat(fresh.value()).isEqualByComparingTo("0.7333");
-        assertThat(met.value()).isEqualByComparingTo("0.5833");
+        // 페어(가중치 나이대 5·성별 4·관심사 2): 남녀 4쌍 11/11 = 1.0, 동성 2쌍 7/11 → pairAvg 58/66, pairMin 7/11
+        // 성비 균형 1(남2·여2), 비중 4/16 → 0.75 × (0.7 × 58/66 + 0.3 × 7/11) + 0.25 × 1 = 0.8545
+        assertThat(fresh.value()).isEqualByComparingTo("0.8545");
+        assertThat(met.value()).isEqualByComparingTo("0.7045");
         assertThat(met.detail().penalties()).containsEntry("metBefore", 0.15);
-        assertThat(fresh.detail().pairMin()).isEqualTo(0.5);
+        assertThat(fresh.detail().pairMin()).isEqualTo(0.6364);
     }
 
     @Test
@@ -212,7 +213,7 @@ class MatchingEngineTest {
 
         assertThat(penalized.detail().penalties()).containsEntry("metBefore", 0.30);
         assertThat(again.detail().penalties()).containsEntry("metBefore", 0.15);
-        assertThat(again.value()).isEqualByComparingTo("0.5833");
+        assertThat(again.value()).isEqualByComparingTo("0.7045");
     }
 
     @Test
@@ -233,7 +234,7 @@ class MatchingEngineTest {
     // ── 분할: 4~6명 조합 중 최저·전체 점수가 가장 높은 구성 (KAN-420) ─────────────────
 
     // 관심사가 같은 무리 count개(무리당 size명)를 번갈아 입력한다. 성별은 모름(성별 페널티 없음).
-    // 같은 무리끼리 페어 1점, 다른 무리끼리 0점이라 무리 그대로 앉으면 그룹 점수 1.
+    // 같은 무리끼리 페어 1점, 다른 무리끼리는 관심사 0이라 낮아(나이대만 같음) 무리 그대로 앉으면 그룹 점수 1.
     private static List<MatchingEngine.Applicant> groups(int size, int count) {
         return IntStream.range(0, size * count)
                 .mapToObj(i -> person(i, 1995, null, "관심사" + (i % count)))
@@ -295,9 +296,10 @@ class MatchingEngineTest {
     @Test
     @DisplayName("7명: 6명 테이블 하나 + 1명 NOT_ENOUGH_PEOPLE. 남길 사람은 점수를 가장 덜 깎는 사람이다")
     void match_sevenPeople_leavesOutWorstFit() {
-        // 0~5는 관심사가 같고, 입력 중간의 3번만 관심사가 다르다 → 3번을 남겨야 최저 점수가 가장 높다.
+        // 0~6 중 입력 중간의 3번만 관심사가 다르다 → 3번을 남겨야 최저 점수가 가장 높다.
+        // 성별은 모름 — 남녀 번갈아 두면 성비 균형(3·3)을 맞추려고 다른 사람을 남기는 게 나을 수 있어 관심사만 비교한다.
         List<MatchingEngine.Applicant> people = new ArrayList<>(IntStream.range(0, 7)
-                .mapToObj(i -> person(i, 1995, i % 2 == 0 ? "MALE" : "FEMALE", i == 3 ? "등산" : "영화")).toList());
+                .mapToObj(i -> person(i, 1995, null, i == 3 ? "등산" : "영화")).toList());
 
         MatchingEngine.Result result = engine.match(people, rules(), MatchingEngine.Relations.none());
 
@@ -411,11 +413,61 @@ class MatchingEngineTest {
                 .containsExactly(tuple(a.applicationId(), b.applicationId()),
                         tuple(a.applicationId(), c.applicationId()),
                         tuple(b.applicationId(), c.applicationId()));
-        assertThat(explanation.pairs().get(0).components()).isEqualTo(Map.of("gender", 1.0, "interests", 1.0));
+        assertThat(explanation.pairs().get(0).components()).isEqualTo(Map.of("ageBand", 1.0, "gender", 1.0, "interests", 1.0));
         assertThat(explanation.pairs().get(0).score()).isEqualTo(1.0);
-        assertThat(explanation.pairs().get(1).components()).containsOnlyKeys("gender", "mbti", "interests")
+        assertThat(explanation.pairs().get(1).components()).containsOnlyKeys("ageBand", "gender", "mbti", "interests")
                 .containsEntry("mbti", 1.0).containsEntry("interests", 0.0);
-        assertThat(explanation.criteriaAvg()).containsOnlyKeys("gender", "mbti", "interests")
-                .containsEntry("gender", 0.6667).containsEntry("mbti", 1.0).containsEntry("interests", 0.3333);
+        assertThat(explanation.criteriaAvg()).containsOnlyKeys("ageBand", "gender", "mbti", "interests")
+                .containsEntry("ageBand", 1.0).containsEntry("gender", 0.6667).containsEntry("mbti", 1.0)
+                .containsEntry("interests", 0.3333);
+    }
+
+    @Test
+    @DisplayName("explain: 나이대 = 1 − |출생연도 차| / maxAgeGap, 출생연도를 모르는 쌍은 항목에서 빠진다")
+    void explain_ageBand() {
+        // given: maxAgeGap 8, 1995·1999(4년 차), C는 출생연도 모름
+        MatchingEngine.Applicant a = person(0, 1995, null);
+        MatchingEngine.Applicant b = person(1, 1999, null);
+        MatchingEngine.Applicant c = new MatchingEngine.Applicant(new UUID(0, 2), new UUID(1, 2), null, null, null,
+                Set.of(), Set.of(), Set.of(), null, Map.of());
+
+        // when
+        MatchingEngine.Explanation explanation = engine.explain(List.of(a, b, c), rules(), MatchingEngine.Relations.none());
+
+        // then
+        assertThat(explanation.pairs().get(0).components()).isEqualTo(Map.of("ageBand", 0.5));
+        assertThat(explanation.pairs().get(1).components()).isEmpty();
+        assertThat(explanation.pairs().get(2).components()).isEmpty();
+        assertThat(explanation.criteriaAvg()).isEqualTo(Map.of("ageBand", 0.5));
+    }
+
+    // ── 우선순위 가중치 (KAN-435) ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("나이대가 같은 조합이 나이 차가 커도 MBTI만 잘 맞는 조합보다 높아 매칭이 나이대로 묶는다 (가중치 나이대 5 > MBTI 3)")
+    void match_prefersCloseAgeOverMbtiOnly() {
+        // given: 2명 테이블 두 개. 1995년생끼리·2003년생끼리는 MBTI 궁합 0, 엇갈려 앉으면 MBTI 궁합 1(나이 차 8 → 나이대 0).
+        // 어떤 조합이든 남녀 한 쌍씩이라 성별 항목은 같다.
+        MatchingEngine.Applicant x1 = mbtiPerson(0, 1995, "MALE", "INFP");
+        MatchingEngine.Applicant x2 = mbtiPerson(1, 1995, "FEMALE", "ESTJ");
+        MatchingEngine.Applicant y1 = mbtiPerson(2, 2003, "FEMALE", "ENFJ");
+        MatchingEngine.Applicant y2 = mbtiPerson(3, 2003, "MALE", "ISTP");
+        MatchingEngine.Rules pairs = new MatchingEngine.Rules(2, 2, 8, MatchingWeights.defaults(), List.of());
+
+        // when
+        MatchingEngine.Result result = engine.match(List.of(x1, x2, y1, y2), pairs, MatchingEngine.Relations.none());
+
+        // then: 나이대 조합 (5 + 4) / 12 = 0.75 > MBTI 조합 (4 + 3) / 12 ≈ 0.58
+        MatchingEngine.Score closeAge = engine.score(List.of(x1, x2), pairs, MatchingEngine.Relations.none());
+        MatchingEngine.Score mbtiOnly = engine.score(List.of(x1, y1), pairs, MatchingEngine.Relations.none());
+        assertThat(closeAge.value()).isGreaterThan(mbtiOnly.value());
+        assertThat(result.tables()).extracting(MatchingEngineTest::ids).containsExactlyInAnyOrder(
+                Set.of(x1.applicationId(), x2.applicationId()), Set.of(y1.applicationId(), y2.applicationId()));
+        assertThat(result.unassigned()).isEmpty();
+    }
+
+    private static MatchingEngine.Applicant mbtiPerson(int no, int birthYear, String gender, String mbti) {
+        return new MatchingEngine.Applicant(new UUID(0, no), new UUID(1, no), birthYear, gender, mbti,
+                Set.of(), Set.of(), Set.of(), null, Map.of());
     }
 }
