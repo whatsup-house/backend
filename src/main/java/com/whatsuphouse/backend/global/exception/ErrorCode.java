@@ -169,6 +169,7 @@ public enum ErrorCode {
     DEPOSIT_ACCOUNT_REQUIRED("보증금 반환 계좌(은행·계좌번호·예금주)를 입력해주세요.", HttpStatus.BAD_REQUEST),
     MEMBERSHIP_WEEKLY_LIMIT("멤버십은 한 주에 한 번만 신청할 수 있습니다.", HttpStatus.CONFLICT),
     CANDIDATE_SESSIONS_DIFFERENT_WEEKS("멤버십으로 신청할 때는 같은 주의 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
+    MEMBERSHIP_PERIOD_EXCEEDED("멤버십 기간 밖의 회차로는 바꿀 수 없습니다.", HttpStatus.CONFLICT),
     TICKET_PRODUCT_NOT_FOUND("존재하지 않는 이용권 상품입니다.", HttpStatus.NOT_FOUND),
     INVALID_REFUND_TRANSITION("환불을 진행할 수 없는 이용권 차감 기록입니다.", HttpStatus.CONFLICT),
     REFUND_ACCOUNT_REQUIRED("환불받을 계좌(은행·계좌번호·예금주)를 입력해주세요.", HttpStatus.BAD_REQUEST),

@@ -40,9 +40,11 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -80,6 +82,7 @@ public class DiningApplicationService {
     private final FormService formService;
     private final DepositService depositService;
     private final GatheringSessionService gatheringSessionService;
+    private final MembershipWeekRule membershipWeekRule;
     private final ApplicationEventPublisher eventPublisher;
 
     /** 내 우연한 식탁 신청(최근 30일 안에 취소한 신청 포함) + 희망/배정 회차 + 매칭·이용권·보증금 상태 + 테이블 요약. */
@@ -115,6 +118,7 @@ public class DiningApplicationService {
     /**
      * 매칭 대기 중 희망 회차·지역 바꾸기(STA-06, KAN-436). 본인 신청이 WAITING|REALLOCATING일 때만 둘 다 요청 순서(우선순위·지망 순)로 통째로 바꾼다.
      * 새 회차는 같은 모임에서 신청 가능(모집 중·마감 전, 신청과 같은 검사)하고 매칭 실행 전이어야 하며, 그 회차에 내 다른 신청이 있으면 ALREADY_APPLIED.
+     * 멤버십으로 확정한 신청은 새 회차도 멤버십 조건(기간·주 1회)을 지켜야 한다.
      * 결제·이용권·보증금은 그대로 둔다. 매칭 실행(회차 잠금)과 겹치지 않게 기존·새 회차를 ID 순으로 잠근 뒤 신청을 잠그고 상태를 다시 본다.
      */
     @Transactional
@@ -151,6 +155,17 @@ public class DiningApplicationService {
         if (!matchingService.findSessionIdsWithMatchRun(sessionIds).isEmpty()) {
             throw new CustomException(ErrorCode.WISH_CHANGE_NOT_ALLOWED);
         }
+        // 멤버십으로 확정한 신청은 신청 때와 같은 멤버십 조건을 다시 본다: 마지막 희망 회차가 기간 안, 한 주, 그 주 다른 활성 신청 없음.
+        // 결제 대기 신청은 USE 기록이 없고 입금 확정(TicketService.settlePass) 때 다시 본다.
+        ticketService.findMembershipUsedBy(applicationId).ifPresent(membership -> {
+            List<LocalDate> dates = sessions.stream().map(GatheringSession::getEventDate).toList();
+            if (!membership.isUsableOn(Collections.max(dates))) {
+                throw new CustomException(ErrorCode.MEMBERSHIP_PERIOD_EXCEEDED);
+            }
+            membershipWeekRule.check(userId, applicationId, dates).ifPresent(code -> {
+                throw new CustomException(code);
+            });
+        });
 
         applicationCandidateSessionRepository.deleteByApplication_Id(applicationId);
         // UNIQUE(application_id, session_id): 새 행 INSERT 전에 DELETE를 내보내고, 남은 내 다른 신청과의 중복을 본다.
