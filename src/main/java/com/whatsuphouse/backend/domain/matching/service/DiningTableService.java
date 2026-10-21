@@ -105,7 +105,10 @@ public class DiningTableService {
             syncChat(table, List.of(), cancelled);
         }
 
-        List<Application> waiting = listReallocatingApplications(table.getSession().getId());
+        // 충원 대기자는 이 테이블 지역을 희망한 사람만(확정 재검증과 같은 규칙, KAN-431).
+        List<Application> waiting = listReallocatingApplications(table.getSession().getId()).stream()
+                .filter(a -> DiningMatchService.wantsRegion(a, table.getDisplayRegion()))
+                .toList();
         TableEvaluator evaluator = diningMatchService.evaluator(table.getSession(),
                 Stream.concat(applications(remaining).stream(), waiting.stream()).toList(), tableId);
         List<UUID> seated = applicationIds(remaining);
@@ -184,6 +187,7 @@ public class DiningTableService {
                 .findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(table.getSession().getId(), ACTIVE_TABLE_STATUSES)
                 .stream()
                 .filter(target -> !target.getId().equals(table.getId()))
+                .filter(target -> Objects.equals(target.getDisplayRegion(), table.getDisplayRegion()))
                 .toList();
         if (targets.isEmpty() && !remaining.isEmpty()) {
             return false;
@@ -325,6 +329,7 @@ public class DiningTableService {
         DiningTable target = lockAdjustableTable(targetTableId);
         List<DiningTable> tables = List.of(source, target);
         checkSameSession(tables);
+        checkSameRegion(tables);
         checkReason(tables, reason);
         DiningTableMember member = diningTableMemberRepository.findByIdAndRemovedAtIsNull(memberId)
                 .filter(m -> m.getTable().getId().equals(tableId))
@@ -387,6 +392,7 @@ public class DiningTableService {
             throw new CustomException(ErrorCode.TABLE_SESSION_MISMATCH);
         }
         checkSameSession(tables);
+        checkSameRegion(tables);
         checkReason(tables, reason);
         DiningTable target = tables.get(0);
         List<DiningTable> others = tables.subList(1, tables.size());
@@ -457,6 +463,11 @@ public class DiningTableService {
     // 통과하면 인원·점수를 다시 매기고 잠근 뒤(재실행 보존) 관련 테이블 모두에 이력을 남긴다.
     private void validateAndRecord(String action, UUID adminId, String reason, List<DiningTable> tables,
                                    List<DiningTableMember> changedMembers) {
+        // 옮겨지거나 새로 앉은 멤버는 앉은 테이블의 지역을 희망해야 한다(KAN-431). 2테이블 기준은 자동 매칭에만 적용한다.
+        if (changedMembers.stream().anyMatch(member -> member.getTable().isActive()
+                && !DiningMatchService.wantsRegion(member.getApplication(), member.getTable().getDisplayRegion()))) {
+            throw new CustomException(ErrorCode.REGION_MISMATCH);
+        }
         diningTableMemberRepository.flush();
         List<DiningTable> active = tables.stream().filter(DiningTable::isActive).toList();
         Map<UUID, List<DiningTableMember>> membersByTable = active.isEmpty() ? Map.of()
@@ -532,6 +543,14 @@ public class DiningTableService {
             if (!tableIds.add(table.getId()) || !table.getSession().getId().equals(sessionId)) {
                 throw new CustomException(ErrorCode.TABLE_SESSION_MISMATCH);
             }
+        }
+    }
+
+    // 수동 조정은 같은 지역 테이블끼리만(KAN-431). 지역 매칭 전 테이블(null)끼리는 지금처럼 허용한다.
+    private static void checkSameRegion(List<DiningTable> tables) {
+        String region = tables.get(0).getDisplayRegion();
+        if (tables.stream().anyMatch(table -> !Objects.equals(table.getDisplayRegion(), region))) {
+            throw new CustomException(ErrorCode.REGION_MISMATCH);
         }
     }
 

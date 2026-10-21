@@ -38,7 +38,7 @@ public class VenueRequest {
 
     @NotBlank
     @Size(max = 50)
-    @Schema(description = "지역", example = "을지로")
+    @Schema(description = "지역. GET /api/dining/regions 라벨 중 하나(그 외 INVALID_REGION)", example = "을지로/종로")
     private String region;
 
     @NotNull

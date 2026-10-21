@@ -35,6 +35,9 @@ public class AdminMatchingRuleService {
                 .orElseGet(() -> matchingRuleSettingRepository.save(MatchingRuleSetting.defaults()));
         setting.update(request.getMaxAgeGap(), request.getTableSizeMin(), request.getTableSizeMax(),
                 request.getMinGroupScore(), request.getAutoConfirmGraceMinutes(), request.getWeights().toWeights());
+        if (request.getMinTablesPerRegion() != null) {
+            setting.changeMinTablesPerRegion(request.getMinTablesPerRegion());
+        }
         return MatchingRuleResponse.from(setting);
     }
 }

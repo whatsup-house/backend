@@ -57,6 +57,13 @@ public class MatchingRuleRequest {
     @Schema(description = "페어 점수 항목별 가중치")
     private WeightsRequest weights;
 
+    // 화면(KAN-433)이 붙기 전 요청과 호환되도록 생략할 수 있다. 생략하면 기존 값을 유지한다.
+    @Min(1)
+    @Max(5)
+    @Schema(description = "지역 최소 테이블 수. 한 회차·지역의 자동 매칭 테이블이 이 수 이상일 때만 그 지역 테이블을 만든다. 생략하면 기존 값 유지",
+            example = "2", nullable = true)
+    private Integer minTablesPerRegion;
+
     @Getter
     @NoArgsConstructor
     @AllArgsConstructor

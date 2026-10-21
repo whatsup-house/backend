@@ -69,6 +69,14 @@ public class MatchRun {
     public record Unassigned(UUID applicationId, UnassignedReason reason) {
     }
 
+    // 지역별 결과, 처리 순. candidateCount는 그 지역 매칭에 넣은 인원(앞 지역에 앉은 사람 제외). (KAN-431)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "region_results", nullable = false, columnDefinition = "jsonb")
+    private List<RegionResult> regionResults = new ArrayList<>();
+
+    public record RegionResult(String region, int candidateCount, int tableCount, boolean adopted) {
+    }
+
     private MatchRun(UUID sessionId, MatchRunTrigger triggeredBy, UUID triggeredUserId, String algorithmVersion) {
         this.sessionId = sessionId;
         this.triggeredBy = triggeredBy;
@@ -92,5 +100,9 @@ public class MatchRun {
         this.unassignedCount = unassignedReasons.size();
         this.unassignedReasons = new ArrayList<>(unassignedReasons);
         this.finishedAt = LocalDateTime.now();
+    }
+
+    public void recordRegionResults(List<RegionResult> regionResults) {
+        this.regionResults = new ArrayList<>(regionResults);
     }
 }

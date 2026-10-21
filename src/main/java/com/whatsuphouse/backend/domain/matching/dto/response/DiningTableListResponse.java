@@ -28,6 +28,9 @@ public class DiningTableListResponse {
     @Schema(description = "최신 실행 집계. 실행 이력이 없으면 null")
     private MatchRunResponse lastRun;
 
+    @Schema(description = "최신 실행의 지역별 결과, 처리 순. 실행 이력이 없거나 지역 매칭 전 실행이면 빈 목록")
+    private List<RegionResultView> regionResults;
+
     @Getter
     @Builder
     public static class TableView {
@@ -35,6 +38,8 @@ public class DiningTableListResponse {
         private UUID id;
         @Schema(description = "상태", example = "PROPOSED")
         private DiningTableStatus status;
+        @Schema(description = "테이블 지역 라벨. 지역 매칭 전 테이블은 null", example = "강남/신논현", nullable = true)
+        private String region;
         @Schema(description = "그룹 점수", example = "0.6123")
         private BigDecimal groupScore;
         @Schema(description = "점수 내역 {pairAvg, pairMin, penalties}")
@@ -82,7 +87,20 @@ public class DiningTableListResponse {
         private UUID applicationId;
         @Schema(description = "닉네임", example = "우연한고양이")
         private String nickname;
-        @Schema(description = "미배정 사유", example = "NOT_ENOUGH_PEOPLE")
+        @Schema(description = "미배정 사유", example = "REGION_TOO_SMALL")
         private UnassignedReason reason;
+    }
+
+    @Getter
+    @Builder
+    public static class RegionResultView {
+        @Schema(description = "지역 라벨", example = "강남/신논현")
+        private String region;
+        @Schema(description = "이 지역 매칭에 넣은 인원(앞 지역 테이블에 앉은 사람 제외)", example = "9")
+        private int candidateCount;
+        @Schema(description = "매칭 결과 테이블 수(채택 여부와 무관)", example = "2")
+        private int tableCount;
+        @Schema(description = "채택 여부. 테이블 수가 지역 최소 테이블 수 이상일 때만 테이블을 만든다", example = "true")
+        private boolean adopted;
     }
 }

@@ -12,4 +12,7 @@ public interface VenueRepository extends JpaRepository<Venue, UUID> {
     List<Venue> findAllByDeletedAtIsNullOrderByRegionAscNameAsc();
 
     Optional<Venue> findByIdAndDeletedAtIsNull(UUID id);
+
+    // 회차 풀 자동 추가(KAN-431). 회차 풀 조회와 같은 venue id 순.
+    List<Venue> findAllByRegionAndDeletedAtIsNullOrderByIdAsc(String region);
 }
