@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
@@ -47,6 +48,9 @@ public class DiningApplicantResponse {
     @Schema(description = "희망 회차, 1순위부터")
     private List<CandidateSession> candidateSessions;
 
+    @Schema(description = "희망 지역 라벨, 지역 선언 순서", example = "[\"홍대/합정\", \"강남/신논현\"]")
+    private List<String> candidateRegions;
+
     @Schema(description = "우연한 식탁 참가(출석) 횟수", example = "2")
     private long participationCount;
 
@@ -67,6 +71,7 @@ public class DiningApplicantResponse {
                 .isPaid(ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus()))
                 .matchStatus(application.getMatchStatus())
                 .candidateSessions(candidates.stream().map(CandidateSession::from).toList())
+                .candidateRegions(DiningRegion.labelsOf(application.getCandidateRegions()))
                 .participationCount(participationCount)
                 .hasExcludedRelation(hasExcludedRelation)
                 .build();

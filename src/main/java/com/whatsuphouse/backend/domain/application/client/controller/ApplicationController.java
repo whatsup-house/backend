@@ -32,6 +32,8 @@ public class ApplicationController {
             + "일반 모임은 회차를 정확히 1개 골라야 하며 그 회차로 바로 배정됩니다. "
             + "우연한 식탁은 1개 이상 고르며(앞일수록 우선) 매칭 대기(WAITING) 상태로 접수되고, "
             + "이용권이 차감되면 확정(CONFIRMED), 이용권이 없으면 결제 대기(PAYMENT_PENDING)입니다. 다른 종류의 회차가 섞이면 400입니다. "
+            + "우연한 식탁은 희망 지역(candidateRegions, GET /api/dining/regions 값)을 1개 이상 보내야 하며 없으면 REGION_REQUIRED, "
+            + "모르는 지역이면 INVALID_REGION(400)입니다. 다른 종류는 희망 지역을 무시합니다. "
             + "마감이 지난 회차는 신청할 수 없습니다.")
     @PostMapping("/api/applications")
     public ResponseEntity<ApiResult<ApplicationResponse>> create(
@@ -41,7 +43,8 @@ public class ApplicationController {
         return ResponseEntity.ok(ApiResult.success(applicationService.apply(request, principal.getUserId())));
     }
 
-    @Operation(summary = "게더링 신청 (회원, 기존 경로)", description = "경로의 gatheringId는 회차 ID입니다. POST /api/applications로 대체됩니다.")
+    @Operation(summary = "게더링 신청 (회원, 기존 경로)", description = "경로의 gatheringId는 회차 ID입니다. POST /api/applications로 대체됩니다. "
+            + "희망 지역을 받지 않으므로 우연한 식탁 회차는 REGION_REQUIRED(400)입니다.")
     @PostMapping("/api/gatherings/{gatheringId}/applications")
     public ResponseEntity<ApiResult<ApplicationResponse>> apply(
             @PathVariable UUID gatheringId,

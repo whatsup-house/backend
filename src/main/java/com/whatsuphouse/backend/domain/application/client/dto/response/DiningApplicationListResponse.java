@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.application.client.dto.response;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
@@ -42,6 +43,9 @@ public class DiningApplicationListResponse {
         @Schema(description = "배정 회차. 매칭 전이면 null")
         private SessionInfo assignedSession;
 
+        @Schema(description = "희망 지역 라벨, 지역 선언 순서(GET /api/dining/regions 순서)", example = "[\"홍대/합정\", \"강남/신논현\"]")
+        private List<String> candidateRegions;
+
         @Schema(description = "신청 상태", example = "CONFIRMED")
         private ApplicationStatus status;
 
@@ -70,8 +74,9 @@ public class DiningApplicationListResponse {
                             .id(application.getGathering().getId())
                             .title(application.getGathering().getTitle())
                             .build())
-                    .candidateSessions(candidateSessions.stream().map(SessionInfo::from).toList())
-                    .assignedSession(assigned != null ? SessionInfo.from(assigned) : null)
+                    .candidateSessions(candidateSessions.stream().map(session -> SessionInfo.from(session, table)).toList())
+                    .assignedSession(assigned != null ? SessionInfo.from(assigned, table) : null)
+                    .candidateRegions(DiningRegion.labelsOf(application.getCandidateRegions()))
                     .status(application.getStatus())
                     .matchStatus(application.getMatchStatus())
                     .ticketStatus(ticketStatus)
@@ -112,16 +117,18 @@ public class DiningApplicationListResponse {
         @Schema(description = "시작 시간", example = "19:00:00")
         private LocalTime startTime;
 
-        @Schema(description = "지역(회차 장소명). 장소가 없으면 null", example = "강남")
+        @Schema(description = "지역. 이 회차에 내 테이블이 있으면 테이블 지역, 없으면 null(희망 지역은 candidateRegions)",
+                example = "강남/신논현", nullable = true)
         private String region;
 
-        static SessionInfo from(GatheringSession session) {
+        // 회차는 지역에 묶이지 않는다(모든 회차에 4개 지역이 열린다). 지역은 앉은 테이블에서만 정해진다. (KAN-430)
+        static SessionInfo from(GatheringSession session, DiningTable table) {
             return SessionInfo.builder()
                     .id(session.getId())
                     .eventDate(session.getEventDate())
                     .startTime(session.getStartTime())
-                    // 회차에 지역 컬럼이 따로 없어 장소명을 지역으로 쓴다(우연한 식탁 회차의 장소 = 지역).
-                    .region(session.getLocation() != null ? session.getLocation().getName() : null)
+                    .region(table != null && table.getSession().getId().equals(session.getId())
+                            ? table.getDisplayRegion() : null)
                     .build();
         }
     }

@@ -29,7 +29,7 @@ public class DiningRecommendationResponse {
     @Schema(description = "시작 시간", example = "19:00", nullable = true)
     private LocalTime startTime;
 
-    @Schema(description = "지역(회차 장소명). 장소가 없으면 null", example = "강남", nullable = true)
+    @Schema(description = "지역. 회차는 지역에 묶이지 않아 항상 null(신청할 때 희망 지역을 고른다)", nullable = true)
     private String region;
 
     public static DiningRecommendationResponse from(GatheringSession session) {
@@ -39,7 +39,6 @@ public class DiningRecommendationResponse {
                 .title(session.getGathering().getTitle())
                 .eventDate(session.getEventDate())
                 .startTime(session.getStartTime())
-                .region(session.getLocation() != null ? session.getLocation().getName() : null)
                 .build();
     }
 }

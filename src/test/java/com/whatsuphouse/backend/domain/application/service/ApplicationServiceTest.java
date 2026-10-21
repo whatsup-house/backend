@@ -18,6 +18,7 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSe
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.form.entity.Form;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
@@ -51,6 +52,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -188,7 +190,7 @@ class ApplicationServiceTest {
         ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
         given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
-        ApplicationResponse response = applicationService.apply(sessionId, request, userId);
+        ApplicationResponse response = applicationService.apply(createRequest(sessionId), userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         // 차감 성공 → 매칭 대기 (KAN-342)
@@ -213,7 +215,7 @@ class ApplicationServiceTest {
         ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
         given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
 
-        ApplicationResponse response = applicationService.apply(sessionId, request, userId);
+        ApplicationResponse response = applicationService.apply(createRequest(sessionId), userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.PAYMENT_PENDING);
         // 결제 대기여도 매칭 상태는 WAITING. 엔진은 CONFIRMED만 후보로 보므로 섞이지 않는다.
@@ -236,7 +238,7 @@ class ApplicationServiceTest {
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
         given(applicationRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
-        ApplicationResponse response = applicationService.apply(sessionId, request, userId);
+        ApplicationResponse response = applicationService.apply(createRequest(sessionId), userId);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.CONFIRMED);
         then(ticketService).should(never()).tryUseOneTicket(eq(user), any(Application.class), any());
@@ -256,7 +258,7 @@ class ApplicationServiceTest {
         given(userService.findUser(userId)).willReturn(user);
         given(applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(any(), any())).willReturn(false);
 
-        assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
+        assertThatThrownBy(() -> applicationService.apply(createRequest(sessionId), userId))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.RANDOM_TABLE_ELIGIBILITY_RESTRICTED);
     }
@@ -652,6 +654,82 @@ class ApplicationServiceTest {
         then(applicationRepository).should(never()).countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any());
     }
 
+    // ── 희망 지역 (KAN-430) ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("우연한 식탁 희망 지역은 중복을 하나로 합쳐 신청에 저장한다")
+    void applyWithCandidates_randomTable_savesDistinctRegions() {
+        // given
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 6);
+        givenRandomTableCandidates(randomTableSession);
+        ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
+        given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        applicationService.apply(createRequest(List.of("을지로/종로", "홍대/합정", "을지로/종로"), sessionId), userId);
+
+        // then
+        assertThat(saved.getValue().getCandidateRegions())
+                .containsExactlyInAnyOrder(DiningRegion.EULJIRO, DiningRegion.HONGDAE);
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 희망 지역이 없으면(빈 목록·누락·지역을 받지 않는 기존 경로) REGION_REQUIRED, 저장하지 않는다")
+    void applyWithCandidates_randomTableWithoutRegions_throwsRegionRequired() {
+        // given
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 6);
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+
+        // when & then
+        for (List<String> regions : Arrays.asList(List.<String>of(), null)) {
+            assertThatThrownBy(() -> applicationService.apply(createRequest(regions, sessionId), userId))
+                    .as("regions=%s", regions)
+                    .isInstanceOf(CustomException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REGION_REQUIRED);
+        }
+        assertThatThrownBy(() -> applicationService.apply(sessionId, request, userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REGION_REQUIRED);
+        then(applicationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("우연한 식탁 희망 지역에 4개 라벨이 아닌 값이 있으면 INVALID_REGION")
+    void applyWithCandidates_randomTableUnknownRegion_throwsInvalidRegion() {
+        // given
+        Gathering randomTable = Gathering.builder().title("우연한 식탁").gatheringType(GatheringType.RANDOM_TABLE).build();
+        GatheringSession randomTableSession = sessionOf(randomTable, LocalDate.now().plusDays(7), 6);
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(randomTableSession));
+
+        // when & then
+        assertThatThrownBy(() -> applicationService.apply(createRequest(List.of("홍대/합정", "강남"), sessionId), userId))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REGION);
+        then(applicationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("일반 모임 신청은 희망 지역을 무시한다(잘못된 값이어도 검증·저장하지 않는다)")
+    void applyWithCandidates_regular_ignoresRegions() {
+        // given
+        given(gatheringSessionService.findSessionForUpdate(sessionId)).willReturn(Optional.of(session));
+        given(applicationRepository.countBySession_IdAndStatusInAndDeletedAtIsNull(any(), any())).willReturn(0);
+        given(formProvisionService.findOrCreateForm(any())).willReturn(activeForm());
+        given(formProvisionService.findQuestions(any())).willReturn(List.of());
+        given(userService.findUser(userId)).willReturn(user);
+        given(applicationRepository.existsBySession_IdAndUser_IdAndDeletedAtIsNull(any(), any())).willReturn(false);
+        ArgumentCaptor<Application> saved = ArgumentCaptor.forClass(Application.class);
+        given(applicationRepository.save(saved.capture())).willAnswer(inv -> inv.getArgument(0));
+
+        // when
+        applicationService.apply(createRequest(List.of("강남"), sessionId), userId);
+
+        // then
+        assertThat(saved.getValue().getCandidateRegions()).isEmpty();
+    }
+
     @Test
     @DisplayName("우연한 식탁 희망 회차 중 하나라도 이미 신청했으면 ALREADY_APPLIED")
     void applyWithCandidates_randomTableAlreadyAppliedToCandidate_throwsException() {
@@ -888,10 +966,16 @@ class ApplicationServiceTest {
         return created;
     }
 
+    // 우연한 식탁은 희망 지역이 필수라 기본으로 한 곳을 고른다. (KAN-430)
     private ApplicationCreateRequest createRequest(UUID... candidateSessionIds) {
+        return createRequest(List.of("강남/신논현"), candidateSessionIds);
+    }
+
+    private ApplicationCreateRequest createRequest(List<String> candidateRegions, UUID... candidateSessionIds) {
         ApplicationCreateRequest created = new ApplicationCreateRequest();
         ReflectionTestUtils.setField(created, "gatheringId", gatheringId);
         ReflectionTestUtils.setField(created, "candidateSessionIds", List.of(candidateSessionIds));
+        ReflectionTestUtils.setField(created, "candidateRegions", candidateRegions);
         ReflectionTestUtils.setField(created, "answers", List.of());
         return created;
     }

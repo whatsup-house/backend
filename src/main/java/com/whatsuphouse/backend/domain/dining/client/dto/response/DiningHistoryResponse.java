@@ -23,7 +23,7 @@ public class DiningHistoryResponse {
     @Schema(description = "행사 날짜", example = "2026-10-10")
     private LocalDate eventDate;
 
-    @Schema(description = "지역(회차 장소명). 장소가 없으면 null", example = "강남", nullable = true)
+    @Schema(description = "지역(앉은 테이블의 지역). 테이블 지역이 없으면 null", example = "강남/신논현", nullable = true)
     private String region;
 
     @Schema(description = "배정 식당 이름. 배정 전이면 null", example = "을지로 한식당", nullable = true)

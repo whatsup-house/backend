@@ -98,7 +98,7 @@ public class DiningLifecycleNotificationListener {
                 LocalDate.now().minusMonths(NEXT_SESSIONS_LOOKBACK_MONTHS));
         notifyUsers(attendees.keySet(), NotificationType.DINING_NEXT_SESSIONS,
                 "우연한 식탁 새 회차가 열렸어요",
-                user -> attendees.get(user.getId()).contains(event.getLocationId())
+                user -> event.getLocationId() != null && attendees.get(user.getId()).contains(event.getLocationId())
                         ? "지난번 함께한 " + event.getLocationName() + "에서 " + event.getGatheringTitle() + " 새 회차가 열렸어요. 일정을 확인해 보세요."
                         : event.getGatheringTitle() + " 새 회차가 열렸어요. 일정을 확인해 보세요.",
                 NotificationLink.DINING_HISTORY, event.getGatheringId(), new Target(null, null, null));

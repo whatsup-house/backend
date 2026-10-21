@@ -93,6 +93,7 @@ class ApplicationServiceAutoApproveTest {
         ApplicationCreateRequest created = new ApplicationCreateRequest();
         ReflectionTestUtils.setField(created, "gatheringId", gatheringId);
         ReflectionTestUtils.setField(created, "candidateSessionIds", List.of(sessionId));
+        ReflectionTestUtils.setField(created, "candidateRegions", List.of("강남/신논현"));
         ReflectionTestUtils.setField(created, "answers", List.of());
         return created;
     }

@@ -56,6 +56,7 @@ public class SecurityConfig {
         "/api/reviews",
         "/api/reviews/locate",
         "/api/jobs",
+        "/api/dining/regions",
         "/api/feed"
     };
 

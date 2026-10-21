@@ -59,6 +59,13 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    @DisplayName("인증 없이 GET /api/dining/regions 에 접근할 수 있다 (KAN-430)")
+    void diningRegions_noAuth_permitAll() throws Exception {
+        mockMvc.perform(get("/api/dining/regions"))
+                .andExpect(status().isOk());
+    }
+
     // ── 인증 필요 API ────────────────────────────────────────────────────────
 
     @Test
@@ -105,6 +112,7 @@ class SecurityConfigTest {
             @PostMapping("/api/auth/login") String authLogin() { return "ok"; }
             @GetMapping("/api/gatherings") String gatherings() { return "ok"; }
             @GetMapping("/api/users/check-email") String checkEmail() { return "ok"; }
+            @GetMapping("/api/dining/regions") String diningRegions() { return "ok"; }
             @PostMapping("/api/gatherings") String createGathering() { return "ok"; }
             @GetMapping("/api/admin/users") String adminUsers() { return "ok"; }
         }
