@@ -48,10 +48,12 @@ class DiningTableStrengthsTest {
     }
 
     @Test
-    @DisplayName("동점이면 대화 스타일 → 관심사 → MBTI → 성비 → 취향 순, 성비는 % 없이")
+    @DisplayName("동점이면 나이대 → 성비 → MBTI → 관심사 → 대화 스타일 → 취향 순, 나이대·성비는 % 없이")
     void describe_tieAndGenderAndCustom() {
         // when & then
-        assertThat(describe(avg("gender", 0.7, "custom", 0.7), NO_COMMON, MatchingEngine.Relations.none()))
+        assertThat(describe(avg("wantedStyle", 0.7, "mbti", 0.7, "ageBand", 0.7), NO_COMMON, MatchingEngine.Relations.none()))
+                .containsExactly("나이대가 비슷한 테이블이에요!", "MBTI 궁합 70% 테이블이에요!");
+        assertThat(describe(avg("custom", 0.7, "gender", 0.7), NO_COMMON, MatchingEngine.Relations.none()))
                 .containsExactly("성비가 고르게 맞춰진 테이블이에요!", "취향이 70% 맞는 테이블이에요!");
         assertThat(describe(avg("custom", 0.549), NO_COMMON, MatchingEngine.Relations.none()))
                 .containsExactly("취향이 55% 맞는 테이블이에요!");

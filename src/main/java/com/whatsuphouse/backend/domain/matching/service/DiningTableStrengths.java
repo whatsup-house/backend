@@ -16,7 +16,8 @@ final class DiningTableStrengths {
     static final String NEW_PEOPLE = "새로운 사람들과 만나는 테이블이에요!";
     private static final double THRESHOLD = 0.5;
     private static final int MAX_COUNT = 2;
-    private static final List<String> PRIORITY = List.of("wantedStyle", "interests", "mbti", "gender", "custom");
+    // PRD 매칭 우선순위(MAT-04) 순. 엔진 CRITERIA 순서와 같다. (KAN-435)
+    private static final List<String> PRIORITY = List.of("ageBand", "gender", "mbti", "interests", "wantedStyle", "custom");
 
     private DiningTableStrengths() {
     }
@@ -39,6 +40,7 @@ final class DiningTableStrengths {
     private static String phrase(String key, double value, List<MatchingEngine.Applicant> members) {
         long percent = Math.round(value * 100);
         return switch (key) {
+            case "ageBand" -> "나이대가 비슷한 테이블이에요!";
             case "wantedStyle" -> "대화 스타일 " + percent + "% 일치하는 테이블이에요!";
             case "interests" -> commonInterest(members)
                     .map(interest -> "'" + interest + "'" + objectParticle(interest) + " 함께 좋아하는 테이블이에요!")

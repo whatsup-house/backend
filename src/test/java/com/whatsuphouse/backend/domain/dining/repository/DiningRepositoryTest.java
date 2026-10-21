@@ -58,13 +58,14 @@ class DiningRepositoryTest {
     @DisplayName("매칭 규칙 가중치는 JSON으로 저장했다가 그대로 읽힌다")
     void matchingRuleSetting_weightsRoundTrip() {
         MatchingRuleSetting setting = matchingRuleSettingRepository.save(MatchingRuleSetting.defaults());
-        setting.update(6, 3, 5, new BigDecimal("0.4000"), 0, new MatchingWeights(0.5, 1.0, 2.0, 1.5, 0.0));
+        setting.update(6, 3, 5, new BigDecimal("0.4000"), 0, new MatchingWeights(3.0, 0.5, 1.0, 2.0, 1.5, 0.0));
         em.flush();
         em.clear();
 
         MatchingRuleSetting found = matchingRuleSettingRepository.findById(MatchingRuleSetting.SINGLETON_ID).orElseThrow();
         assertThat(found.getTableSizeMin()).isEqualTo(3);
         assertThat(found.getAutoConfirmGraceMinutes()).isZero();
+        assertThat(found.getWeights().getAgeBand()).isEqualTo(3.0);
         assertThat(found.getWeights().getInterests()).isEqualTo(2.0);
         assertThat(found.getWeights().getWantedStyle()).isEqualTo(1.5);
     }

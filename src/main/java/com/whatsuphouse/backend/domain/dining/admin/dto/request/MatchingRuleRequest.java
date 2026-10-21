@@ -69,22 +69,28 @@ public class MatchingRuleRequest {
     @AllArgsConstructor
     public static class WeightsRequest {
 
+        // 화면(KAN-440)이 붙기 전 요청과 호환되도록 생략할 수 있다. 생략하면 기존 값을 유지한다.
+        @DecimalMin("0.0")
+        @DecimalMax("10.0")
+        @Schema(description = "연령대(출생연도) 근접. 생략하면 기존 값 유지", example = "5.0", nullable = true)
+        private Double ageBand;
+
         @NotNull
         @DecimalMin("0.0")
         @DecimalMax("10.0")
-        @Schema(description = "성별 다양성", example = "1.0")
+        @Schema(description = "성별 다양성", example = "4.0")
         private Double gender;
 
         @NotNull
         @DecimalMin("0.0")
         @DecimalMax("10.0")
-        @Schema(description = "MBTI 궁합", example = "1.0")
+        @Schema(description = "MBTI 궁합", example = "3.0")
         private Double mbti;
 
         @NotNull
         @DecimalMin("0.0")
         @DecimalMax("10.0")
-        @Schema(description = "관심사 겹침", example = "1.0")
+        @Schema(description = "관심사 겹침", example = "2.0")
         private Double interests;
 
         @NotNull
@@ -99,8 +105,9 @@ public class MatchingRuleRequest {
         @Schema(description = "커스텀 매칭 질문", example = "1.0")
         private Double custom;
 
-        public MatchingWeights toWeights() {
-            return new MatchingWeights(gender, mbti, interests, wantedStyle, custom);
+        public MatchingWeights toWeights(MatchingWeights current) {
+            return new MatchingWeights(ageBand != null ? ageBand : current.getAgeBand(),
+                    gender, mbti, interests, wantedStyle, custom);
         }
     }
 }
