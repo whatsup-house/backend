@@ -52,7 +52,7 @@ public class CarouselSlideResponse {
 
         // 완료/취소된 모임 슬라이드에 모집중 뱃지가 붙지 않도록 유효 상태를 내려준다. (KAN-211)
         GatheringStatus gatheringStatus = session != null
-                ? session.getEffectiveStatus()
+                ? session.getDisplayStatus()
                 : null;
 
         return CarouselSlideResponse.builder()
