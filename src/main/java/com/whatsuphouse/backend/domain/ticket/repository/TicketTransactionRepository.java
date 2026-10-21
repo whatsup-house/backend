@@ -17,4 +17,7 @@ public interface TicketTransactionRepository extends JpaRepository<TicketTransac
 
     List<TicketTransaction> findByApplication_IdInAndTransactionType(
             Collection<UUID> applicationIds, com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType type);
+
+    long countByTransactionTypeAndStatus(com.whatsuphouse.backend.domain.ticket.enums.TicketTransactionType type,
+                                         com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus status);
 }

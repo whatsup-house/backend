@@ -134,7 +134,8 @@ class DepositServiceTest {
         then(payoutService).should().request(PayoutType.DEPOSIT_RETURN, application.getUser().getId(), 50_000,
                 deposit.getReturnAccount(), application.getId(), null, deposit.getId());
         then(ticketServiceProvider).shouldHaveNoInteractions();
-        then(eventPublisher).shouldHaveNoInteractions();
+        // 확정 알림은 없다(상태 변경 이력 이벤트만 나간다, KAN-437)
+        then(eventPublisher).should(never()).publishEvent(any(ApplicationConfirmedEvent.class));
     }
 
     @Test

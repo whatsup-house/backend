@@ -1,5 +1,9 @@
 package com.whatsuphouse.backend.domain.dining.admin.controller;
 
+import com.whatsuphouse.backend.domain.application.admin.dto.response.ApplicationStatusHistoryResponse;
+import com.whatsuphouse.backend.domain.application.admin.service.ApplicationStatusLogService;
+import com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus;
+import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.ExceptionCaseStatusRequest;
 import com.whatsuphouse.backend.domain.dining.admin.dto.request.MatchingRuleRequest;
@@ -26,10 +30,12 @@ import com.whatsuphouse.backend.domain.matching.dto.response.DiningAttendanceRes
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableConfirmResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableListResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchRunResponse;
+import com.whatsuphouse.backend.domain.matching.dto.response.NoticeLogResponse;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
 import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.DiningConfirmService;
 import com.whatsuphouse.backend.domain.matching.service.DiningMatchService;
+import com.whatsuphouse.backend.domain.matching.service.NoticeLogService;
 import com.whatsuphouse.backend.global.auth.UserPrincipal;
 import com.whatsuphouse.backend.global.common.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -73,6 +79,8 @@ public class AdminDiningController {
     private final DiningMatchService diningMatchService;
     private final DiningConfirmService diningConfirmService;
     private final DiningAttendanceService diningAttendanceService;
+    private final ApplicationStatusLogService applicationStatusLogService;
+    private final NoticeLogService noticeLogService;
 
     // ── 대시보드·신청자 ────────────────────────────────────────────────────────
 
@@ -82,12 +90,32 @@ public class AdminDiningController {
         return ResponseEntity.ok(ApiResult.success(adminDiningService.getDashboard()));
     }
 
-    @Operation(summary = "회차 신청자 표", description = "이름·나이·성별·MBTI·결제·매칭 상태·희망 회차·참가 횟수·제외 관계. "
-            + "?format=csv면 같은 내용을 CSV(UTF-8 BOM)로 내려준다.")
+    @Operation(summary = "회차 신청자 표", description = "이름·나이·성별·MBTI·결제(통합 결제 상태)·매칭 상태·희망 회차·참가 횟수·제외 관계·신고된 수. "
+            + "paymentStatus·matchStatus·region(희망 지역 라벨)로 거른다(모르는 지역은 400). "
+            + "?format=csv면 같은 내용을 CSV(UTF-8 BOM)로 내려준다(필터 없음).")
     @GetMapping("/sessions/{id}/applicants")
     public ResponseEntity<ApiResult<List<DiningApplicantResponse>>> listApplicants(
+            @Parameter(description = "회차 ID") @PathVariable UUID id,
+            @Parameter(description = "통합 결제 상태", example = "PAID") @RequestParam(required = false) DiningPaymentStatus paymentStatus,
+            @Parameter(description = "매칭 상태", example = "WAITING") @RequestParam(required = false) MatchStatus matchStatus,
+            @Parameter(description = "희망 지역 라벨", example = "강남/신논현") @RequestParam(required = false) String region) {
+        return ResponseEntity.ok(ApiResult.success(adminDiningService.listApplicants(id, paymentStatus, matchStatus, region)));
+    }
+
+    @Operation(summary = "신청 상태 변경 이력", description = "신청 상태(STATUS)·매칭 상태(MATCH_STATUS)·통합 결제 상태(PAYMENT) 변경, 최신순. "
+            + "from은 그 항목의 첫 기록이면 null, actorName은 시스템 처리면 null. 취소된 신청도 조회한다. 신청이 없으면 404.")
+    @GetMapping("/applications/{id}/history")
+    public ResponseEntity<ApiResult<List<ApplicationStatusHistoryResponse>>> listApplicationHistory(
+            @Parameter(description = "신청 ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResult.success(applicationStatusLogService.listHistory(id)));
+    }
+
+    @Operation(summary = "회차 안내 발송 이력", description = "확정 채팅 메시지·리마인드·대화 콘텐츠·확정 인앱 알림 발송 시도, 최신순. "
+            + "tableLabel은 테이블 탭 순서(생성 순)의 번호(해체된 테이블은 null). 우연한 식탁 회차가 아니면 400, 없으면 404.")
+    @GetMapping("/sessions/{id}/notices")
+    public ResponseEntity<ApiResult<List<NoticeLogResponse>>> listSessionNotices(
             @Parameter(description = "회차 ID") @PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResult.success(adminDiningService.listApplicants(id)));
+        return ResponseEntity.ok(ApiResult.success(noticeLogService.listSessionNotices(id)));
     }
 
     @Operation(summary = "회차 신청자 CSV", description = "신청자 표 CSV(UTF-8 BOM)")

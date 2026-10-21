@@ -35,6 +35,47 @@ public class DiningDashboardResponse {
     @Schema(description = "열린 예외 수(회차 무관 전체)", example = "4")
     private long openExceptionCount;
 
+    // ── 운영 지표(KAN-437). 신청·테이블 지표는 위 타일과 같이 다가오는 회차(숨김·체험 회원 제외), 예외 지표는 열린 예외 수와 같은 기준 ──
+
+    @Schema(description = "신청자 수(반려·취소 제외). 여러 회차를 고른 신청은 1명", example = "24")
+    private long totalApplicantCount;
+
+    @Schema(description = "매칭 실행 횟수(재실행 포함)", example = "3")
+    private long matchRunCount;
+
+    @Schema(description = "테이블에 배정된 신청자 수(매칭 상태 CONFIRM_PENDING·CONFIRMED)", example = "16")
+    private long matchedApplicantCount;
+
+    @Schema(description = "재배치 대기 신청자 수(매칭 상태 REALLOCATING)", example = "2")
+    private long reallocatedApplicantCount;
+
+    @Schema(description = "테이블 확정 신청자 수(매칭 상태 CONFIRMED)", example = "12")
+    private long confirmedApplicantCount;
+
+    @Schema(description = "매칭 성공률(0~1): 결제 완료 신청자 중 테이블 확정 비율. 결제 완료가 없으면 0", example = "0.8")
+    private double matchSuccessRate;
+
+    @Schema(description = "매칭 실패 해결 선택 응답 대기 수(ALTERNATIVE_OFFERED·NO_MATCH)", example = "1")
+    private long resolutionPendingCount;
+
+    @Schema(description = "열린 CONFLICT 예외 수", example = "0")
+    private long conflictCount;
+
+    @Schema(description = "확정됐는데 식당이 없는 테이블 수", example = "0")
+    private long noVenueTableCount;
+
+    @Schema(description = "열린 NOTIFICATION(알림·채팅방 실패) 예외 수", example = "0")
+    private long notificationFailureCount;
+
+    @Schema(description = "환불 실패 수: 열린 REFUND 예외 + 환불 실패(REFUND_FAILED) 이용권 차감", example = "0")
+    private long refundFailureCount;
+
+    @Schema(description = "노쇼 후보 수(종료 후 체크인 없음, 운영자 확정 전)", example = "0")
+    private long noShowCandidateCount;
+
+    @Schema(description = "열린 SAFETY(신고) 예외 수", example = "0")
+    private long openReportCount;
+
     @Schema(description = "다가오는 회차 카드, 날짜·시작 시간 순")
     private List<SessionCard> sessions;
 

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.whatsuphouse.backend.domain.matching.entity.ScoreDetail;
 import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.TableNoticeStatus;
 import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -46,12 +47,30 @@ public class DiningTableListResponse {
         private ScoreDetail scoreDetail;
         @Schema(description = "자동 확정 예정 시각", example = "2026-10-08T23:00:00")
         private LocalDateTime confirmAt;
+        @Schema(description = "매칭(테이블 생성) 시각", example = "2026-10-08T22:30:00", nullable = true)
+        private LocalDateTime matchedAt;
+        @Schema(description = "확정 시각. 확정 전이면 null", example = "2026-10-08T23:00:00", nullable = true)
+        private LocalDateTime confirmedAt;
         @Schema(description = "잠금 여부(재실행 시 유지)", example = "false")
         private boolean locked;
         @Schema(description = "배정 식당 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
         private UUID venueId;
         @Schema(description = "테이블 채팅방 ID. 확정 전이거나 생성 실패면 null", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6", nullable = true)
         private UUID chatRoomId;
+        @Schema(description = "멤버 최소 나이(올해 - 출생연도, 만 나이 아님). 출생연도를 아는 멤버가 없으면 null", example = "27", nullable = true)
+        private Integer ageMin;
+        @Schema(description = "멤버 최대 나이(올해 - 출생연도, 만 나이 아님). 출생연도를 아는 멤버가 없으면 null", example = "33", nullable = true)
+        private Integer ageMax;
+        @Schema(description = "남성 멤버 수(성별 답 MALE)", example = "2")
+        private int maleCount;
+        @Schema(description = "여성 멤버 수(성별 답 FEMALE)", example = "2")
+        private int femaleCount;
+        @Schema(description = "멤버 MBTI, 좌석 순(모르는 멤버는 빠진다, 중복 그대로)", example = "[\"ENFP\", \"ISTJ\"]")
+        private List<String> mbtiList;
+        @Schema(description = "멤버 전원이 고른 관심사", example = "[\"여행\"]")
+        private List<String> commonInterests;
+        @Schema(description = "최신 확정 안내(CONFIRM_MESSAGE) 결과. NONE: 시도 없음, SENT: 발송됨, FAILED: 실패", example = "SENT")
+        private TableNoticeStatus noticeStatus;
         @Schema(description = "멤버, 좌석 순")
         private List<MemberView> members;
     }
@@ -78,6 +97,16 @@ public class DiningTableListResponse {
         @Schema(description = "수동 배정 여부", example = "false")
         @JsonProperty("isManual")
         private boolean isManual;
+        @Schema(description = "재배치 대기(REALLOCATING)로 바뀐 횟수", example = "1")
+        private int reallocationCount;
+        @Schema(description = "테이블 회차를 희망 회차로 골랐는지", example = "true")
+        private boolean wantsSession;
+        @Schema(description = "테이블 지역을 희망 지역으로 골랐는지. 지역 없는 테이블은 true", example = "true")
+        private boolean wantsRegion;
+        @Schema(description = "같은 테이블 누군가와 이전에(확정·완료 테이블에서) 함께 앉은 적이 있는지", example = "false")
+        private boolean metBefore;
+        @Schema(description = "같은 테이블 누군가와 제외 관계(피하고 싶음·신고)가 있는지", example = "false")
+        private boolean conflict;
     }
 
     @Getter
@@ -89,6 +118,10 @@ public class DiningTableListResponse {
         private String nickname;
         @Schema(description = "미배정 사유", example = "REGION_TOO_SMALL")
         private UnassignedReason reason;
+        @Schema(description = "재배치 대기(REALLOCATING)로 바뀐 횟수. 신청을 찾지 못하면 0", example = "1")
+        private int reallocationCount;
+        @Schema(description = "미배정된 매칭 실행 시각", example = "2026-10-08T22:30:00")
+        private LocalDateTime failedAt;
     }
 
     @Getter

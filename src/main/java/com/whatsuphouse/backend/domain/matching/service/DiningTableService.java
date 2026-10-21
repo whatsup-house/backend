@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicatio
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
@@ -22,6 +23,7 @@ import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -73,6 +75,7 @@ public class DiningTableService {
     private final MatchResolutionService matchResolutionService;
     private final ChatService chatService;
     private final PlatformTransactionManager transactionManager;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ── 확정 후 취소 재조정 ──────────────────────────────────────────────────────
 
@@ -132,6 +135,7 @@ public class DiningTableService {
                 application.changeMatchStatus(seatedStatus(table));
             }
             added.forEach(diningAttendanceService::seat);
+            logStatus(added, "취소 후 대기자 충원");
             settle(table, evaluator, Stream.concat(seated.stream(), refill.stream().map(Application::getId)).toList());
             table.recordReallocation("REFILL", null, "취소 후 대기자 충원", memberIds(added));
             syncChat(table, added, List.of());
@@ -238,6 +242,7 @@ public class DiningTableService {
             member.getApplication().changeMatchStatus(seatedStatus(target));
             diningAttendanceService.seat(member);
         });
+        logStatus(plan.keySet(), "취소 후 다른 테이블로 재배치");
         movedByTarget.forEach((target, moved) -> {
             settle(target, evaluators.get(target.getId()), seating.get(target.getId()));
             target.recordReallocation("REBALANCE_IN", null, "취소 후 인원 부족 테이블에서 이동", memberIds(moved));
@@ -260,6 +265,7 @@ public class DiningTableService {
             application.offerAlternative();
             matchResolutionService.offerResolution(application, excluded);
         }
+        logStatus(remaining, "확정 테이블 인원 부족 해체");
         UUID roomId = table.getChatRoomId();
         if (roomId != null) {
             UUID sessionId = table.getSession().getId();
@@ -496,6 +502,12 @@ public class DiningTableService {
             table.lock();
             table.recordReallocation(action, adminId, trimmedReason, changedIds);
         }
+        logStatus(changedMembers, "수동 조정 " + action + (trimmedReason != null ? ": " + trimmedReason : ""));
+    }
+
+    // 좌석이 바뀐 멤버의 신청 상태 변경 이력(KAN-437). 매칭 상태가 그대로면 이력은 남지 않는다.
+    private void logStatus(Collection<DiningTableMember> members, String reason) {
+        members.forEach(member -> eventPublisher.publishEvent(new ApplicationStatusChangedEvent(member.getApplication(), reason)));
     }
 
     private DiningTableAdjustResponse response(UUID sessionId, List<DiningTable> tables) {

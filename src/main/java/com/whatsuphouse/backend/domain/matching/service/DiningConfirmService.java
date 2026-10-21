@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.matching.service;
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatGroupRoomCreateRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageSendRequest;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
@@ -24,6 +25,8 @@ import com.whatsuphouse.backend.domain.matching.entity.Attendance;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
 import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
@@ -41,6 +44,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -62,6 +66,7 @@ import java.util.stream.Collectors;
  * 1~2. 하드 조건 최종 검증 → 테이블 CONFIRMED, 멤버 신청 CONFIRMED(배정 회차 = 테이블 회차), 참석 SCHEDULED. 여기까지 한 트랜잭션.
  *      위반이면 보류(상태·confirm_at 유지) + 예외함 CONFLICT(그 테이블에 열린 CONFLICT가 없을 때만).
  * 3. 식당 배정, 4. 채팅방 + 운영자 메시지 2개·취소 정책 공지, 5. 확정 알림. 단계마다 새 트랜잭션이라 실패해도 확정은 되돌아가지 않고 예외함에 남는다.
+ * 4단계가 실패한 테이블은 스케줄러가 5분마다 최대 3회 다시 시도한다(retryMissingChatRooms, KAN-438).
  * 모든 단계가 REQUIRES_NEW라 호출 측 트랜잭션과 섞이지 않는다.
  */
 @Slf4j
@@ -73,6 +78,9 @@ public class DiningConfirmService {
     static final String CHAT_FAILURE_PREFIX = "[채팅방] ";
     static final String NOTIFY_FAILURE_PREFIX = "[알림] ";
     private static final String RETRY_NOTE = "재시도 성공";
+    private static final String AUTO_RETRY_NOTE = "자동 재시도 성공";
+    static final int MAX_CHAT_RETRIES = 3;
+    private static final Duration CHAT_RETRY_DELAY = Duration.ofMinutes(5);
     private static final int ROOM_NAME_MAX_LENGTH = 100;
     private static final DateTimeFormatter NOTICE_DATE = DateTimeFormatter.ofPattern("M/d(E)", Locale.KOREAN);
     private static final DateTimeFormatter NOTICE_TIME = DateTimeFormatter.ofPattern("HH:mm");
@@ -92,6 +100,7 @@ public class DiningConfirmService {
     private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
+    private final NoticeLogService noticeLogService;
 
     // 자동 확정 채팅방 개설자(관리자 회원 ID). 비어 있으면 활성 관리자 중 한 명.
     @Value("${dining.system-admin-id:}")
@@ -125,20 +134,85 @@ public class DiningConfirmService {
 
     /** 채팅방 재시도: 확정 테이블에 채팅방이 없으면 4단계를 다시 한다(요청한 관리자가 개설자). 성공하면 채팅방 실패 예외를 닫는다. */
     public ChatRoomIdResponse retryChatRoom(UUID tableId, UUID adminId) {
-        UUID roomId = inNewTransaction(() -> {
-            requireConfirmed(tableId);
-            return openChatRoom(tableId, adminId);
-        });
+        UUID roomId;
+        try {
+            roomId = inNewTransaction(() -> {
+                // 자동 재시도와 겹쳐 방이 두 개 생기지 않게 행을 먼저 잠근다. 잠근 뒤 읽어야 chat_room_id가 최신이다.
+                diningTableRepository.findByIdForUpdate(tableId);
+                requireConfirmed(tableId);
+                return openChatRoom(tableId, adminId);
+            });
+        } catch (RuntimeException e) {
+            noticeLogService.recordFailure(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT, e);
+            throw e;
+        }
+        noticeLogService.recordSuccess(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT);
         exceptionCaseService.resolveOpen(ExceptionCaseType.NOTIFICATION, tableId, CHAT_FAILURE_PREFIX, adminId, RETRY_NOTE);
         return new ChatRoomIdResponse(roomId);
     }
 
+    /**
+     * 채팅방 자동 재시도(5분 주기 스케줄러): 확정된 지 5분이 지났는데 채팅방이 없는 테이블마다 최대 3회 다시 만든다(개설자 = 시스템 관리자).
+     * 성공하면 채팅방 실패 예외를 닫고, 3회 모두 실패하면 채팅방 실패 예외(NOTIFICATION)를 열린 채로 둔다. 행사일이 지난 테이블은 건너뛴다. (KAN-438)
+     */
+    public void retryMissingChatRooms() {
+        LocalDateTime now = LocalDateTime.now();
+        for (DiningTable table : diningTableRepository.findChatRoomRetryTargets(DiningTableStatus.CONFIRMED,
+                MAX_CHAT_RETRIES, now.minus(CHAT_RETRY_DELAY), now.toLocalDate())) {
+            if (table.getSession().getStatus() == GatheringSessionStatus.CANCELLED) {
+                continue;
+            }
+            try {
+                retryChatRoomAutomatically(table.getId(), table.getChatRetryCount() + 1);
+            } catch (Exception e) {
+                log.error("테이블 채팅방 자동 재시도 처리 실패: tableId={}", table.getId(), e);
+            }
+        }
+    }
+
+    // 횟수 선점(커밋)과 시도가 다른 트랜잭션이라, 시도가 실패해도 횟수는 남는다. 실제로 방을 만든 시도마다 발송 이력(CONFIRM_MESSAGE/CHAT)을 남긴다.
+    private void retryChatRoomAutomatically(UUID tableId, int attempt) {
+        if (inNewTransaction(() -> diningTableRepository.increaseChatRetryCount(tableId, MAX_CHAT_RETRIES)) == 0) {
+            return; // 이미 방이 생겼거나 다른 실행이 횟수를 채웠다
+        }
+        UUID roomId;
+        try {
+            roomId = inNewTransaction(() -> {
+                // 테이블 행을 잠가 다른 인스턴스의 재시도·수동 재시도와 직렬화한다. 그사이 방이 생겼으면 그쪽이 이력을 남겼으므로 건너뛴다.
+                DiningTable locked = diningTableRepository.findByIdForUpdate(tableId).orElse(null);
+                if (locked == null || locked.getStatus() != DiningTableStatus.CONFIRMED || locked.getChatRoomId() != null) {
+                    return null;
+                }
+                return openChatRoom(tableId, systemAdminId());
+            });
+        } catch (Exception e) {
+            log.warn("테이블 채팅방 자동 재시도 실패 {}/{}: tableId={}", attempt, MAX_CHAT_RETRIES, tableId, e);
+            noticeLogService.recordFailure(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT, e);
+            if (attempt >= MAX_CHAT_RETRIES
+                    && exceptionCaseService.listOpen(ExceptionCaseType.NOTIFICATION, tableId, CHAT_FAILURE_PREFIX).isEmpty()) {
+                openCase(ExceptionCaseType.NOTIFICATION, tableId,
+                        CHAT_FAILURE_PREFIX + "채팅방 자동 재시도 " + MAX_CHAT_RETRIES + "회 실패: " + e.getMessage());
+            }
+            return;
+        }
+        if (roomId != null) {
+            noticeLogService.recordSuccess(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT);
+            exceptionCaseService.resolveOpen(ExceptionCaseType.NOTIFICATION, tableId, CHAT_FAILURE_PREFIX, null, AUTO_RETRY_NOTE);
+        }
+    }
+
     /** 확정 알림 재발송(멤버 전원). 성공하면 알림 실패 예외를 닫는다. */
     public void retryNotifications(UUID tableId, UUID adminId) {
-        runInNewTransaction(() -> {
-            requireConfirmed(tableId);
-            publishConfirmed(tableId);
-        });
+        try {
+            runInNewTransaction(() -> {
+                requireConfirmed(tableId);
+                publishConfirmed(tableId);
+            });
+        } catch (RuntimeException e) {
+            noticeLogService.recordFailure(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP, e);
+            throw e;
+        }
+        noticeLogService.recordSuccess(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP);
         exceptionCaseService.resolveOpen(ExceptionCaseType.NOTIFICATION, tableId, NOTIFY_FAILURE_PREFIX, adminId, RETRY_NOTE);
     }
 
@@ -183,6 +257,7 @@ public class DiningConfirmService {
                 .collect(Collectors.toSet());
         for (DiningTableMember member : members) {
             member.getApplication().confirmMatch(session);
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(member.getApplication(), "테이블 확정"));
             // v1 멤버 이동으로 이미 참석 행이 있는 멤버는 건너뛴다(table_member_id UNIQUE).
             if (!scheduled.contains(member.getId())) {
                 attendanceRepository.save(Attendance.schedule(member.getId()));
@@ -244,8 +319,10 @@ public class DiningConfirmService {
     private void createChatRoom(UUID tableId) {
         try {
             inNewTransaction(() -> openChatRoom(tableId, systemAdminId()));
+            noticeLogService.recordSuccess(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT);
         } catch (Exception e) {
             log.warn("테이블 채팅방 생성 실패: tableId={}", tableId, e);
+            noticeLogService.recordFailure(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT, e);
             openCase(ExceptionCaseType.NOTIFICATION, tableId, CHAT_FAILURE_PREFIX + "채팅방 생성 실패: " + e.getMessage());
         }
     }
@@ -267,7 +344,8 @@ public class DiningConfirmService {
         return roomId;
     }
 
-    private void sendAsOperator(UUID roomId, UUID senderId, String text) {
+    // 운영자 이름 메시지(TEXT)라 SYSTEM 공지와 달리 채팅 푸시도 간다. 리마인드 안내도 쓴다. (KAN-438)
+    void sendAsOperator(UUID roomId, UUID senderId, String text) {
         chatService.sendMessage(roomId, senderId, true, new ChatMessageSendRequest(ChatMessageType.TEXT, text));
     }
 
@@ -348,8 +426,10 @@ public class DiningConfirmService {
     private void notifyMembers(UUID tableId) {
         try {
             runInNewTransaction(() -> publishConfirmed(tableId));
+            noticeLogService.recordSuccess(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP);
         } catch (Exception e) {
             log.warn("테이블 확정 알림 실패: tableId={}", tableId, e);
+            noticeLogService.recordFailure(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP, e);
             openCase(ExceptionCaseType.NOTIFICATION, tableId, NOTIFY_FAILURE_PREFIX + "확정 알림 발송 실패: " + e.getMessage());
         }
     }

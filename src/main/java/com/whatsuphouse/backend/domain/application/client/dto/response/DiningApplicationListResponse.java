@@ -2,11 +2,13 @@ package com.whatsuphouse.backend.domain.application.client.dto.response;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import com.whatsuphouse.backend.domain.payment.entity.Deposit;
 import com.whatsuphouse.backend.domain.payment.enums.DepositStatus;
 import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
@@ -65,8 +67,17 @@ public class DiningApplicationListResponse {
         @Schema(description = "노쇼 보증금. 보증금 대상 신청이 아니면 null", nullable = true)
         private DepositInfo deposit;
 
+        @Schema(description = "마지막 매칭 실행에서 이 신청이 앉지 못한 사유. 그 실행에서 앉았거나 실행 전·테이블 배정 후면 null",
+                example = "NEXT_SESSION_WAITING", nullable = true,
+                allowableValues = {"REGION_TOO_SMALL", "NOT_ENOUGH_PEOPLE", "AGE_GAP", "BLOCKED_PAIR", "NEXT_SESSION_WAITING"})
+        private UnassignedReason unassignedReason;
+        @Schema(description = "통합 결제 상태(신청·이용권 차감·보증금·해결 선택에서 계산). "
+                + "PENDING|PAID|FAILED|REFUND_AVAILABLE|REFUND_REQUESTED|REFUND_PROCESSING|REFUNDED|REFUND_FAILED", example = "PAID")
+        private DiningPaymentStatus paymentStatus;
+
         public static Item of(Application application, List<GatheringSession> candidateSessions,
-                              TicketDeductionStatus ticketStatus, DiningTable table, UUID resolutionId, Deposit deposit) {
+                              TicketDeductionStatus ticketStatus, DiningTable table, UUID resolutionId, Deposit deposit,
+                              UnassignedReason unassignedReason) {
             GatheringSession assigned = application.getSession();
             return Item.builder()
                     .id(application.getId())
@@ -83,6 +94,9 @@ public class DiningApplicationListResponse {
                     .table(table != null ? TableInfo.from(table) : null)
                     .resolutionId(resolutionId)
                     .deposit(deposit != null ? new DepositInfo(deposit.getStatus(), deposit.getAmount(), deposit.getReturnAmount()) : null)
+                    .unassignedReason(table == null ? unassignedReason : null)
+                    .paymentStatus(DiningPaymentStatus.of(application, ticketStatus,
+                            deposit != null ? deposit.getStatus() : null, resolutionId != null))
                     .build();
         }
     }
@@ -121,12 +135,16 @@ public class DiningApplicationListResponse {
                 example = "강남/신논현", nullable = true)
         private String region;
 
+        @Schema(description = "매칭 실행(발표) 예정 시각. 정하지 않았으면 null", example = "2026-10-08T21:00:00", nullable = true)
+        private LocalDateTime matchRunAt;
+
         // 회차는 지역에 묶이지 않는다(모든 회차에 4개 지역이 열린다). 지역은 앉은 테이블에서만 정해진다. (KAN-430)
         static SessionInfo from(GatheringSession session, DiningTable table) {
             return SessionInfo.builder()
                     .id(session.getId())
                     .eventDate(session.getEventDate())
                     .startTime(session.getStartTime())
+                    .matchRunAt(session.getMatchRunAt())
                     .region(table != null && table.getSession().getId().equals(session.getId())
                             ? table.getDisplayRegion() : null)
                     .build();

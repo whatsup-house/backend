@@ -32,6 +32,8 @@ public interface DiningTableRepository extends JpaRepository<DiningTable, UUID> 
             """)
     List<SessionStatusCountProjection> countBySessionIdsGroupByStatus(@Param("sessionIds") Collection<UUID> sessionIds);
 
+    long countBySession_IdInAndStatusAndVenueIdIsNullAndDeletedAtIsNull(Collection<UUID> sessionIds, DiningTableStatus status);
+
     List<DiningTable> findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(
             UUID sessionId, Collection<DiningTableStatus> statuses);
 
@@ -70,6 +72,27 @@ public interface DiningTableRepository extends JpaRepository<DiningTable, UUID> 
     @Modifying
     @Query("update DiningTable t set t.reminderSentAt = :now where t.id = :id and t.reminderSentAt is null")
     int markReminderSent(@Param("id") UUID id, @Param("now") LocalDateTime now);
+
+    // 채팅방 자동 재시도 대상: 확정된 지 confirmedBefore 이상 지났고(확정 파이프라인 진행 중인 테이블 제외) 채팅방이 없는,
+    // 행사일이 오늘 이후인 테이블. 재시도 횟수가 maxRetries 미만인 것만. (KAN-438)
+    @Query("""
+            select t from DiningTable t join fetch t.session s
+            where t.status = :status and t.chatRoomId is null and t.chatRetryCount < :maxRetries
+              and t.confirmedAt <= :confirmedBefore and t.deletedAt is null and s.deletedAt is null
+              and s.eventDate >= :fromDate
+            """)
+    List<DiningTable> findChatRoomRetryTargets(@Param("status") DiningTableStatus status,
+                                               @Param("maxRetries") int maxRetries,
+                                               @Param("confirmedBefore") LocalDateTime confirmedBefore,
+                                               @Param("fromDate") LocalDate fromDate);
+
+    // 재시도 1회를 선점하며 횟수를 올린다. 채팅방이 생겼거나 횟수가 다 찼으면 0.
+    @Modifying
+    @Query("""
+            update DiningTable t set t.chatRetryCount = t.chatRetryCount + 1
+            where t.id = :id and t.chatRoomId is null and t.chatRetryCount < :maxRetries
+            """)
+    int increaseChatRetryCount(@Param("id") UUID id, @Param("maxRetries") int maxRetries);
 
     // 대화 콘텐츠 게시를 선점한다. 아직 올리지 않았을 때만 1.
     @Modifying

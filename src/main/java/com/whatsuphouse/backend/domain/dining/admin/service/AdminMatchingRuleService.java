@@ -34,7 +34,7 @@ public class AdminMatchingRuleService {
         MatchingRuleSetting setting = matchingRuleSettingRepository.findById(MatchingRuleSetting.SINGLETON_ID)
                 .orElseGet(() -> matchingRuleSettingRepository.save(MatchingRuleSetting.defaults()));
         setting.update(request.getMaxAgeGap(), request.getTableSizeMin(), request.getTableSizeMax(),
-                request.getMinGroupScore(), request.getAutoConfirmGraceMinutes(), request.getWeights().toWeights());
+                request.getMinGroupScore(), request.getAutoConfirmGraceMinutes(), request.getWeights().toWeights(setting.getWeights()));
         if (request.getMinTablesPerRegion() != null) {
             setting.changeMinTablesPerRegion(request.getMinTablesPerRegion());
         }

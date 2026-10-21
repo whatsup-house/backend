@@ -1,5 +1,6 @@
 package com.whatsuphouse.backend.domain.application.client.service;
 
+import com.whatsuphouse.backend.domain.application.client.dto.request.DiningWishUpdateRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningCancelPreviewResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningCancelPreviewResponse.DepositOutcome;
@@ -9,14 +10,19 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.CancelWindow;
+import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationAnswerRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.form.client.service.FormService;
 import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
+import com.whatsuphouse.backend.domain.gathering.client.service.GatheringSessionService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
+import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.matching.service.DiningTableService;
 import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
@@ -35,14 +41,18 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -60,6 +70,7 @@ public class DiningApplicationService {
     private static final int CANCELLED_VISIBLE_DAYS = 30;
     private static final Set<ApplicationStatus> CANCELLABLE =
             Set.of(ApplicationStatus.PENDING, ApplicationStatus.PAYMENT_PENDING, ApplicationStatus.CONFIRMED);
+    private static final Set<MatchStatus> WISH_CHANGEABLE = Set.of(MatchStatus.WAITING, MatchStatus.REALLOCATING);
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationCandidateSessionRepository applicationCandidateSessionRepository;
@@ -71,6 +82,8 @@ public class DiningApplicationService {
     private final MatchResolutionService matchResolutionService;
     private final FormService formService;
     private final DepositService depositService;
+    private final GatheringSessionService gatheringSessionService;
+    private final MembershipWeekRule membershipWeekRule;
     private final ApplicationEventPublisher eventPublisher;
 
     /** 내 우연한 식탁 신청(최근 30일 안에 취소한 신청 포함) + 희망/배정 회차 + 매칭·이용권·보증금 상태 + 테이블 요약. */
@@ -87,6 +100,9 @@ public class DiningApplicationService {
         Map<UUID, DiningTable> tables = matchingService.findTablesByApplicationIds(ids);
         Map<UUID, UUID> resolutionIds = matchResolutionService.findOfferedResolutionIds(ids);
         Map<UUID, Deposit> deposits = depositService.findByApplicationIds(ids);
+        Map<UUID, UnassignedReason> unassignedReasons = matchingService.findLastUnassignedReasons(
+                candidates.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey,
+                        entry -> entry.getValue().stream().map(GatheringSession::getId).toList())));
         return DiningApplicationListResponse.builder()
                 .applications(applications.stream()
                         .map(a -> DiningApplicationListResponse.Item.of(a,
@@ -94,9 +110,84 @@ public class DiningApplicationService {
                                 ticketStatuses.get(a.getId()),
                                 tables.get(a.getId()),
                                 resolutionIds.get(a.getId()),
-                                deposits.get(a.getId())))
+                                deposits.get(a.getId()),
+                                unassignedReasons.get(a.getId())))
                         .toList())
                 .build();
+    }
+
+    /**
+     * 매칭 대기 중 희망 회차·지역 바꾸기(STA-06, KAN-436). 본인 신청이 WAITING|REALLOCATING일 때만 둘 다 요청 순서(우선순위·지망 순)로 통째로 바꾼다.
+     * 새 회차는 같은 모임에서 신청 가능(모집 중·마감 전, 신청과 같은 검사)하고 매칭 실행 전이어야 하며, 그 회차에 내 다른 신청이 있으면 ALREADY_APPLIED.
+     * 멤버십으로 확정한 신청은 새 회차도 멤버십 조건(기간·주 1회)을 지켜야 한다.
+     * 결제·이용권·보증금은 그대로 둔다. 매칭 실행(회차 잠금)과 겹치지 않게 기존·새 회차를 ID 순으로 잠근 뒤 신청을 잠그고 상태를 다시 본다.
+     */
+    @Transactional
+    public void updateWishes(UUID applicationId, UUID userId, DiningWishUpdateRequest request) {
+        Application application = applicationRepository.findByIdAndDeletedAtIsNull(applicationId)
+                .orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+        if (application.getUser() == null || !application.getUser().getId().equals(userId)) {
+            throw new CustomException(ErrorCode.APPLICATION_FORBIDDEN);
+        }
+        checkWishChangeable(application);
+        List<DiningRegion> regions = ApplicationService.resolveCandidateRegions(request.getCandidateRegions());
+        List<UUID> sessionIds = request.getCandidateSessionIds().stream().distinct().toList();
+
+        Set<UUID> lockIds = new TreeSet<>(sessionIds);
+        findCandidateSessions(List.of(applicationId)).getOrDefault(applicationId, List.of())
+                .forEach(session -> lockIds.add(session.getId()));
+        Map<UUID, GatheringSession> locked = new HashMap<>();
+        lockIds.forEach(id -> gatheringSessionService.findSessionForUpdate(id).ifPresent(s -> locked.put(id, s)));
+        applicationRepository.refreshForUpdate(application);
+        checkWishChangeable(application);
+
+        LocalDateTime now = LocalDateTime.now();
+        List<GatheringSession> sessions = sessionIds.stream().map(id -> {
+            GatheringSession session = locked.get(id);
+            if (session == null || session.getGathering().getDeletedAt() != null) {
+                throw new CustomException(ErrorCode.SESSION_NOT_FOUND);
+            }
+            if (!session.getGathering().getId().equals(application.getGathering().getId())) {
+                throw new CustomException(ErrorCode.SESSION_GATHERING_MISMATCH);
+            }
+            session.validateApplicable(now);
+            return session;
+        }).toList();
+        if (!matchingService.findSessionIdsWithMatchRun(sessionIds).isEmpty()) {
+            throw new CustomException(ErrorCode.WISH_CHANGE_NOT_ALLOWED);
+        }
+        // 멤버십으로 확정한 신청은 신청 때와 같은 멤버십 조건을 다시 본다: 마지막 희망 회차가 기간 안, 한 주, 그 주 다른 활성 신청 없음.
+        // 결제 대기 신청은 USE 기록이 없고 입금 확정(TicketService.settlePass) 때 다시 본다.
+        ticketService.findMembershipUsedBy(applicationId).ifPresent(membership -> {
+            List<LocalDate> dates = sessions.stream().map(GatheringSession::getEventDate).toList();
+            if (!membership.isUsableOn(Collections.max(dates))) {
+                throw new CustomException(ErrorCode.MEMBERSHIP_PERIOD_EXCEEDED);
+            }
+            membershipWeekRule.check(userId, applicationId, dates).ifPresent(code -> {
+                throw new CustomException(code);
+            });
+        });
+
+        applicationCandidateSessionRepository.deleteByApplication_Id(applicationId);
+        // UNIQUE(application_id, session_id): 새 행 INSERT 전에 DELETE를 내보내고, 남은 내 다른 신청과의 중복을 본다.
+        applicationCandidateSessionRepository.flush();
+        if (applicationCandidateSessionRepository.existsBySession_IdInAndApplication_User_IdAndApplication_DeletedAtIsNull(
+                sessionIds, userId)) {
+            throw new CustomException(ErrorCode.ALREADY_APPLIED);
+        }
+        for (int i = 0; i < sessions.size(); i++) {
+            applicationCandidateSessionRepository.save(new ApplicationCandidateSession(application, sessions.get(i), i + 1));
+        }
+        application.changeCandidateRegions(regions);
+    }
+
+    // 매칭 대기(WAITING|REALLOCATING, 옛 신청의 NULL은 WAITING)인 우연한 식탁 신청만 바꿀 수 있다.
+    private static void checkWishChangeable(Application application) {
+        if (application.getDeletedAt() != null || application.getStatus() == ApplicationStatus.CANCELLED
+                || application.getGathering().getGatheringType() != GatheringType.RANDOM_TABLE
+                || (application.getMatchStatus() != null && !WISH_CHANGEABLE.contains(application.getMatchStatus()))) {
+            throw new CustomException(ErrorCode.WISH_CHANGE_NOT_ALLOWED);
+        }
     }
 
     /**
@@ -165,6 +256,7 @@ public class DiningApplicationService {
         } else {
             depositService.requestReturn(applicationId, settlement.refundPercent());
         }
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "신청자 취소"));
         // 테이블(제안·확정)에 앉아 있었다면 빼고, 인원이 모자라면 충원·재배치한다. (설계 4.7)
         if (table != null) {
             diningTableService.rebalance(table.getId());

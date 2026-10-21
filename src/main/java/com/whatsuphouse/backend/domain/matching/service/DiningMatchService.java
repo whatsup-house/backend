@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleService;
 import com.whatsuphouse.backend.domain.dining.entity.MatchingRuleSetting;
 import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
@@ -22,6 +23,7 @@ import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
 import com.whatsuphouse.backend.domain.matching.entity.MatchRun;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.enums.TableNoticeStatus;
 import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
@@ -30,6 +32,7 @@ import com.whatsuphouse.backend.domain.notification.event.DiningReallocatingEven
 import com.whatsuphouse.backend.domain.payment.service.DepositService;
 import com.whatsuphouse.backend.domain.user.entity.User;
 import com.whatsuphouse.backend.domain.user.enums.Job;
+import com.whatsuphouse.backend.global.common.enums.Gender;
 import com.whatsuphouse.backend.global.exception.CustomException;
 import com.whatsuphouse.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +41,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -47,6 +51,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IntSummaryStatistics;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -85,6 +90,7 @@ public class DiningMatchService {
     private final ApplicationEventPublisher eventPublisher;
     private final MatchResolutionService matchResolutionService;
     private final DepositService depositService;
+    private final NoticeLogService noticeLogService;
 
     /**
      * 한 회차 규칙과 신청들의 매칭 프로필·관계를 한 번에 읽어 둔 평가기. 수동 조정·재조정이 여러 멤버 구성을
@@ -183,6 +189,7 @@ public class DiningMatchService {
                         .isManual(false)
                         .build());
                 application.changeMatchStatus(MatchStatus.CONFIRM_PENDING);
+                eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "매칭 배정"));
             }
         }
 
@@ -210,22 +217,50 @@ public class DiningMatchService {
                 .collect(Collectors.toMap(MatchingEngine.Applicant::applicationId, Function.identity(), (a, b) -> a));
         Map<UUID, List<DiningTableMember>> membersByTable = members.stream()
                 .collect(Collectors.groupingBy(member -> member.getTable().getId()));
+        // 표시 정보(KAN-437): 희망 회차·지역 일치, 이전 만남, 제외 관계, 확정 안내 결과
+        Map<UUID, List<ApplicationCandidateSession>> wishes = adminApplicationService.findCandidateSessions(
+                memberApplications.stream().map(Application::getId).toList());
+        Map<UUID, Set<UUID>> excluded = matchExclusionProvider.findExcludedPairs(memberApplications.stream()
+                .map(Application::getUser).filter(Objects::nonNull).map(User::getId).distinct().toList());
+        Map<UUID, TableNoticeStatus> noticeStatuses = noticeLogService.findConfirmNoticeStatuses(
+                tables.stream().map(DiningTable::getId).toList());
 
         List<DiningTableListResponse.TableView> tableViews = tables.stream()
-                .map(table -> DiningTableListResponse.TableView.builder()
-                        .id(table.getId())
-                        .status(table.getStatus())
-                        .region(table.getDisplayRegion())
-                        .groupScore(table.getGroupScore())
-                        .scoreDetail(table.getScoreDetail())
-                        .confirmAt(table.getConfirmAt())
-                        .locked(table.isLocked())
-                        .venueId(table.getVenueId())
-                        .chatRoomId(table.getChatRoomId())
-                        .members(membersByTable.getOrDefault(table.getId(), List.of()).stream()
-                                .map(member -> toMemberView(member, profiles.get(member.getApplication().getId())))
-                                .toList())
-                        .build())
+                .map(table -> {
+                    List<DiningTableMember> tableMembers = membersByTable.getOrDefault(table.getId(), List.of());
+                    List<MatchingEngine.Applicant> tableProfiles = tableMembers.stream()
+                            .map(member -> profiles.get(member.getApplication().getId()))
+                            .toList();
+                    List<UUID> userIds = tableProfiles.stream().map(MatchingEngine.Applicant::userId)
+                            .filter(Objects::nonNull).distinct().toList();
+                    Set<UUID> metBefore = metBeforeUserIds(userIds, table.getId());
+                    Set<UUID> conflicts = relatedUserIds(userIds, excluded);
+                    IntSummaryStatistics ages = ages(tableProfiles);
+                    return DiningTableListResponse.TableView.builder()
+                            .id(table.getId())
+                            .status(table.getStatus())
+                            .region(table.getDisplayRegion())
+                            .groupScore(table.getGroupScore())
+                            .scoreDetail(table.getScoreDetail())
+                            .confirmAt(table.getConfirmAt())
+                            .matchedAt(table.getMatchedAt())
+                            .confirmedAt(table.getConfirmedAt())
+                            .locked(table.isLocked())
+                            .venueId(table.getVenueId())
+                            .chatRoomId(table.getChatRoomId())
+                            .ageMin(ages.getCount() > 0 ? ages.getMin() : null)
+                            .ageMax(ages.getCount() > 0 ? ages.getMax() : null)
+                            .maleCount(countGender(tableProfiles, Gender.MALE))
+                            .femaleCount(countGender(tableProfiles, Gender.FEMALE))
+                            .mbtiList(tableProfiles.stream().map(MatchingEngine.Applicant::mbti).filter(Objects::nonNull).toList())
+                            .commonInterests(commonInterests(tableProfiles))
+                            .noticeStatus(noticeStatuses.getOrDefault(table.getId(), TableNoticeStatus.NONE))
+                            .members(tableMembers.stream()
+                                    .map(member -> toMemberView(member, profiles.get(member.getApplication().getId()),
+                                            memberFlags(member.getApplication(), table, wishes, metBefore, conflicts)))
+                                    .toList())
+                            .build();
+                })
                 .toList();
 
         MatchRun lastRun = matchRunRepository.findFirstBySessionIdOrderByStartedAtDesc(sessionId).orElse(null);
@@ -328,10 +363,10 @@ public class DiningMatchService {
      * 지망 지역에 넣고 지역마다 엔진을 돌려, 모든 지역이 minTablesPerRegion개 이상 테이블을 만들 때만 유효한 조합으로 본다.
      * 유효한 조합 중 ① 앉는 사람이 많은 것 ② 앉은 사람들의 지망 순위 합이 작은 것 ③ 선언 순서가 앞선 지역 조합 순으로 고른다.
      * 같은 (지역, 인원) 풀은 한 번만 엔진에 넣는다. 무작위가 없어 같은 입력이면 같은 결과다.
+     * 고른 조합에 마무리 패스(finishUnseated)를 한 번 돌려, 채택 지역에서 엔진이 못 앉힌 사람을 다음 지망 채택 지역에 넣어 본다.
      * 끝까지 남은 사람의 사유: 채택된 지역에서 받은 하드 조건 사유(나이 차·제외 관계) → 희망 지역이 하나도 안 열렸으면
      * REGION_TOO_SMALL → 그 밖에는 NOT_ENOUGH_PEOPLE.
-     * ponytail: 채택된 지역에서 엔진이 못 앉힌 사람은 다음 지망 지역에 다시 넣어 보지 않는다(다음 회차로 넘어간다).
-     * 지역이 4곳보다 많아지면 조합 수가 2^n 이라 탐욕 방식으로 바꿔야 한다.
+     * ponytail: 지역이 4곳보다 많아지면 조합 수가 2^n 이라 탐욕 방식으로 바꿔야 한다.
      */
     private RegionMatch matchByRegion(List<Application> candidates, List<MatchingEngine.Applicant> applicants,
                                       MatchingEngine.Rules rules, MatchingEngine.Relations relations, int minTablesPerRegion) {
@@ -360,7 +395,63 @@ public class DiningMatchService {
         // 지역마다 "모두 열었을 때" 풀·테이블 수 — 채택되지 않은 지역의 결과 표시에 쓴다
         RegionPlan allOpen = planFor(universe.isEmpty() ? EnumSet.noneOf(DiningRegion.class) : EnumSet.copyOf(universe),
                 applicants, wanted, rules, relations, engineCache);
-        return adoptRegions(candidates, wanted, best, allOpen);
+        RegionPlan finished = best == null ? null
+                : finishUnseated(best, applicants, wanted, rules, relations, minTablesPerRegion, engineCache);
+        return adoptRegions(candidates, wanted, finished, allOpen);
+    }
+
+    /**
+     * 같은 날짜 다른 지역 마무리 패스(STA-03, KAN-436). 채택 지역에서 엔진이 못 앉힌 사람(하드 조건 사유 포함)을 신청 순으로,
+     * 그 사람의 다음 지망 지역 중 채택된 지역에 지망 순으로 한 번씩 넣어 그 지역만 엔진을 다시 돌린다.
+     * 다시 돌린 결과가 그 지역 테이블 수 ≥ minTablesPerRegion, 그 지역에 이미 앉아 있던 사람 전원 유지, 넣은 사람 착석일 때만
+     * 그 지역 결과를 바꾸고(넣은 사람은 원래 지역 풀에서 뺀다), 아니면 원래 결과를 둔다.
+     * ponytail: 사람마다 탐욕으로 한 번씩만 본다. 앞사람을 옮긴 뒤 뒷사람 기회가 달라져도 다시 돌지 않는다(모두 다시 보려면 바뀌지 않을 때까지 반복).
+     */
+    private RegionPlan finishUnseated(RegionPlan best, List<MatchingEngine.Applicant> applicants,
+                                      Map<UUID, List<DiningRegion>> wanted, MatchingEngine.Rules rules,
+                                      MatchingEngine.Relations relations, int minTablesPerRegion,
+                                      Map<List<UUID>, MatchingEngine.Result> engineCache) {
+        Map<DiningRegion, List<MatchingEngine.Applicant>> pools = new EnumMap<>(DiningRegion.class);
+        pools.putAll(best.pools());
+        Map<DiningRegion, MatchingEngine.Result> results = new EnumMap<>(DiningRegion.class);
+        results.putAll(best.results());
+        for (MatchingEngine.Applicant person : applicants) {
+            UUID id = person.applicationId();
+            DiningRegion home = wanted.get(id).stream().filter(best.open()::contains).findFirst().orElse(null);
+            if (home == null || seatedIds(results.get(home)).contains(id)) {
+                continue;
+            }
+            for (DiningRegion next : wanted.get(id)) {
+                if (next == home || !best.open().contains(next)) {
+                    continue;
+                }
+                Set<UUID> poolIds = new HashSet<>(ids(pools.get(next)));
+                poolIds.add(id);
+                // 엔진 동점 처리 기준(입력 순서)을 지키려고 신청 순으로 다시 세운다
+                List<MatchingEngine.Applicant> pool = applicants.stream().filter(a -> poolIds.contains(a.applicationId())).toList();
+                MatchingEngine.Result retry = engineCache.computeIfAbsent(ids(pool), k -> matchingEngine.match(pool, rules, relations));
+                Set<UUID> retrySeated = seatedIds(retry);
+                if (retry.tables().size() >= minTablesPerRegion && retrySeated.contains(id)
+                        && retrySeated.containsAll(seatedIds(results.get(next)))) {
+                    pools.put(next, pool);
+                    results.put(next, retry);
+                    pools.put(home, pools.get(home).stream().filter(a -> !a.applicationId().equals(id)).toList());
+                    break;
+                }
+            }
+        }
+        return new RegionPlan(best.open(), pools, results, best.seated(), best.rankSum(), best.order());
+    }
+
+    private static List<UUID> ids(List<MatchingEngine.Applicant> applicants) {
+        return applicants.stream().map(MatchingEngine.Applicant::applicationId).toList();
+    }
+
+    private static Set<UUID> seatedIds(MatchingEngine.Result result) {
+        return result.tables().stream()
+                .flatMap(table -> table.seats().stream())
+                .map(MatchingEngine.Seat::applicationId)
+                .collect(Collectors.toSet());
     }
 
     // 열린 지역 조합 하나의 배정 결과. seated = 앉은 사람 수, rankSum = 앉은 사람들의 지망 순위 합(1지망=1)
@@ -447,7 +538,10 @@ public class DiningMatchService {
             return;
         }
         diningTableMemberRepository.findByTableIdsWithApplication(tables.stream().map(DiningTable::getId).toList())
-                .forEach(member -> member.getApplication().changeMatchStatus(MatchStatus.WAITING));
+                .forEach(member -> {
+                    member.getApplication().changeMatchStatus(MatchStatus.WAITING);
+                    eventPublisher.publishEvent(new ApplicationStatusChangedEvent(member.getApplication(), "매칭 재실행 전 제안 해체"));
+                });
         for (DiningTable table : tables) {
             if (table.getVenueId() != null) {
                 sessionVenueService.releaseTable(sessionId, table.getVenueId());
@@ -490,6 +584,7 @@ public class DiningMatchService {
                 eventPublisher.publishEvent(new DiningReallocatingEvent(application.getId(), sessionId, application.getUser().getId()));
             }
             application.changeMatchStatus(MatchStatus.REALLOCATING);
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "미배정, 다음 희망 회차 대기"));
             return new MatchRun.Unassigned(application.getId(), UnassignedReason.NEXT_SESSION_WAITING);
         }
         // 대체 회차를 제안한다. 제안할 회차가 없으면 해결 선택 서비스가 NO_MATCH로 바꾼다(KEEP_TICKET/REFUND만).
@@ -497,6 +592,7 @@ public class DiningMatchService {
         matchResolutionService.offerResolution(application, wishes.getOrDefault(application.getId(), List.of()).stream()
                 .map(wish -> wish.getSession().getId())
                 .toList());
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "미배정, 해결 선택 제안"));
         return unassigned;
     }
 
@@ -576,7 +672,72 @@ public class DiningMatchService {
 
     // ── 응답 ────────────────────────────────────────────────────────────────
 
-    private static DiningTableListResponse.MemberView toMemberView(DiningTableMember member, MatchingEngine.Applicant profile) {
+    // 멤버 표시 플래그(KAN-437). 이전 만남·제외 관계는 같은 테이블 멤버끼리만 본다.
+    private record MemberFlags(boolean wantsSession, boolean wantsRegion, boolean metBefore, boolean conflict) {
+    }
+
+    private static MemberFlags memberFlags(Application application, DiningTable table,
+                                           Map<UUID, List<ApplicationCandidateSession>> wishes,
+                                           Set<UUID> metBefore, Set<UUID> conflicts) {
+        UUID userId = application.getUser() != null ? application.getUser().getId() : null;
+        return new MemberFlags(
+                wishes.getOrDefault(application.getId(), List.of()).stream()
+                        .anyMatch(wish -> wish.getSession().getId().equals(table.getSession().getId())),
+                wantsRegion(application, table.getDisplayRegion()),
+                userId != null && metBefore.contains(userId),
+                userId != null && conflicts.contains(userId));
+    }
+
+    // 이 회원들끼리 확정·완료 테이블(이 테이블 제외)에서 함께 앉았던 회원. 쌍은 양방향으로 나온다.
+    // ponytail: 테이블마다 조회 1번. 회차 테이블이 수십 개를 넘으면 테이블 ID까지 한 번에 읽도록 묶는다.
+    private Set<UUID> metBeforeUserIds(List<UUID> userIds, UUID tableId) {
+        if (userIds.size() < 2) {
+            return Set.of();
+        }
+        return diningTableMemberRepository.findUserPairsByTableStatusIn(userIds, MET_TABLE_STATUSES, tableId).stream()
+                .map(DiningTableMemberRepository.UserPairProjection::getUserId)
+                .collect(Collectors.toSet());
+    }
+
+    // relation(한 방향만 있어도 양쪽)으로 묶인 이 회원들끼리의 쌍에 든 회원
+    private static Set<UUID> relatedUserIds(List<UUID> userIds, Map<UUID, Set<UUID>> relation) {
+        Set<UUID> members = Set.copyOf(userIds);
+        Set<UUID> result = new HashSet<>();
+        for (UUID userId : userIds) {
+            relation.getOrDefault(userId, Set.of()).stream()
+                    .filter(other -> !other.equals(userId) && members.contains(other))
+                    .forEach(other -> {
+                        result.add(userId);
+                        result.add(other);
+                    });
+        }
+        return result;
+    }
+
+    // 출생연도 기준 나이(올해 - 출생연도, 만 나이 아님). 출생연도를 모르는 멤버는 뺀다.
+    private static IntSummaryStatistics ages(List<MatchingEngine.Applicant> profiles) {
+        int thisYear = LocalDate.now().getYear();
+        return profiles.stream().map(MatchingEngine.Applicant::birthYear).filter(Objects::nonNull)
+                .mapToInt(birthYear -> thisYear - birthYear)
+                .summaryStatistics();
+    }
+
+    private static int countGender(List<MatchingEngine.Applicant> profiles, Gender gender) {
+        return (int) profiles.stream().filter(profile -> gender.name().equalsIgnoreCase(profile.gender())).count();
+    }
+
+    // 멤버 전원이 고른 관심사, 첫 멤버의 답 순서. 멤버가 없거나 관심사 답이 없는 멤버가 있으면 빈 목록.
+    private static List<String> commonInterests(List<MatchingEngine.Applicant> profiles) {
+        if (profiles.isEmpty()) {
+            return List.of();
+        }
+        Set<String> common = new LinkedHashSet<>(profiles.get(0).interests());
+        profiles.forEach(profile -> common.retainAll(profile.interests()));
+        return List.copyOf(common);
+    }
+
+    private static DiningTableListResponse.MemberView toMemberView(DiningTableMember member, MatchingEngine.Applicant profile,
+                                                                   MemberFlags flags) {
         User user = member.getApplication().getUser();
         return DiningTableListResponse.MemberView.builder()
                 .memberId(member.getId())
@@ -588,6 +749,11 @@ public class DiningMatchService {
                 .mbti(profile.mbti())
                 .assignReason(member.getAssignReason())
                 .isManual(member.isManual())
+                .reallocationCount(member.getApplication().getReallocationCount())
+                .wantsSession(flags.wantsSession())
+                .wantsRegion(flags.wantsRegion())
+                .metBefore(flags.metBefore())
+                .conflict(flags.conflict())
                 .build();
     }
 
@@ -607,6 +773,8 @@ public class DiningMatchService {
                             .applicationId(u.applicationId())
                             .nickname(nickname)
                             .reason(u.reason())
+                            .reallocationCount(application == null ? 0 : application.getReallocationCount())
+                            .failedAt(run.getFinishedAt())
                             .build();
                 })
                 .toList();

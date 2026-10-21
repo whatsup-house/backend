@@ -2,17 +2,22 @@ package com.whatsuphouse.backend.domain.matching.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
+import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleService;
 import com.whatsuphouse.backend.domain.dining.entity.MatchingRuleSetting;
 import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
+import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
+import com.whatsuphouse.backend.domain.form.enums.QuestionType;
+import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringSessionStatus;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
+import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableListResponse;
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchRunResponse;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
@@ -20,6 +25,7 @@ import com.whatsuphouse.backend.domain.matching.entity.MatchRun;
 import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.enums.TableNoticeStatus;
 import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
@@ -96,6 +102,9 @@ class DiningMatchServiceTest {
 
     @Mock
     private DepositService depositService;
+
+    @Mock
+    private NoticeLogService noticeLogService;
 
     @InjectMocks
     private DiningMatchService diningMatchService;
@@ -303,6 +312,90 @@ class DiningMatchServiceTest {
                 new MatchRun.RegionResult("잠실", 8, 2, true));
     }
 
+    // ── 같은 날짜 다른 지역 마무리 패스 (KAN-436) ──────────────────────────────
+
+    // 홍대만 4명(0~3) + 홍대>잠실 1명(4, 홍대 4명 모두와 같은 테이블 금지) + 잠실만 4명(5~8). 홍대·잠실 모두 1테이블로 채택되고
+    // 4번은 홍대에서 BLOCKED_PAIR로 남는다.
+    private Application givenBlockedSecondChoice() {
+        List<Application> hongdaeOnly = applications(0, 4, DiningRegion.HONGDAE);
+        Application movable = application(4, DiningRegion.HONGDAE, DiningRegion.JAMSIL);
+        applications = Stream.of(hongdaeOnly, List.of(movable), applications(5, 9, DiningRegion.JAMSIL))
+                .flatMap(List::stream).toList();
+        Set<UUID> hongdaeUsers = new HashSet<>();
+        hongdaeOnly.forEach(a -> hongdaeUsers.add(a.getUser().getId()));
+        blocked = Map.of(movable.getUser().getId(), hongdaeUsers);
+        givenRun(1, List.of());
+        given(diningTableRepository.save(any(DiningTable.class))).willAnswer(invocation -> invocation.getArgument(0));
+        return movable;
+    }
+
+    @Test
+    @DisplayName("마무리 패스: 채택 지역에서 못 앉은 사람을 다음 지망 채택 지역에 넣어 다시 돌리고, 기존 착석자가 그대로면 채택한다")
+    void runMatch_finishingPass_seatsInNextAdoptedRegion() {
+        // given: 테이블 4~5명이라 잠실은 4번을 더해도 5명 한 테이블
+        session.changeMatchingRules(null, 30, 4, 5, BigDecimal.ZERO, null);
+        Application movable = givenBlockedSecondChoice();
+        ArgumentCaptor<DiningTableMember> seats = ArgumentCaptor.forClass(DiningTableMember.class);
+
+        // when
+        MatchRunResponse response = diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        assertThat(response.getUnassignedCount()).isZero();
+        then(diningTableMemberRepository).should(times(9)).save(seats.capture());
+        assertThat(seats.getAllValues()).filteredOn(m -> m.getTable().getRegion().equals("잠실"))
+                .extracting(m -> m.getApplication().getId())
+                .containsExactlyInAnyOrder(new UUID(0, 4), new UUID(0, 5), new UUID(0, 6), new UUID(0, 7), new UUID(0, 8));
+        assertThat(movable.getMatchStatus()).isEqualTo(MatchStatus.CONFIRM_PENDING);
+        assertThat(savedRun().getRegionResults()).containsExactly(
+                new MatchRun.RegionResult("홍대/합정", 4, 1, true),
+                new MatchRun.RegionResult("잠실", 5, 1, true));
+    }
+
+    @Test
+    @DisplayName("마무리 패스: 다시 돌린 결과에서 기존 착석자가 빠지면 원래 결과를 유지하고 사유도 원래 지역 사유로 남는다")
+    void runMatch_finishingPass_keepsOriginalWhenSeatedDisplaced() {
+        // given: 테이블 4명 고정이라 잠실에 4번을 더하면 누군가 한 명은 빠진다
+        Application movable = givenBlockedSecondChoice();
+        ArgumentCaptor<DiningTableMember> seats = ArgumentCaptor.forClass(DiningTableMember.class);
+
+        // when
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        then(diningTableMemberRepository).should(times(8)).save(seats.capture());
+        assertThat(seats.getAllValues()).filteredOn(m -> m.getTable().getRegion().equals("잠실"))
+                .extracting(m -> m.getApplication().getId())
+                .containsExactlyInAnyOrder(new UUID(0, 5), new UUID(0, 6), new UUID(0, 7), new UUID(0, 8));
+        assertThat(movable.getMatchStatus()).isEqualTo(MatchStatus.ALTERNATIVE_OFFERED);
+        MatchRun run = savedRun();
+        assertThat(run.getUnassignedReasons())
+                .containsExactly(new MatchRun.Unassigned(new UUID(0, 4), UnassignedReason.BLOCKED_PAIR));
+        assertThat(run.getRegionResults()).containsExactly(
+                new MatchRun.RegionResult("홍대/합정", 5, 1, true),
+                new MatchRun.RegionResult("잠실", 4, 1, true));
+    }
+
+    @Test
+    @DisplayName("재배치 횟수: REALLOCATING으로 바뀔 때마다 +1, 같은 회차 재실행으로 이미 REALLOCATING인 신청은 세지 않는다 (KAN-436)")
+    void runMatch_reallocationCount_countsTransitionsOnly() {
+        // given
+        givenRun(true);
+        given(matchRunRepository.findSessionIdsIn(anyCollection())).willReturn(List.of());
+        Application last = applications.get(4);
+
+        // when: 첫 실행에서 REALLOCATING, 같은 회차 재실행에서 다시 미배정
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        assertThat(last.getMatchStatus()).isEqualTo(MatchStatus.REALLOCATING);
+        assertThat(last.getReallocationCount()).isEqualTo(1);
+        last.changeMatchStatus(MatchStatus.CONFIRM_PENDING);
+        last.changeMatchStatus(MatchStatus.REALLOCATING);
+        assertThat(last.getReallocationCount()).isEqualTo(2);
+    }
+
     @Test
     @DisplayName("확정 재검증: 테이블 지역을 희망하지 않는 멤버가 있으면 불통과, 지역 없는 과거 테이블은 지역을 보지 않는다")
     void satisfiesHardConditions_requiresRegionWish() {
@@ -410,6 +503,98 @@ class DiningMatchServiceTest {
         then(sessionVenueService).should().releaseTable(session.getId(), venueId);
         assertThat(response.getCandidateCount()).isEqualTo(5);
         assertThat(previousMember.getMatchStatus()).isEqualTo(MatchStatus.CONFIRM_PENDING);
+    }
+
+    // ── 테이블 표시 정보 (KAN-437) ───────────────────────────────────────────
+
+    private static ApplicationAnswer answer(Application application, ReservedQuestionKey key, Object value) {
+        FormQuestion question = FormQuestion.builder().questionKey(key.name().toLowerCase()).type(QuestionType.SHORT_TEXT)
+                .label(key.name()).reservedKey(key).build();
+        return ApplicationAnswer.builder().application(application).question(question).value(Map.of("value", value)).build();
+    }
+
+    @Test
+    @DisplayName("테이블 탭: 나이 범위·성비·MBTI·공통 관심사, 멤버별 희망 회차·지역 일치·이전 만남·제외 관계, 최신 확정 안내 결과")
+    void getTables_displayInfo() {
+        // given
+        DiningTable table = table("홍대/합정");
+        Application a0 = applications.get(0);
+        Application a1 = applications.get(1);
+        Application a2 = application(2, DiningRegion.JAMSIL);   // 테이블 지역(홍대/합정)을 희망하지 않음
+        UUID u0 = a0.getUser().getId();
+        UUID u1 = a1.getUser().getId();
+        UUID u2 = a2.getUser().getId();
+        List<DiningTableMember> members = Stream.of(a0, a1, a2)
+                .map(a -> DiningTableMember.builder().application(a).table(table).seatOrder(1)
+                        .assignReason(AssignReason.INITIAL).build())
+                .toList();
+        given(diningTableRepository.findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(eq(session.getId()), anyCollection()))
+                .willReturn(List.of(table));
+        given(diningTableMemberRepository.findByTableIdsWithApplication(List.of(table.getId()))).willReturn(members);
+        given(adminApplicationService.findAnswers(anyCollection())).willReturn(List.of(
+                answer(a0, ReservedQuestionKey.BIRTH_YEAR, 1990), answer(a0, ReservedQuestionKey.GENDER, "MALE"),
+                answer(a0, ReservedQuestionKey.MBTI, "enfp"), answer(a0, ReservedQuestionKey.INTERESTS, List.of("여행", "음악")),
+                answer(a1, ReservedQuestionKey.BIRTH_YEAR, 1995), answer(a1, ReservedQuestionKey.GENDER, "FEMALE"),
+                answer(a1, ReservedQuestionKey.MBTI, "ISTJ"), answer(a1, ReservedQuestionKey.INTERESTS, List.of("음악", "여행", "독서")),
+                answer(a2, ReservedQuestionKey.GENDER, "MALE"), answer(a2, ReservedQuestionKey.INTERESTS, List.of("음악"))));
+        given(adminApplicationService.findCandidateSessions(anyCollection())).willReturn(Map.of(
+                a0.getId(), List.of(new ApplicationCandidateSession(a0, session, 1)),
+                a1.getId(), List.of(new ApplicationCandidateSession(a1, nextSession, 1), new ApplicationCandidateSession(a1, session, 2)),
+                a2.getId(), List.of(new ApplicationCandidateSession(a2, nextSession, 1))));
+        given(diningTableMemberRepository.findUserPairsByTableStatusIn(anyCollection(), anyCollection(), eq(table.getId())))
+                .willReturn(List.of(pair(u0, u1), pair(u1, u0)));
+        given(matchExclusionProvider.findExcludedPairs(anyCollection())).willReturn(Map.of(u2, Set.of(u0)));
+        given(noticeLogService.findConfirmNoticeStatuses(List.of(table.getId())))
+                .willReturn(Map.of(table.getId(), TableNoticeStatus.SENT));
+        int thisYear = LocalDate.now().getYear();
+
+        // when
+        DiningTableListResponse.TableView view = diningMatchService.getTables(session.getId()).getTables().get(0);
+
+        // then
+        assertThat(view.getAgeMin()).isEqualTo(thisYear - 1995);
+        assertThat(view.getAgeMax()).isEqualTo(thisYear - 1990);
+        assertThat(view.getMaleCount()).isEqualTo(2);
+        assertThat(view.getFemaleCount()).isEqualTo(1);
+        assertThat(view.getMbtiList()).containsExactly("ENFP", "ISTJ");
+        assertThat(view.getCommonInterests()).containsExactly("음악");
+        assertThat(view.getNoticeStatus()).isEqualTo(TableNoticeStatus.SENT);
+        assertThat(view.getMembers())
+                .extracting(DiningTableListResponse.MemberView::isWantsSession, DiningTableListResponse.MemberView::isWantsRegion,
+                        DiningTableListResponse.MemberView::isMetBefore, DiningTableListResponse.MemberView::isConflict)
+                .containsExactly(
+                        tuple(true, true, true, true),
+                        tuple(true, true, true, false),
+                        tuple(false, false, false, true));
+    }
+
+    @Test
+    @DisplayName("테이블 탭: 출생연도를 아는 멤버가 없으면 나이 범위 null, 안내 시도가 없으면 NONE")
+    void getTables_unknownAges_noNotice() {
+        // given
+        DiningTable table = table(null);
+        given(diningTableRepository.findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(eq(session.getId()), anyCollection()))
+                .willReturn(List.of(table));
+        given(diningTableMemberRepository.findByTableIdsWithApplication(List.of(table.getId()))).willReturn(List.of(
+                DiningTableMember.builder().application(applications.get(0)).table(table).seatOrder(1)
+                        .assignReason(AssignReason.INITIAL).build()));
+
+        // when
+        DiningTableListResponse.TableView view = diningMatchService.getTables(session.getId()).getTables().get(0);
+
+        // then
+        assertThat(view.getAgeMin()).isNull();
+        assertThat(view.getAgeMax()).isNull();
+        assertThat(view.getCommonInterests()).isEmpty();
+        assertThat(view.getNoticeStatus()).isEqualTo(TableNoticeStatus.NONE);
+        assertThat(view.getMembers().get(0).isWantsRegion()).isTrue();   // 지역 없는 테이블
+    }
+
+    private static DiningTableMemberRepository.UserPairProjection pair(UUID userId, UUID otherUserId) {
+        return new DiningTableMemberRepository.UserPairProjection() {
+            public UUID getUserId() { return userId; }
+            public UUID getOtherUserId() { return otherUserId; }
+        };
     }
 
     @Test

@@ -60,6 +60,11 @@ public class ChatPushService {
     public record Payload(String title, String body, String url) {
     }
 
+    /** VAPID가 설정돼 웹 푸시를 보낼 수 있는지. 발송 이력을 남기는 호출 측이 꺼져 있을 때 기록을 건너뛰는 데 쓴다. (KAN-438) */
+    public boolean isEnabled() {
+        return webPushSender.isEnabled();
+    }
+
     public PushPublicKeyResponse getPublicKey() {
         checkEnabled();
         return new PushPublicKeyResponse(webPushSender.getPublicKey());

@@ -35,6 +35,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.LocalDate;
@@ -93,6 +94,8 @@ class DiningTableServiceTest {
     private ChatService chatService;
     @Mock
     private PlatformTransactionManager transactionManager;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private DiningTableService diningTableService;

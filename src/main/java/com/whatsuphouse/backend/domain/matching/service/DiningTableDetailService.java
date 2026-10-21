@@ -4,10 +4,12 @@ import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
 import com.whatsuphouse.backend.domain.gathering.entity.GatheringSession;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableDetailResponse;
+import com.whatsuphouse.backend.domain.matching.entity.DiningContent;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
+import com.whatsuphouse.backend.domain.matching.repository.DiningContentRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.user.entity.User;
@@ -21,8 +23,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /** 참가자 테이블 상세(GET /api/dining/tables/{id}). (KAN-346) */
 @Service
@@ -39,6 +44,7 @@ public class DiningTableDetailService {
     private final DiningTableRepository diningTableRepository;
     private final DiningTableMemberRepository diningTableMemberRepository;
     private final AttendanceRepository attendanceRepository;
+    private final DiningContentRepository diningContentRepository;
     private final DiningTableExplanationService diningTableExplanationService;
     private final SessionVenueService sessionVenueService;
     private final UserService userService;
@@ -74,14 +80,30 @@ public class DiningTableDetailService {
                         .region(table.getDisplayRegion())
                         .build())
                 .venue(table.getVenueId() == null ? null : sessionVenueService.findVenue(table.getVenueId())
-                        .map(DiningTableDetailResponse.VenueView::from).orElse(null))
+                        .map(venue -> DiningTableDetailResponse.VenueView.of(venue, table.getReservationName())).orElse(null))
+                .gatherAt(table.getGatherAt())
                 .chatRoomId(table.getChatRoomId())
                 .strengths(insight.strengths())
                 .members(members.stream().map(member -> toMemberView(member, insight.profiles())).toList())
                 .cancelPolicy(CANCEL_POLICY)
                 .myAttendance(attendanceRepository.findByTableMemberId(me.getId())
                         .map(DiningTableDetailResponse.AttendanceView::from).orElse(null))
+                .contents(postedContents(table))
                 .build();
+    }
+
+    // 채팅방에 올린 콘텐츠만, 올린 순. 올리기 전(contents_posted_at 없음)이면 빈 배열. (KAN-438)
+    private List<DiningTableDetailResponse.ContentView> postedContents(DiningTable table) {
+        if (table.getContentsPostedAt() == null || table.getPostedContentIds() == null) {
+            return List.of();
+        }
+        Map<UUID, DiningContent> contents = diningContentRepository.findAllById(table.getPostedContentIds()).stream()
+                .collect(Collectors.toMap(DiningContent::getId, Function.identity()));
+        return table.getPostedContentIds().stream()
+                .map(contents::get)
+                .filter(Objects::nonNull)
+                .map(DiningTableDetailResponse.ContentView::from)
+                .toList();
     }
 
     private DiningTableDetailResponse.MemberView toMemberView(DiningTableMember member,

@@ -36,7 +36,13 @@ import java.util.stream.IntStream;
  *   (최저 테이블 점수 ↑, 평균 테이블 점수 ↑, 테이블 수 ↓ 순)가 가장 좋은 구성을 고른다. 딱 나눠지지 않으면(7명 → 6 + 1)
  *   가장 적은 인원을 남기고, 누구를 남길지도 같은 목적함수로 정한다. 남은 사람은 병합·재배치로 간다.
  * - 페어 점수 = Σ(weight × 항목) / Σweight. 답이 없어 계산할 수 없는 항목은 분자·분모에서 뺀다. Σweight = 0이면 0.
- * - 그룹 점수 = 0.7·pairAvg + 0.3·pairMin − 페널티, 0 미만은 0.
+ *   항목(기본 가중치, PRD MAT-04 우선순위 순 — KAN-435):
+ *   ageBand 5 = 1 − |출생연도 차| / maxAgeGap (0~1로 자름, 출생연도 모르면 제외, maxAgeGap 0이면 같은 해 1·아니면 0),
+ *   gender 4 = 성별 다르면 1, mbti 3 = 궁합표, interests 2 = Jaccard, wantedStyle 1 = 원하는 스타일 일치율,
+ *   custom 1 = 커스텀 매칭 질문 가중평균.
+ * - 그룹 점수 = (1 − s)·(0.7·pairAvg + 0.3·pairMin) + s·genderBalance − 페널티, 0 미만은 0.
+ *   genderBalance = 1 − |남 − 여| / 인원, s = gender 가중치 / 가중치 6개 합(기본 4/16).
+ *   멤버 중 성별을 모르는 사람이 있거나 1명 이하면 s = 0(성비 항 제외). 페널티(전원 동성·소수 성별 1명·이전 만남·직군·MBTI 쏠림)는 그대로.
  *   점수는 조합을 고르는 데만 쓰고 테이블을 거절하지 않는다. 점수 미달로 미배정되는 사람은 없다. (KAN-420)
  * - 무작위 없음. 모든 선택의 동점은 입력 순서가 앞선 쪽이라 같은 입력(순서 포함)이면 같은 결과다.
  */
@@ -123,7 +129,7 @@ public class MatchingEngine {
     }
 
     /** 페어 점수 항목 키. 순서는 가중치(MatchingWeights)·pairScore 항목 순서와 같다. */
-    static final List<String> CRITERIA = List.of("gender", "mbti", "interests", "wantedStyle", "custom");
+    static final List<String> CRITERIA = List.of("ageBand", "gender", "mbti", "interests", "wantedStyle", "custom");
 
     /** 쌍별 점수. a·b = applicationId, components = CRITERIA 항목 값(답이 없어 계산할 수 없는 항목은 키 없음). */
     public record PairScore(UUID a, UUID b, double score, Map<String, Double> components) {
@@ -186,6 +192,8 @@ public class MatchingEngine {
         private final int[] genderId;
         private final int[] jobId;
         private final int[] mbtiId;
+        // 그룹 점수에서 성비 균형 항의 비중 s (클래스 주석)
+        private final double genderShare;
         private int splitCount;
         private int mergeCount;
         private int reallocatedCount;
@@ -200,6 +208,9 @@ public class MatchingEngine {
             this.genderId = ids(people, Applicant::gender);
             this.jobId = ids(people, Applicant::jobCategory);
             this.mbtiId = ids(people, Applicant::mbti);
+            MatchingWeights w = rules.weights();
+            double total = w.getAgeBand() + w.getGender() + w.getMbti() + w.getInterests() + w.getWantedStyle() + w.getCustom();
+            this.genderShare = total > 0 ? w.getGender() / total : 0;
             for (int i = 0; i < n; i++) {
                 for (int j = i + 1; j < n; j++) {
                     Applicant a = people.get(i);
@@ -668,16 +679,18 @@ public class MatchingEngine {
             return parts(group).value();
         }
 
-        private record Parts(double pairAvg, double pairMin, double allSameGender, double singleMinorityGender,
+        private record Parts(double pairAvg, double pairMin, double balanceShare, double genderBalance,
+                             double allSameGender, double singleMinorityGender,
                              double metBefore, double sameJobCategory, double sameMbti) {
             double value() {
                 double penalty = DoubleStream.of(allSameGender, singleMinorityGender, metBefore, sameJobCategory, sameMbti)
                         .sum();
-                return Math.max(0, AVG_WEIGHT * pairAvg + MIN_WEIGHT * pairMin - penalty);
+                double pairPart = AVG_WEIGHT * pairAvg + MIN_WEIGHT * pairMin;
+                return Math.max(0, (1 - balanceShare) * pairPart + balanceShare * genderBalance - penalty);
             }
         }
 
-        // 그룹 점수 = 0.7·pairAvg + 0.3·pairMin − 페널티. score()와 rawScore()가 같이 쓴다.
+        // 그룹 점수 = (1 − s)·(0.7·pairAvg + 0.3·pairMin) + s·genderBalance − 페널티. score()와 rawScore()가 같이 쓴다.
         private Parts parts(List<Integer> group) {
             int size = group.size();
             int[] members = new int[size];
@@ -707,11 +720,15 @@ public class MatchingEngine {
             }
             int genderKinds = 0;
             boolean singleGender = false;
-            for (int count : counts(members, genderId)) {
+            int[] genderCounts = counts(members, genderId);
+            for (int count : genderCounts) {
                 genderKinds += count > 0 ? 1 : 0;
                 singleGender |= count == 1;
             }
-            return new Parts(pairAvg, pairMin,
+            // 성별은 MALE·FEMALE 두 값이라 값이 나온 순서의 앞 두 칸이 남·여 인원이다(한쪽뿐이면 뒤 칸 0).
+            boolean balanced = gendersKnown && size > 1;
+            double genderBalance = balanced ? 1 - (double) Math.abs(genderCounts[0] - genderCounts[1]) / size : 0;
+            return new Parts(pairAvg, pairMin, balanced ? genderShare : 0, genderBalance,
                     gendersKnown && size > 1 && genderKinds == 1 ? PENALTY_ALL_SAME_GENDER : 0,
                     gendersKnown && genderKinds > 1 && singleGender ? PENALTY_SINGLE_MINORITY_GENDER : 0,
                     metPairs == 0 ? 0 : round(metPairs * PENALTY_MET_BEFORE_PER_PAIR),
@@ -788,7 +805,7 @@ public class MatchingEngine {
 
         private double pairScore(Applicant a, Applicant b) {
             MatchingWeights w = rules.weights();
-            double[] weights = {w.getGender(), w.getMbti(), w.getInterests(), w.getWantedStyle(), w.getCustom()};
+            double[] weights = {w.getAgeBand(), w.getGender(), w.getMbti(), w.getInterests(), w.getWantedStyle(), w.getCustom()};
             Double[] items = items(a, b);
             double sum = 0;
             double weight = 0;
@@ -804,12 +821,25 @@ public class MatchingEngine {
         // 페어 점수 항목 값(CRITERIA 순). 답이 없어 계산할 수 없는 항목은 null.
         private Double[] items(Applicant a, Applicant b) {
             return new Double[]{
+                    ageBand(a, b),
                     a.gender() != null && b.gender() != null ? (a.gender().equals(b.gender()) ? 0.0 : 1.0) : null,
                     mbtiCompatibility(a.mbti(), b.mbti()),
                     jaccard(a.interests(), b.interests()),
                     average(wantedMatch(a, b), wantedMatch(b, a)),
                     customScore(a, b)
             };
+        }
+
+        // 1 − |출생연도 차| / maxAgeGap, 0~1. 하드 조건 밖(차 > maxAgeGap) 쌍은 0. 한쪽이라도 모르면 계산하지 않는다.
+        private Double ageBand(Applicant a, Applicant b) {
+            if (a.birthYear() == null || b.birthYear() == null) {
+                return null;
+            }
+            int gap = Math.abs(a.birthYear() - b.birthYear());
+            if (rules.maxAgeGap() <= 0) {
+                return gap == 0 ? 1.0 : 0.0;
+            }
+            return Math.max(0, 1 - (double) gap / rules.maxAgeGap());
         }
 
         // 내 WANTED_STYLE 중 상대 MY_STYLE에 있는 비율. 원하는 스타일을 고르지 않았으면 계산하지 않는다.

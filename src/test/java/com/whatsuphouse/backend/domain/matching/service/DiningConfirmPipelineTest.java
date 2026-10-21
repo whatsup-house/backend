@@ -1,6 +1,8 @@
 package com.whatsuphouse.backend.domain.matching.service;
 
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
+import com.whatsuphouse.backend.domain.application.admin.service.ApplicationStatusLogService;
+import com.whatsuphouse.backend.domain.application.enums.StatusLogField;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
@@ -31,6 +33,7 @@ import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringRepository;
 import com.whatsuphouse.backend.domain.gathering.repository.GatheringSessionRepository;
 import com.whatsuphouse.backend.domain.matching.dto.response.DiningTableDetailResponse;
+import com.whatsuphouse.backend.domain.matching.dto.response.NoticeLogResponse;
 import com.whatsuphouse.backend.domain.matching.entity.Attendance;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
@@ -39,6 +42,10 @@ import com.whatsuphouse.backend.domain.matching.enums.AssignReason;
 import com.whatsuphouse.backend.domain.matching.enums.AttendanceStatus;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeResult;
+import com.whatsuphouse.backend.domain.matching.enums.TableNoticeStatus;
 import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
@@ -75,11 +82,14 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 
 /**
  * 자동 확정 파이프라인(설계 4.6) 통합 테스트. 단계별 트랜잭션 경계("이후 단계 실패는 확정을 되돌리지 않음")를 실제 DB(H2)로 확인한다.
@@ -98,6 +108,10 @@ class DiningConfirmPipelineTest {
 
     @Autowired
     private DiningConfirmService diningConfirmService;
+    @Autowired
+    private NoticeLogService noticeLogService;
+    @Autowired
+    private ApplicationStatusLogService applicationStatusLogService;
     @Autowired
     private DiningTableDetailService diningTableDetailService;
     @Autowired
@@ -191,6 +205,13 @@ class DiningConfirmPipelineTest {
                 .isEqualTo(GatheringSessionStatus.CLOSED);
         assertThat(table.getConfirmedAt()).isNotNull();
         assertThat(table.getVenueId()).isEqualTo(venue.getId());
+        // 식당 배정 시 예약명 와썹하우스, 집합 = 시작 10분 전(KAN-438)
+        assertThat(table.getReservationName()).isEqualTo("와썹하우스");
+        assertThat(table.getGatherAt()).isEqualTo(due.getEventDate().atTime(18, 50));
+        DiningTableDetailResponse detail = diningTableDetailService.getTable(table.getId(), applications.get(0).getUser().getId());
+        assertThat(detail.getVenue().getReservationName()).isEqualTo("와썹하우스");
+        assertThat(detail.getGatherAt()).isEqualTo(due.getEventDate().atTime(18, 50));
+        assertThat(detail.getContents()).isEmpty();
         assertThat(sessionVenueRepository.findById(new SessionVenue.Key(due.getId(), venue.getId())).orElseThrow()
                 .getUsedTables()).isEqualTo(1);
 
@@ -342,6 +363,124 @@ class DiningConfirmPipelineTest {
     }
 
     @Test
+    @DisplayName("안내 발송 이력·상태 변경 이력(KAN-437): 채팅 실패·알림 성공을 시도마다 남기고, 재시도 성공이 테이블 안내 상태를 SENT로 바꾼다. 확정은 매칭 상태 이력으로 남는다")
+    void confirmNow_recordsNoticeAndStatusLogs() {
+        // given
+        DiningTable table = proposedTable(2);
+        willThrow(new CustomException(ErrorCode.USER_NOT_FOUND))
+                .given(adminChatService).createGroupRoom(any(), anyBoolean(), any());
+
+        // when
+        diningConfirmService.confirmNow(table.getId());
+
+        // then
+        assertThat(noticeLogService.listSessionNotices(session.getId()))
+                .extracting(NoticeLogResponse::getTableLabel, NoticeLogResponse::getKind, NoticeLogResponse::getChannel,
+                        NoticeLogResponse::getStatus, NoticeLogResponse::getAttempt)
+                .containsExactlyInAnyOrder(
+                        tuple("테이블 1", NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT, NoticeResult.FAILED, 1),
+                        tuple("테이블 1", NoticeKind.NOTIFICATION, NoticeChannel.IN_APP, NoticeResult.SUCCESS, 1));
+        assertThat(noticeLogService.findConfirmNoticeStatuses(List.of(table.getId())))
+                .containsEntry(table.getId(), TableNoticeStatus.FAILED);
+
+        // when: 장애가 풀린 뒤 재시도
+        reset(adminChatService);
+        diningConfirmService.retryChatRoom(table.getId(), admin.getId());
+
+        // then
+        assertThat(noticeLogService.listSessionNotices(session.getId()).get(0))
+                .satisfies(latest -> {
+                    assertThat(latest.getKind()).isEqualTo(NoticeKind.CONFIRM_MESSAGE);
+                    assertThat(latest.getStatus()).isEqualTo(NoticeResult.SUCCESS);
+                    assertThat(latest.getAttempt()).isEqualTo(2);
+                });
+        assertThat(noticeLogService.findConfirmNoticeStatuses(List.of(table.getId())))
+                .containsEntry(table.getId(), TableNoticeStatus.SENT);
+        UUID applicationId = diningTableMemberRepository.findByTableIdWithApplication(table.getId()).get(0)
+                .getApplication().getId();
+        assertThat(applicationStatusLogService.listHistory(applicationId))
+                .filteredOn(log -> log.getField() == StatusLogField.MATCH_STATUS)
+                .first()
+                .satisfies(log -> {
+                    assertThat(log.getTo()).isEqualTo("CONFIRMED");
+                    assertThat(log.getReason()).isEqualTo("테이블 확정");
+                    assertThat(log.getActorName()).isNull();
+                });
+    }
+
+    @Test
+    @DisplayName("채팅방 자동 재시도: 확정 5분 뒤부터 주기마다 1회씩 최대 3회만 시도하고, 다 실패하면 채팅방 실패 예외 1건을 열어 둔다")
+    void retryMissingChatRooms_stopsAfterThreeAttempts() {
+        // given: 채팅방 생성이 계속 실패
+        DiningTable table = proposedTable(2);
+        willThrow(new CustomException(ErrorCode.USER_NOT_FOUND))
+                .given(adminChatService).createGroupRoom(any(), anyBoolean(), any());
+        diningConfirmService.confirmNow(table.getId());
+
+        // when: 확정 직후(5분 전)에는 재시도하지 않는다
+        diningConfirmService.retryMissingChatRooms();
+
+        // then
+        assertThat(diningTableRepository.findById(table.getId()).orElseThrow().getChatRetryCount()).isZero();
+
+        // when: 확정 5분이 지난 뒤 주기 5번
+        confirmedMinutesAgo(table, 6);
+        for (int i = 0; i < 5; i++) {
+            diningConfirmService.retryMissingChatRooms();
+        }
+
+        // then: 최초 1회 + 재시도 3회
+        then(adminChatService).should(times(1 + DiningConfirmService.MAX_CHAT_RETRIES)).createGroupRoom(any(), anyBoolean(), any());
+        DiningTable reloaded = diningTableRepository.findById(table.getId()).orElseThrow();
+        assertThat(reloaded.getChatRetryCount()).isEqualTo(DiningConfirmService.MAX_CHAT_RETRIES);
+        assertThat(reloaded.getChatRoomId()).isNull();
+        assertThat(openCases(table.getId())).filteredOn(c -> c.getType() == ExceptionCaseType.NOTIFICATION)
+                .singleElement().satisfies(c -> assertThat(c.getReason()).startsWith(DiningConfirmService.CHAT_FAILURE_PREFIX));
+        // 발송 이력: 최초 실패 + 재시도 실패 3건이 시도 번호대로 남는다
+        assertThat(noticeLogService.listSessionNotices(session.getId()))
+                .filteredOn(n -> n.getKind() == NoticeKind.CONFIRM_MESSAGE)
+                .extracting(NoticeLogResponse::getChannel, NoticeLogResponse::getStatus, NoticeLogResponse::getAttempt)
+                .containsExactlyInAnyOrder(
+                        tuple(NoticeChannel.CHAT, NoticeResult.FAILED, 1), tuple(NoticeChannel.CHAT, NoticeResult.FAILED, 2),
+                        tuple(NoticeChannel.CHAT, NoticeResult.FAILED, 3), tuple(NoticeChannel.CHAT, NoticeResult.FAILED, 4));
+    }
+
+    @Test
+    @DisplayName("채팅방 자동 재시도가 성공하면 방을 연결하고 운영자 메시지를 보내며 채팅방 실패 예외를 닫는다")
+    void retryMissingChatRooms_successResolvesCase() {
+        // given
+        DiningTable table = proposedTable(2);
+        willThrow(new CustomException(ErrorCode.USER_NOT_FOUND))
+                .given(adminChatService).createGroupRoom(any(), anyBoolean(), any());
+        diningConfirmService.confirmNow(table.getId());
+        confirmedMinutesAgo(table, 6);
+        reset(adminChatService);
+
+        // when
+        diningConfirmService.retryMissingChatRooms();
+        diningConfirmService.retryMissingChatRooms();
+
+        // then: 방이 생긴 뒤에는 더 시도하지 않는다
+        DiningTable reloaded = diningTableRepository.findById(table.getId()).orElseThrow();
+        assertThat(reloaded.getChatRoomId()).isNotNull();
+        assertThat(reloaded.getChatRetryCount()).isEqualTo(1);
+        assertThat(operatorMessages(reloaded.getChatRoomId())).hasSize(2);
+        assertThat(roomMessages(reloaded.getChatRoomId(), ChatMessageType.TEXT)).extracting(ChatMessage::getSenderId)
+                .containsOnly(admin.getId());
+        assertThat(openCases(table.getId())).noneMatch(c -> c.getType() == ExceptionCaseType.NOTIFICATION);
+        assertThat(exceptionCaseRepository.findAllByTypeAndTableIdAndStatus(
+                ExceptionCaseType.NOTIFICATION, table.getId(), ExceptionCaseStatus.RESOLVED))
+                .singleElement().satisfies(c -> assertThat(c.getResolutionNote()).isEqualTo("자동 재시도 성공"));
+        // 발송 이력: 최초 실패 1건 + 자동 재시도 성공 1건 → 테이블 안내 상태 SENT
+        assertThat(noticeLogService.listSessionNotices(session.getId()))
+                .filteredOn(n -> n.getKind() == NoticeKind.CONFIRM_MESSAGE)
+                .extracting(NoticeLogResponse::getStatus, NoticeLogResponse::getAttempt)
+                .containsExactlyInAnyOrder(tuple(NoticeResult.FAILED, 1), tuple(NoticeResult.SUCCESS, 2));
+        assertThat(noticeLogService.findConfirmNoticeStatuses(List.of(table.getId())))
+                .containsEntry(table.getId(), TableNoticeStatus.SENT);
+    }
+
+    @Test
     @DisplayName("하드 조건(최소 인원) 위반이면 확정을 보류하고, 여러 번 돌아도 CONFLICT는 한 건만 남는다")
     void confirmDueTables_hardConditionViolated_holdsWithSingleConflict() {
         // given: 최소 2인 회차에 1명 테이블
@@ -466,6 +605,11 @@ class DiningConfirmPipelineTest {
                     .table(table).seatOrder(seat).assignReason(AssignReason.INITIAL).build());
         }
         return table;
+    }
+
+    private void confirmedMinutesAgo(DiningTable table, int minutes) {
+        jdbcTemplate.update("UPDATE dining_tables SET confirmed_at = ? WHERE id = ?",
+                LocalDateTime.now().minusMinutes(minutes), table.getId());
     }
 
     private UUID memberUserId(DiningTable table) {

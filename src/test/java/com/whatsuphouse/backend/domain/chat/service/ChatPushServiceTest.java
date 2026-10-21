@@ -32,6 +32,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -41,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -156,6 +158,27 @@ class ChatPushServiceTest {
 
         // then
         verify(webPushSender, never()).send(any(), any());
+    }
+
+    @Test
+    @DisplayName("채팅 외 알림 푸시: 구독 기기가 있는 회원에게만 보내고, 구독이 없으면 아무것도 보내지 않는다")
+    void pushToUsers_sendsOnlyToSubscribedUsers() {
+        // given
+        UUID unsubscribedId = UUID.randomUUID();
+        ChatPushService.Payload payload = new ChatPushService.Payload("우연한 식탁 테이블이 확정되었어요", "본문", "/dining/tables/1");
+
+        // when
+        chatPushService.pushToUsers(List.of(offlineId, unsubscribedId), payload);
+
+        // then
+        verify(webPushSender).send(argThat(s -> s != null && s.getUserId().equals(offlineId)), eq(payload));
+        verify(webPushSender, times(1)).send(any(), any());
+
+        // when: 구독이 없는 회원만
+        chatPushService.pushToUsers(List.of(unsubscribedId), payload);
+
+        // then
+        verify(webPushSender, times(1)).send(any(), any());
     }
 
     private String endpoint(UUID userId) {

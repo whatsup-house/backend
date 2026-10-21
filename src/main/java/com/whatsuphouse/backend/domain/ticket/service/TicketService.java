@@ -9,6 +9,7 @@ import com.whatsuphouse.backend.domain.ticket.entity.TicketTransaction;
 import com.whatsuphouse.backend.domain.application.client.service.MembershipWeekRule;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
@@ -161,6 +162,7 @@ public class TicketService {
                 Hibernate.initialize(paymentPending.getGathering());
                 eventPublisher.publishEvent(new ApplicationConfirmedEvent(paymentPending));
             }
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(paymentPending, "이용권 입금 확인"));
         }
         return pass;
     }
@@ -353,6 +355,18 @@ public class TicketService {
         return findRefundableDeduction(applicationId).map(use -> refundAmount(use.getTicketPass(), percent)).orElse(0);
     }
 
+    /**
+     * 이 신청을 멤버십으로 확정했으면(멤버십 USE 기록) 그 멤버십. 횟수권·결제 대기·무료 신청은 비어 있다.
+     * 대기 중 일정 바꾸기가 신청 때와 같은 멤버십 조건을 다시 보는 데 쓴다. (KAN-436)
+     */
+    @Transactional(readOnly = true)
+    public Optional<TicketPass> findMembershipUsedBy(UUID applicationId) {
+        return ticketTransactionRepository
+                .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
+                .map(TicketTransaction::getTicketPass)
+                .filter(TicketPass::isPeriod);
+    }
+
     /** 이 회차 날짜를 덮는 활성 멤버십이 있는가. 신청 도메인의 주 1회 검사 진입 조건. */
     public boolean hasMembershipFor(UUID userId, LocalDate sessionDate) {
         return findMembershipFor(userId, sessionDate).isPresent();
@@ -470,7 +484,17 @@ public class TicketService {
         ticketTransactionRepository
                 .findFirstByApplication_IdAndTransactionTypeOrderByCreatedAtDesc(applicationId, TicketTransactionType.USE)
                 .filter(use -> use.getStatus() == TicketDeductionStatus.REFUND_PROCESSING)
-                .ifPresent(use -> use.advanceRefund(TicketDeductionStatus.REFUNDED));
+                .ifPresent(use -> {
+                    use.advanceRefund(TicketDeductionStatus.REFUNDED);
+                    eventPublisher.publishEvent(new ApplicationStatusChangedEvent(use.getApplication(), "환불 송금 완료"));
+                });
+    }
+
+    /** 환불 실패(REFUND_FAILED)로 남은 이용권 차감 건수. 운영 대시보드용. (KAN-437) */
+    @Transactional(readOnly = true)
+    public long countRefundFailures() {
+        return ticketTransactionRepository.countByTransactionTypeAndStatus(
+                TicketTransactionType.USE, TicketDeductionStatus.REFUND_FAILED);
     }
 
     /**
@@ -501,6 +525,7 @@ public class TicketService {
             application.cancel();
             refundOneTicket(application);
             depositService.requestReturn(application.getId());
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "멤버십 환불"));
             eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
         });
         pass.cancel();

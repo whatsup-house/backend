@@ -11,6 +11,7 @@ import com.whatsuphouse.backend.domain.application.client.dto.response.Applicati
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationCandidateSessionRepository;
 import com.whatsuphouse.backend.domain.application.repository.ApplicationRepository;
 import com.whatsuphouse.backend.domain.auth.event.GuestEmailVerificationConsumedEvent;
@@ -291,6 +292,7 @@ public class ApplicationService {
         }
 
         saveAnswers(saved, answers, questionMap);
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(saved, "신청"));
 
         if (autoConfirmed) {
             eventPublisher.publishEvent(new ApplicationConfirmedEvent(saved));
@@ -302,8 +304,8 @@ public class ApplicationService {
         return ApplicationResponse.from(saved);
     }
 
-    // 보낸 순서가 지망 순위다. 중복은 앞의 것만 남긴다.
-    private static List<DiningRegion> resolveCandidateRegions(List<String> labels) {
+    // 보낸 순서가 지망 순위다. 중복은 앞의 것만 남긴다. 대기 중 지역 바꾸기(DiningApplicationService)도 쓴다.
+    static List<DiningRegion> resolveCandidateRegions(List<String> labels) {
         if (labels == null || labels.isEmpty()) {
             throw new CustomException(ErrorCode.REGION_REQUIRED);
         }
@@ -473,6 +475,7 @@ public class ApplicationService {
         }
 
         application.cancel();
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "신청자 취소"));
 
         eventPublisher.publishEvent(new ApplicationCancelledEvent(application));
     }
@@ -493,6 +496,7 @@ public class ApplicationService {
             return false;
         }
         application.confirmPayment();
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "입금 자동 확인"));
         eventPublisher.publishEvent(new ApplicationPaymentConfirmedEvent(application));
         return true;
     }

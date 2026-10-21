@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /**
  * 회차 시작 시각에 테이블 채팅방에 올리는 대화 주제·아이스브레이킹. V13 시드로만 채운다(관리 UI 없음). (설계 4.9, KAN-349)
- * interestTag는 표준 폼 INTERESTS 선택지 값. NULL이면 범용.
+ * interestTag는 표준 폼 INTERESTS 선택지 값 또는 MY_STYLE·WANTED_STYLE 선택지 값(V34, 성향 맞춤 주제). NULL이면 범용.
  */
 @Entity
 @Table(name = "dining_contents")

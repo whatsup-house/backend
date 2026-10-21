@@ -16,7 +16,7 @@ import java.math.BigDecimal;
 
 /**
  * 매칭 규칙 기본값(단일 행, id = 1). V7이 기본 행을 넣는다. 회차의 동명 컬럼이 NULL이 아니면 회차 값이 우선한다. (설계 2.7)
- * defaults()의 값은 V7의 컬럼 DEFAULT와 같다.
+ * defaults()의 값은 V7의 컬럼 DEFAULT와 같다(weights 제외 — MatchingWeights.defaults() 참고).
  */
 @Entity
 @Table(name = "matching_rule_settings")

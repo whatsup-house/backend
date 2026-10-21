@@ -38,6 +38,13 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     @Query("select a.tableMemberId as tableMemberId, a.status as status from Attendance a where a.tableMemberId in :tableMemberIds")
     List<MemberStatusProjection> findStatusesByTableMemberIdIn(@Param("tableMemberIds") Collection<UUID> tableMemberIds);
 
+    // 회차들의 노쇼 후보(종료 후 체크인 없음, 운영자 확정 전) 수. 운영 대시보드용. (KAN-437)
+    @Query("""
+            select count(a) from Attendance a, DiningTableMember m
+            where a.tableMemberId = m.id and a.noShowCandidate = true and m.table.session.id in :sessionIds
+            """)
+    long countNoShowCandidatesBySessionIds(@Param("sessionIds") Collection<UUID> sessionIds);
+
     // since(포함) 이후 회차에 status로 참석한 회원과 그 회차 장소(없으면 NULL). 다음 모집 알림 대상. (KAN-349) 체험(데모) 회원은 제외한다. (KAN-407)
     @Query("""
             select distinct u.id as userId, l.id as locationId

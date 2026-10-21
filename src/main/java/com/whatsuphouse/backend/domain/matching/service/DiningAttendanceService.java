@@ -220,6 +220,12 @@ public class DiningAttendanceService {
                         AttendanceRepository.UserCountProjection::getCount));
     }
 
+    /** 회차들의 노쇼 후보 수(운영자 확정 전). (KAN-437 운영 대시보드) */
+    @Transactional(readOnly = true)
+    public long countNoShowCandidates(Collection<UUID> sessionIds) {
+        return sessionIds.isEmpty() ? 0 : attendanceRepository.countNoShowCandidatesBySessionIds(sessionIds);
+    }
+
     // ── 회차 종료 처리 ───────────────────────────────────────────────────────
 
     /**
