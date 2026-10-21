@@ -63,7 +63,7 @@ public class DiningTableExplanationService {
                 .toList();
         MatchingEngine.Explanation explanation = matchingEngine.explain(members, evaluator.rules(), evaluator.relations());
         return new Insight(evaluator.profiles(), explanation,
-                DiningTableStrengths.describe(explanation, members, evaluator.relations()));
+                DiningTableStrengths.withScore(explanation, DiningTableStrengths.describe(explanation, members, evaluator.relations())));
     }
 
     /** 관리자 매칭 근거. 해체 여부와 상관없이 soft delete되지 않은 테이블이면 보여준다. 없으면 404. */

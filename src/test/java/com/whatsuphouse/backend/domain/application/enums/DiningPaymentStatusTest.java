@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.function.Consumer;
 
-import static com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus.FAILED;
 import static com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus.PAID;
 import static com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus.PENDING;
 import static com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus.REFUNDED;
@@ -88,7 +87,7 @@ class DiningPaymentStatusTest {
     }
 
     @Test
-    @DisplayName("끝난 신청: 환불 없이 끝났으면 PAID, 결제 전에 끝났으면 FAILED")
+    @DisplayName("끝난 신청: 환불 없이 끝났으면 PAID, 결제 전에 끝났으면 결제 상태 없음(null)")
     void of_closedApplication_mapping() {
         // given
         Application cancelled = diningApplication(Application::cancel);
@@ -97,9 +96,9 @@ class DiningPaymentStatusTest {
         // when & then
         assertThat(of(cancelled, TicketDeductionStatus.DEDUCTED, DepositStatus.FORFEITED, false))
                 .as("당일 취소: 환불 없음·보증금 몰수").isEqualTo(PAID);
-        assertThat(of(cancelled, null, null, false)).as("결제 전 취소").isEqualTo(FAILED);
-        assertThat(of(cancelled, null, DepositStatus.PENDING, false)).as("보증금도 미입금").isEqualTo(FAILED);
-        assertThat(of(rejected, null, null, false)).as("결제 전 반려").isEqualTo(FAILED);
+        assertThat(of(cancelled, null, null, false)).as("결제 전 취소").isNull();
+        assertThat(of(cancelled, null, DepositStatus.PENDING, false)).as("보증금도 미입금").isNull();
+        assertThat(of(rejected, null, null, false)).as("결제 전 반려").isNull();
     }
 
     @Test
