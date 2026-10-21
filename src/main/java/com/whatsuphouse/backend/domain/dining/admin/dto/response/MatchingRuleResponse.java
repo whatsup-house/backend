@@ -30,6 +30,9 @@ public class MatchingRuleResponse {
     @Schema(description = "페어 점수 항목별 가중치")
     private Weights weights;
 
+    @Schema(description = "지역 최소 테이블 수(1~5). 한 회차·지역의 자동 매칭 테이블이 이 수 이상일 때만 그 지역 테이블을 만든다", example = "2")
+    private int minTablesPerRegion;
+
     public static MatchingRuleResponse from(MatchingRuleSetting setting) {
         return MatchingRuleResponse.builder()
                 .maxAgeGap(setting.getMaxAgeGap())
@@ -38,6 +41,7 @@ public class MatchingRuleResponse {
                 .minGroupScore(setting.getMinGroupScore())
                 .autoConfirmGraceMinutes(setting.getAutoConfirmGraceMinutes())
                 .weights(Weights.from(setting.getWeights()))
+                .minTablesPerRegion(setting.getMinTablesPerRegion())
                 .build();
     }
 

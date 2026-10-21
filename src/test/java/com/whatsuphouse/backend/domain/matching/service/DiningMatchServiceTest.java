@@ -6,6 +6,7 @@ import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSe
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleService;
 import com.whatsuphouse.backend.domain.dining.entity.MatchingRuleSetting;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
 import com.whatsuphouse.backend.domain.gathering.client.service.GatheringService;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
@@ -45,21 +46,26 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
@@ -98,6 +104,8 @@ class DiningMatchServiceTest {
     private GatheringSession session;
     private GatheringSession nextSession;
     private List<Application> applications;
+    // 회원 ID 기준 같은 테이블 금지 관계(매칭 제외). 기본은 없음.
+    private Map<UUID, Set<UUID>> blocked = Map.of();
 
     private GatheringSession session(int daysLater) {
         GatheringSession s = GatheringSession.builder()
@@ -106,51 +114,195 @@ class DiningMatchServiceTest {
         return s;
     }
 
-    // 5명, 4인 고정 테이블 → 4명 착석 + 입력 순서가 가장 늦은 4번 1명 미배정. 답변이 없어 점수는 0이라 최소 점수 0.
+    // 5명(모두 홍대/합정 희망), 4인 고정 테이블 → 4명 착석 + 입력 순서가 가장 늦은 4번 1명 미배정. 답변이 없어 점수는 0이라 최소 점수 0.
     @BeforeEach
     void setUp() {
         session = session(7);
         session.changeMatchingRules(null, 30, 4, 4, BigDecimal.ZERO, null);
         nextSession = session(14);
-        applications = IntStream.range(0, 5).mapToObj(i -> {
-            User user = User.builder().email("u" + i + "@example.com").password("pw").name("회원" + i)
-                    .gender(Gender.MALE).age(30).nickname("회원" + i).build();
-            ReflectionTestUtils.setField(user, "id", new UUID(1, i));
-            user.approveRandomTable();
-            Application application = Application.builder().bookingNumber("WH-" + i).gathering(gathering).user(user)
-                    .name("회원" + i).phone("01012345678").build();
-            ReflectionTestUtils.setField(application, "id", new UUID(0, i));
-            application.confirm();
-            return application;
-        }).toList();
+        applications = IntStream.range(0, 5).mapToObj(i -> application(i, DiningRegion.HONGDAE)).toList();
 
-        given(gatheringService.lockRandomTableSession(session.getId())).willReturn(session);
+        lenient().when(gatheringService.lockRandomTableSession(session.getId())).thenReturn(session);
+    }
+
+    private Application application(int i, DiningRegion... regions) {
+        User user = User.builder().email("u" + i + "@example.com").password("pw").name("회원" + i)
+                .gender(Gender.MALE).age(30).nickname("회원" + i).build();
+        ReflectionTestUtils.setField(user, "id", new UUID(1, i));
+        user.approveRandomTable();
+        Application application = Application.builder().bookingNumber("WH-" + i).gathering(gathering).user(user)
+                .name("회원" + i).phone("01012345678").candidateRegions(List.of(regions)).build();
+        ReflectionTestUtils.setField(application, "id", new UUID(0, i));
+        application.confirm();
+        return application;
     }
 
     // 실행 1회에 필요한 조회 스텁. lastHasNextSession이면 4번 신청은 아직 실행 전인 다른 회차도 희망한다.
+    // 기존 테스트는 테이블 1개짜리라 지역 최소 테이블 수를 1로 둔다(지역 기준과 무관한 동작을 본다).
     private void givenRun(boolean lastHasNextSession) {
-        given(adminMatchingRuleService.findMatchingRuleSetting()).willReturn(MatchingRuleSetting.defaults());
+        givenRun(1, lastHasNextSession ? List.of(applications.get(4)) : List.of());
+    }
+
+    private void givenRun(int minTablesPerRegion, Collection<Application> withNextSession) {
+        MatchingRuleSetting setting = MatchingRuleSetting.defaults();
+        setting.changeMinTablesPerRegion(minTablesPerRegion);
+        given(adminMatchingRuleService.findMatchingRuleSetting()).willReturn(setting);
         given(matchRunRepository.save(any(MatchRun.class))).willAnswer(invocation -> invocation.getArgument(0));
-        given(adminApplicationService.listSessionApplications(session.getId())).willReturn(applications);
+        given(adminApplicationService.listSessionApplications(session.getId())).willAnswer(invocation -> applications);
         given(diningTableMemberRepository.findApplicationIdsByTableStatusIn(anyCollection(), anyCollection()))
                 .willReturn(List.of());
         given(adminApplicationService.findAnswers(anyCollection())).willReturn(List.of());
         given(diningTableMemberRepository.findUserPairsByTableStatusIn(anyCollection(), anyCollection(), isNull()))
                 .willReturn(List.of());
-        given(matchExclusionProvider.findExcludedPairs(anyCollection())).willReturn(Map.of());
-        wishes(lastHasNextSession);
+        given(matchExclusionProvider.findExcludedPairs(anyCollection())).willAnswer(invocation -> blocked);
+        wishes(withNextSession);
     }
 
-    private void wishes(boolean lastHasNextSession) {
+    private void wishes(Collection<Application> withNextSession) {
         Map<UUID, List<ApplicationCandidateSession>> wishes = new HashMap<>();
         for (Application application : applications) {
             List<ApplicationCandidateSession> list = new ArrayList<>(List.of(new ApplicationCandidateSession(application, session, 1)));
-            if (lastHasNextSession && application == applications.get(4)) {
+            if (withNextSession.contains(application)) {
                 list.add(new ApplicationCandidateSession(application, nextSession, 2));
             }
             wishes.put(application.getId(), list);
         }
         given(adminApplicationService.findCandidateSessions(anyCollection())).willReturn(wishes);
+    }
+
+    private List<Application> applications(int from, int to, DiningRegion... regions) {
+        return IntStream.range(from, to).mapToObj(i -> application(i, regions)).toList();
+    }
+
+    private MatchRun savedRun() {
+        ArgumentCaptor<MatchRun> run = ArgumentCaptor.forClass(MatchRun.class);
+        then(matchRunRepository).should().save(run.capture());
+        return run.getValue();
+    }
+
+    // ── 회차×지역 매칭 (KAN-431) ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("홍대 8명·잠실 4명(4인 테이블, 지역 최소 2테이블) → 홍대 2테이블만 채택하고 지역을 저장, 잠실은 다음 희망 회차가 있으면 REALLOCATING, 없으면 REGION_TOO_SMALL로 해결 선택")
+    void runMatch_smallRegion_discarded() {
+        // given
+        applications = Stream.concat(applications(0, 8, DiningRegion.HONGDAE).stream(),
+                applications(8, 12, DiningRegion.JAMSIL).stream()).toList();
+        givenRun(2, List.of(applications.get(8), applications.get(9)));
+
+        // when
+        MatchRunResponse response = diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        assertThat(response.getTableCount()).isEqualTo(2);
+        ArgumentCaptor<DiningTable> tables = ArgumentCaptor.forClass(DiningTable.class);
+        then(diningTableRepository).should(times(2)).save(tables.capture());
+        assertThat(tables.getAllValues()).extracting(DiningTable::getRegion).containsOnly("홍대/합정");
+        assertThat(applications.subList(0, 8)).allSatisfy(a -> assertThat(a.getMatchStatus()).isEqualTo(MatchStatus.CONFIRM_PENDING));
+        assertThat(applications.subList(8, 10)).allSatisfy(a -> assertThat(a.getMatchStatus()).isEqualTo(MatchStatus.REALLOCATING));
+        assertThat(applications.subList(10, 12)).allSatisfy(a -> assertThat(a.getMatchStatus()).isEqualTo(MatchStatus.ALTERNATIVE_OFFERED));
+        MatchRun run = savedRun();
+        assertThat(run.getUnassignedReasons()).containsExactly(
+                new MatchRun.Unassigned(new UUID(0, 8), UnassignedReason.NEXT_SESSION_WAITING),
+                new MatchRun.Unassigned(new UUID(0, 9), UnassignedReason.NEXT_SESSION_WAITING),
+                new MatchRun.Unassigned(new UUID(0, 10), UnassignedReason.REGION_TOO_SMALL),
+                new MatchRun.Unassigned(new UUID(0, 11), UnassignedReason.REGION_TOO_SMALL));
+        assertThat(run.getRegionResults()).containsExactly(
+                new MatchRun.RegionResult("홍대/합정", 8, 2, true),
+                new MatchRun.RegionResult("잠실", 4, 1, false),
+                new MatchRun.RegionResult("강남/신논현", 0, 0, false),
+                new MatchRun.RegionResult("을지로/종로", 0, 0, false));
+    }
+
+    @Test
+    @DisplayName("앞 지역 결과가 버려지면 두 지역을 고른 사람은 다음 지역 후보로 남아 그 지역 테이블에 앉는다")
+    void runMatch_multiRegionApplicants_flowToNextRegion() {
+        // given: 홍대만 4명(서로 같은 테이블 금지) + 홍대·잠실 4명 + 잠실만 4명. 후보 수·단일 지역 수가 같아 선언 순으로 홍대 먼저.
+        List<Application> hongdaeOnly = applications(0, 4, DiningRegion.HONGDAE);
+        List<Application> both = applications(4, 8, DiningRegion.HONGDAE, DiningRegion.JAMSIL);
+        List<Application> jamsilOnly = applications(8, 12, DiningRegion.JAMSIL);
+        applications = Stream.of(hongdaeOnly, both, jamsilOnly).flatMap(List::stream).toList();
+        Map<UUID, Set<UUID>> pairs = new HashMap<>();
+        for (Application a : hongdaeOnly) {
+            Set<UUID> others = new HashSet<>();
+            hongdaeOnly.stream().filter(b -> b != a).forEach(b -> others.add(b.getUser().getId()));
+            pairs.put(a.getUser().getId(), others);
+        }
+        blocked = pairs;
+        givenRun(2, List.of());
+
+        // when
+        MatchRunResponse response = diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        assertThat(response.getTableCount()).isEqualTo(2);
+        ArgumentCaptor<DiningTable> tables = ArgumentCaptor.forClass(DiningTable.class);
+        then(diningTableRepository).should(times(2)).save(tables.capture());
+        assertThat(tables.getAllValues()).extracting(DiningTable::getRegion).containsOnly("잠실");
+        assertThat(Stream.concat(both.stream(), jamsilOnly.stream()))
+                .allSatisfy(a -> assertThat(a.getMatchStatus()).isEqualTo(MatchStatus.CONFIRM_PENDING));
+        MatchRun run = savedRun();
+        assertThat(run.getUnassignedReasons()).extracting(MatchRun.Unassigned::reason)
+                .hasSize(4).containsOnly(UnassignedReason.REGION_TOO_SMALL);
+        assertThat(run.getRegionResults()).extracting(MatchRun.RegionResult::region, MatchRun.RegionResult::adopted)
+                .startsWith(tuple("홍대/합정", false), tuple("잠실", true));
+    }
+
+    @Test
+    @DisplayName("지역 순서는 후보 수 → 그 지역만 고른 사람 수 → 선언 순이고, 같은 입력이면 같은 결과다(무작위 없음)")
+    void runMatch_regionOrder_deterministic() {
+        // given: 16명. 홍대 8(홍대만 4), 잠실 8(잠실만 0), 강남 8(강남만 4) → 홍대 → 강남 → 잠실 순.
+        applications = IntStream.range(0, 16).mapToObj(i -> switch (i % 4) {
+            case 0 -> application(i, DiningRegion.HONGDAE);
+            case 1 -> application(i, DiningRegion.HONGDAE, DiningRegion.JAMSIL);
+            case 2 -> application(i, DiningRegion.JAMSIL, DiningRegion.GANGNAM);
+            default -> application(i, DiningRegion.GANGNAM);
+        }).toList();
+        givenRun(2, List.of());
+        given(diningTableRepository.save(any(DiningTable.class))).willAnswer(invocation -> invocation.getArgument(0));
+        ArgumentCaptor<DiningTableMember> seats = ArgumentCaptor.forClass(DiningTableMember.class);
+
+        // when: 같은 입력으로 두 번 실행
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+        applications.forEach(a -> a.changeMatchStatus(MatchStatus.WAITING));
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        then(diningTableMemberRepository).should(times(32)).save(seats.capture());
+        List<String> placements = seats.getAllValues().stream()
+                .map(m -> m.getTable().getRegion() + ":" + m.getSeatOrder() + ":" + m.getApplication().getId())
+                .toList();
+        assertThat(placements.subList(0, 16)).isEqualTo(placements.subList(16, 32));
+        ArgumentCaptor<MatchRun> runs = ArgumentCaptor.forClass(MatchRun.class);
+        then(matchRunRepository).should(times(2)).save(runs.capture());
+        assertThat(runs.getAllValues().get(0).getRegionResults()).extracting(MatchRun.RegionResult::region)
+                .containsExactly("홍대/합정", "강남/신논현", "잠실", "을지로/종로");
+        assertThat(runs.getAllValues().get(0).getRegionResults())
+                .isEqualTo(runs.getAllValues().get(1).getRegionResults());
+    }
+
+    @Test
+    @DisplayName("확정 재검증: 테이블 지역을 희망하지 않는 멤버가 있으면 불통과, 지역 없는 과거 테이블은 지역을 보지 않는다")
+    void satisfiesHardConditions_requiresRegionWish() {
+        // given
+        given(adminMatchingRuleService.findMatchingRuleSetting()).willReturn(MatchingRuleSetting.defaults());
+        given(adminApplicationService.findAnswers(anyCollection())).willReturn(List.of());
+        given(diningTableMemberRepository.findUserPairsByTableStatusIn(anyCollection(), anyCollection(), any()))
+                .willReturn(List.of());
+        given(matchExclusionProvider.findExcludedPairs(anyCollection())).willReturn(Map.of());
+        List<Application> members = applications.subList(0, 4);
+
+        // when & then
+        assertThat(diningMatchService.satisfiesHardConditions(table("홍대/합정"), members)).isTrue();
+        assertThat(diningMatchService.satisfiesHardConditions(table("잠실"), members)).isFalse();
+        assertThat(diningMatchService.satisfiesHardConditions(table(null), members)).isTrue();
+    }
+
+    private DiningTable table(String region) {
+        DiningTable table = DiningTable.builder().session(session).eventDate(session.getEventDate()).region(region)
+                .groupSize(4).algorithmVersion("rule-v2").build();
+        ReflectionTestUtils.setField(table, "id", UUID.randomUUID());
+        return table;
     }
 
     @Test

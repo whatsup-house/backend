@@ -48,6 +48,10 @@ public class MatchingRuleSetting {
     @Column(nullable = false, columnDefinition = "jsonb")
     private MatchingWeights weights;
 
+    // 회차×지역 매칭에서 한 지역의 테이블이 이 수 이상일 때만 그 지역 테이블을 만든다. V29 컬럼 DEFAULT와 같다. (KAN-431)
+    @Column(name = "min_tables_per_region", nullable = false)
+    private int minTablesPerRegion = 2;
+
     private MatchingRuleSetting(int maxAgeGap, int tableSizeMin, int tableSizeMax, BigDecimal minGroupScore,
                                 int autoConfirmGraceMinutes, MatchingWeights weights) {
         this.id = SINGLETON_ID;
@@ -69,5 +73,9 @@ public class MatchingRuleSetting {
         this.minGroupScore = minGroupScore;
         this.autoConfirmGraceMinutes = autoConfirmGraceMinutes;
         this.weights = weights;
+    }
+
+    public void changeMinTablesPerRegion(int minTablesPerRegion) {
+        this.minTablesPerRegion = minTablesPerRegion;
     }
 }

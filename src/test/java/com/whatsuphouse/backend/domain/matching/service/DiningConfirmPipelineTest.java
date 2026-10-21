@@ -14,11 +14,14 @@ import com.whatsuphouse.backend.domain.chat.repository.ChatMessageRepository;
 import com.whatsuphouse.backend.domain.chat.service.AdminChatService;
 import com.whatsuphouse.backend.domain.chat.service.ChatService;
 import com.whatsuphouse.backend.domain.dining.entity.ExceptionCase;
+import com.whatsuphouse.backend.domain.dining.entity.MatchingRuleSetting;
 import com.whatsuphouse.backend.domain.dining.entity.SessionVenue;
 import com.whatsuphouse.backend.domain.dining.entity.Venue;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
+import com.whatsuphouse.backend.domain.dining.repository.MatchingRuleSettingRepository;
 import com.whatsuphouse.backend.domain.dining.repository.SessionVenueRepository;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
 import com.whatsuphouse.backend.domain.gathering.entity.Gathering;
@@ -123,6 +126,8 @@ class DiningConfirmPipelineTest {
     @Autowired
     private SessionVenueRepository sessionVenueRepository;
     @Autowired
+    private MatchingRuleSettingRepository matchingRuleSettingRepository;
+    @Autowired
     private ExceptionCaseRepository exceptionCaseRepository;
     @Autowired
     private NotificationRepository notificationRepository;
@@ -167,8 +172,12 @@ class DiningConfirmPipelineTest {
         // given
         GatheringSession due = newSession(LocalDateTime.now().minusMinutes(1));
         List<Application> applications = IntStream.range(0, 3).mapToObj(i -> waitingApplication(due)).toList();
+        // 3명이라 테이블 1개: 지역 최소 테이블 수를 1로 둔다(KAN-431). 식당은 테이블 지역(강남/신논현) 식당.
+        MatchingRuleSetting rule = MatchingRuleSetting.defaults();
+        rule.changeMinTablesPerRegion(1);
+        matchingRuleSettingRepository.save(rule);
         Venue venue = venueRepository.save(Venue.builder().name("와썹 비스트로").address("서울 강남구 테헤란로 1")
-                .region("강남").isActive(true).build());
+                .region(DiningRegion.GANGNAM.getLabel()).isActive(true).build());
         sessionVenueRepository.save(new SessionVenue(due.getId(), venue.getId(), 1));
 
         // when
@@ -423,11 +432,16 @@ class DiningConfirmPipelineTest {
         return userRepository.save(user);
     }
 
-    // 결제 완료·매칭 대기 신청 + 희망 회차
+    // 결제 완료·매칭 대기 신청 + 희망 회차(희망 지역 강남/신논현)
     private Application waitingApplication(GatheringSession wish) {
+        return waitingApplication(wish, DiningRegion.GANGNAM);
+    }
+
+    // 희망 지역을 테이블 지역과 맞춰야 확정 재검증(지역 조건)을 통과한다
+    private Application waitingApplication(GatheringSession wish, DiningRegion region) {
         User user = user();
         Application application = Application.builder().bookingNumber("WH-" + user.getNickname()).gathering(gathering)
-                .user(user).name(user.getName()).phone("01012345678").build();
+                .user(user).name(user.getName()).phone("01012345678").candidateRegions(List.of(region)).build();
         application.confirm();
         application = applicationRepository.save(application);
         applicationCandidateSessionRepository.save(new ApplicationCandidateSession(application, wish, 1));
@@ -445,7 +459,8 @@ class DiningConfirmPipelineTest {
                 .groupSize(memberCount).algorithmVersion(MatchingEngine.ALGORITHM_VERSION)
                 .confirmAt(LocalDateTime.now().minusMinutes(1)).build());
         for (int seat = 1; seat <= memberCount; seat++) {
-            Application application = waitingApplication(tableSession);
+            Application application = waitingApplication(tableSession,
+                    region == null ? DiningRegion.GANGNAM : DiningRegion.fromLabel(region));
             application.changeMatchStatus(MatchStatus.CONFIRM_PENDING);
             diningTableMemberRepository.save(DiningTableMember.builder().application(applicationRepository.save(application))
                     .table(table).seatOrder(seat).assignReason(AssignReason.INITIAL).build());

@@ -171,7 +171,7 @@ public class DiningConfirmService {
             // 보류: 매 주기 다시 검증한다. 운영자가 멤버를 고치면 다음 주기에 확정된다.
             if (exceptionCaseService.listOpen(ExceptionCaseType.CONFLICT, tableId, "").isEmpty()) {
                 exceptionCaseService.open(ExceptionCaseType.CONFLICT, sessionId, tableId, null,
-                        "하드 조건(인원·나이 차·제외 관계) 위반으로 자동 확정을 보류했습니다. 멤버를 조정해 주세요.");
+                        "하드 조건(인원·나이 차·제외 관계·희망 지역) 위반으로 자동 확정을 보류했습니다. 멤버를 조정해 주세요.");
             }
             return false;
         }
@@ -201,9 +201,11 @@ public class DiningConfirmService {
                     return; // 유예 중 운영자가 미리 배정
                 }
                 UUID sessionId = table.getSession().getId();
-                sessionVenueService.useFirstAvailableVenue(sessionId, preferredPriceRanges(tableId)).ifPresentOrElse(table::assignVenue,
-                        () -> exceptionCaseService.open(ExceptionCaseType.VENUE, sessionId, tableId, null,
-                                "이번 회차 식당에 남은 자리가 없어 식당을 배정하지 못했습니다."));
+                // 테이블 지역 식당 중에서 고른다(지역 매칭 전 테이블은 region null → 풀 전체). (KAN-431)
+                sessionVenueService.useFirstAvailableVenue(sessionId, table.getDisplayRegion(), preferredPriceRanges(tableId))
+                        .ifPresentOrElse(table::assignVenue,
+                                () -> exceptionCaseService.open(ExceptionCaseType.VENUE, sessionId, tableId, null,
+                                        "이번 회차 식당에 남은 자리가 없어 식당을 배정하지 못했습니다."));
             });
         } catch (Exception e) {
             log.warn("테이블 식당 배정 실패: tableId={}", tableId, e);

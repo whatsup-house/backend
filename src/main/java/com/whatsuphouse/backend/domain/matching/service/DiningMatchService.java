@@ -8,6 +8,7 @@ import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.admin.service.AdminMatchingRuleService;
 import com.whatsuphouse.backend.domain.dining.entity.MatchingRuleSetting;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.service.SessionVenueService;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.ReservedQuestionKey;
@@ -38,6 +39,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -148,18 +151,21 @@ public class DiningMatchService {
         if (rules.tableSizeMin() > rules.tableSizeMax()) {
             throw new CustomException(ErrorCode.INVALID_TABLE_SIZE_RANGE);
         }
-        MatchingEngine.Result result = matchingEngine.match(applicants, rules, relations(applicants, null));
+        RegionMatch result = matchByRegion(candidates, applicants, rules, relations(applicants, null),
+                setting.getMinTablesPerRegion());
 
         // 결과 테이블은 PROPOSED, 유예가 끝나면 자동 확정(KAN-346). 멤버는 확정 대기.
         Map<UUID, Application> byId = candidates.stream().collect(Collectors.toMap(Application::getId, Function.identity()));
         int graceMinutes = session.getAutoConfirmGraceMinutes() != null
                 ? session.getAutoConfirmGraceMinutes() : setting.getAutoConfirmGraceMinutes();
         LocalDateTime confirmAt = LocalDateTime.now().plusMinutes(graceMinutes);
-        for (MatchingEngine.TableResult tableResult : result.tables()) {
+        for (RegionTable regionTable : result.tables()) {
+            MatchingEngine.TableResult tableResult = regionTable.result();
             DiningTable table = diningTableRepository.save(DiningTable.builder()
                     .session(session)
                     .matchRunId(run.getId())
                     .eventDate(session.getEventDate())
+                    .region(regionTable.region().getLabel())
                     .groupSize(tableResult.seats().size())
                     .algorithmVersion(MatchingEngine.ALGORITHM_VERSION)
                     .groupScore(tableResult.score().value())
@@ -186,6 +192,7 @@ public class DiningMatchService {
                 .toList();
         run.finish(candidates.size(), result.tables().size(), result.splitCount(), result.mergeCount(),
                 result.reallocatedCount(), unassigned);
+        run.recordRegionResults(result.regionResults());
         return MatchRunResponse.from(run);
     }
 
@@ -208,6 +215,7 @@ public class DiningMatchService {
                 .map(table -> DiningTableListResponse.TableView.builder()
                         .id(table.getId())
                         .status(table.getStatus())
+                        .region(table.getDisplayRegion())
                         .groupScore(table.getGroupScore())
                         .scoreDetail(table.getScoreDetail())
                         .confirmAt(table.getConfirmAt())
@@ -226,6 +234,14 @@ public class DiningMatchService {
                 .tables(tableViews)
                 .unassigned(unassigned)
                 .lastRun(lastRun != null ? MatchRunResponse.from(lastRun) : null)
+                .regionResults(lastRun == null ? List.of() : lastRun.getRegionResults().stream()
+                        .map(r -> DiningTableListResponse.RegionResultView.builder()
+                                .region(r.region())
+                                .candidateCount(r.candidateCount())
+                                .tableCount(r.tableCount())
+                                .adopted(r.adopted())
+                                .build())
+                        .toList())
                 .build();
     }
 
@@ -263,9 +279,12 @@ public class DiningMatchService {
                 relations(applicants, tableId));
     }
 
-    /** 테이블 멤버 구성이 하드 조건(인원·나이 차·제외 관계)을 지키는지. 자동 확정 직전 최종 검증. (KAN-346) */
+    /**
+     * 테이블 멤버 구성이 하드 조건(인원·나이 차·제외 관계)을 지키고 멤버 전원이 테이블 지역을 희망하는지. 자동 확정 직전 최종 검증. (KAN-346)
+     * 지역이 없는(지역 매칭 전) 테이블은 지역 조건을 보지 않는다. (KAN-431)
+     */
     public boolean satisfiesHardConditions(DiningTable table, List<Application> applications) {
-        if (applications.isEmpty()) {
+        if (applications.isEmpty() || !applications.stream().allMatch(a -> wantsRegion(a, table.getDisplayRegion()))) {
             return false;
         }
         List<ApplicationAnswer> answers = adminApplicationService.findAnswers(
@@ -287,7 +306,86 @@ public class DiningMatchService {
                 .collect(Collectors.toMap(MatchingEngine.Applicant::applicationId, Function.identity(), (a, b) -> a));
     }
 
+    /** 신청이 지역(라벨)을 희망하는지. 지역이 없으면(지역 매칭 전 테이블) 통과. 수동 조정·재조정·확정 재검증이 같이 쓴다. (KAN-431) */
+    static boolean wantsRegion(Application application, String region) {
+        return region == null || application.getCandidateRegions().stream().anyMatch(r -> r.getLabel().equals(region));
+    }
+
     // ── 실행 단계 ────────────────────────────────────────────────────────────
+
+    /** 회차×지역 매칭 결과. tables는 채택된 지역의 테이블(지역 처리 순), unassigned는 끝까지 못 앉은 후보(신청 순). */
+    private record RegionMatch(List<RegionTable> tables, List<MatchRun.Unassigned> unassigned,
+                               List<MatchRun.RegionResult> regionResults,
+                               int splitCount, int mergeCount, int reallocatedCount) {
+    }
+
+    private record RegionTable(DiningRegion region, MatchingEngine.TableResult result) {
+    }
+
+    /**
+     * 회차×지역 매칭(KAN-431). 지역을 후보 수 많은 순 → 그 지역만 고른 사람 많은 순 → 선언 순으로 돌며
+     * "남은 후보 중 이 지역 희망자"를 엔진에 넣는다. 테이블이 minTablesPerRegion개 이상이면 채택해 앉은 사람을 남은 후보에서 빼고
+     * (엔진 미배정자는 남은 후보로 돌아간다), 미만이면 그 지역 결과를 버린다(아무도 빼지 않는다). 무작위가 없어 같은 입력이면 같은 결과다.
+     * 끝까지 남은 사람의 사유: 채택된 지역에서 받은 하드 조건 사유(나이 차·제외 관계) → 결과가 버려진 지역에 있었으면 REGION_TOO_SMALL
+     * → 그 밖에는 NOT_ENOUGH_PEOPLE.
+     * ponytail: 지역 순서 그리디라 여러 지역을 고른 사람이 앞 지역에 먼저 흡수된다. 지역 간 최적 분배가 필요해지면
+     * "버려진 지역에 대해 앞 지역의 다지역 희망자를 옮겨 보는" 2차 패스를 추가한다.
+     */
+    private RegionMatch matchByRegion(List<Application> candidates, List<MatchingEngine.Applicant> applicants,
+                                      MatchingEngine.Rules rules, MatchingEngine.Relations relations, int minTablesPerRegion) {
+        Map<UUID, Set<DiningRegion>> wanted = candidates.stream()
+                .collect(Collectors.toMap(Application::getId, Application::getCandidateRegions));
+        Map<DiningRegion, Long> candidateCount = new EnumMap<>(DiningRegion.class);
+        Map<DiningRegion, Long> onlyCount = new EnumMap<>(DiningRegion.class);
+        for (DiningRegion region : DiningRegion.values()) {
+            candidateCount.put(region, wanted.values().stream().filter(r -> r.contains(region)).count());
+            onlyCount.put(region, wanted.values().stream().filter(r -> r.size() == 1 && r.contains(region)).count());
+        }
+        List<DiningRegion> order = Arrays.stream(DiningRegion.values())
+                .sorted(Comparator.comparing((DiningRegion r) -> candidateCount.get(r), Comparator.reverseOrder())
+                        .thenComparing(r -> onlyCount.get(r), Comparator.reverseOrder())
+                        .thenComparing(Comparator.naturalOrder()))
+                .toList();
+
+        Set<UUID> remaining = new LinkedHashSet<>();
+        candidates.forEach(a -> remaining.add(a.getId()));
+        Map<UUID, UnassignedReason> hardReasons = new HashMap<>();
+        Set<UUID> inDiscardedRegion = new HashSet<>();
+        List<RegionTable> tables = new ArrayList<>();
+        List<MatchRun.RegionResult> regionResults = new ArrayList<>();
+        int splitCount = 0;
+        int mergeCount = 0;
+        int reallocatedCount = 0;
+        for (DiningRegion region : order) {
+            List<MatchingEngine.Applicant> pool = applicants.stream()
+                    .filter(a -> remaining.contains(a.applicationId()) && wanted.get(a.applicationId()).contains(region))
+                    .toList();
+            MatchingEngine.Result result = pool.isEmpty() ? null : matchingEngine.match(pool, rules, relations);
+            int tableCount = result == null ? 0 : result.tables().size();
+            boolean adopted = result != null && tableCount >= minTablesPerRegion;
+            regionResults.add(new MatchRun.RegionResult(region.getLabel(), pool.size(), tableCount, adopted));
+            if (!adopted) {
+                pool.forEach(a -> inDiscardedRegion.add(a.applicationId()));
+                continue;
+            }
+            for (MatchingEngine.TableResult table : result.tables()) {
+                tables.add(new RegionTable(region, table));
+                table.seats().forEach(seat -> remaining.remove(seat.applicationId()));
+            }
+            result.unassigned().stream()
+                    .filter(u -> u.reason() != UnassignedReason.NOT_ENOUGH_PEOPLE)
+                    .forEach(u -> hardReasons.put(u.applicationId(), u.reason()));
+            splitCount += result.splitCount();
+            mergeCount += result.mergeCount();
+            reallocatedCount += result.reallocatedCount();
+        }
+
+        List<MatchRun.Unassigned> unassigned = remaining.stream()
+                .map(id -> new MatchRun.Unassigned(id, hardReasons.getOrDefault(id, inDiscardedRegion.contains(id)
+                        ? UnassignedReason.REGION_TOO_SMALL : UnassignedReason.NOT_ENOUGH_PEOPLE)))
+                .toList();
+        return new RegionMatch(tables, unassigned, regionResults, splitCount, mergeCount, reallocatedCount);
+    }
 
     private void dissolveProposedTables(UUID sessionId) {
         List<DiningTable> tables = diningTableRepository
