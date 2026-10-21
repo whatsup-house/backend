@@ -2,9 +2,13 @@ package com.whatsuphouse.backend.domain.notification;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
+import com.whatsuphouse.backend.domain.chat.service.ChatPushService;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import com.whatsuphouse.backend.domain.dining.service.ExceptionCaseService;
 import com.whatsuphouse.backend.domain.gathering.enums.GatheringType;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
+import com.whatsuphouse.backend.domain.matching.service.NoticeLogService;
 import com.whatsuphouse.backend.domain.matching.service.DiningAttendanceService;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationLink;
 import com.whatsuphouse.backend.domain.notification.enums.NotificationType;
@@ -35,6 +39,7 @@ import java.util.function.Function;
  * 우연한 식탁 진행 알림(설계 2.8, KAN-349): 매칭 대기·재배치 대기·리마인드·피드백 요청·다음 모집.
  * 발행 트랜잭션이 커밋된 뒤 회원마다 새 트랜잭션으로 적재한다. 적재가 실패하면 최대 3회 시도하고, 그래도 안 되면 예외함(NOTIFICATION)에 남긴다.
  * 한 회원의 실패가 발행한 업무(확정·종료 처리 등)나 다른 회원 알림을 되돌리지 않는다.
+ * 리마인드는 같은 제목·본문을 웹 푸시로도 보낸다(구독 기기가 없으면 아무 일도 없고, 실패는 로그만). (KAN-438)
  */
 @Slf4j
 @Component
@@ -48,6 +53,8 @@ public class DiningLifecycleNotificationListener {
     private final UserService userService;
     private final DiningAttendanceService diningAttendanceService;
     private final ExceptionCaseService exceptionCaseService;
+    private final ChatPushService chatPushService;
+    private final NoticeLogService noticeLogService;
     private final PlatformTransactionManager transactionManager;
 
     /** 결제 완료(참가 확정)로 매칭 대기(WAITING)에 들어간 우연한 식탁 신청 → 내 신청(linkId = 신청 ID). */
@@ -79,13 +86,17 @@ public class DiningLifecycleNotificationListener {
     @TransactionalEventListener(fallbackExecution = true)
     public void onTableLifecycle(DiningTableLifecycleEvent event) {
         boolean isReminder = event.getType() == NotificationType.DINING_REMINDER;
-        notifyUsers(event.getMemberUserIds(), event.getType(),
-                isReminder ? "우연한 식탁이 곧 열려요" : "오늘 우연한 식탁은 어떠셨나요?",
-                user -> isReminder
-                        ? "하루 앞으로 다가왔어요. 테이블 상세에서 시간과 식당을 확인해 주세요."
-                        : "함께한 테이블에 대한 피드백을 남겨 주세요. 다음 매칭에 반영돼요.",
+        String title = isReminder ? "우연한 식탁이 곧 열려요" : "오늘 우연한 식탁은 어떠셨나요?";
+        String content = isReminder
+                ? "하루 앞으로 다가왔어요. 테이블 상세에서 시간과 식당을 확인해 주세요."
+                : "함께한 테이블에 대한 피드백을 남겨 주세요. 다음 매칭에 반영돼요.";
+        List<UUID> recipientIds = notifyUsers(event.getMemberUserIds(), event.getType(), title, user -> content,
                 isReminder ? NotificationLink.DINING_TABLE : NotificationLink.DINING_FEEDBACK_REQUEST, event.getTableId(),
                 new Target(event.getSessionId(), event.getTableId(), null));
+        if (isReminder) {
+            pushReminder(event.getTableId(), recipientIds, new ChatPushService.Payload(title, content,
+                    DiningConfirmNotificationListener.tableUrl(event.getTableId())));
+        }
     }
 
     /**
@@ -108,15 +119,32 @@ public class DiningLifecycleNotificationListener {
     private record Target(UUID sessionId, UUID tableId, UUID applicationId) {
     }
 
-    // 탈퇴하지 않은 회원마다 따로 적재한다. 같은 회원이 여러 번 들어와도 1건.
-    private void notifyUsers(Collection<UUID> userIds, NotificationType type, String title, Function<User, String> content,
-                             NotificationLink link, UUID linkId, Target target) {
+    // 탈퇴하지 않은 회원마다 따로 적재한다. 같은 회원이 여러 번 들어와도 1건. 대상 회원 ID를 돌려준다.
+    private List<UUID> notifyUsers(Collection<UUID> userIds, NotificationType type, String title, Function<User, String> content,
+                                   NotificationLink link, UUID linkId, Target target) {
         if (userIds.isEmpty()) {
+            return List.of();
+        }
+        List<User> recipients = userService.findUsersByIds(Set.copyOf(userIds)).values().stream()
+                .filter(user -> !user.isWithdrawn())
+                .toList();
+        recipients.forEach(user -> createWithRetry(user, type, title, content.apply(user), link, linkId, target));
+        return recipients.stream().map(User::getId).toList();
+    }
+
+    // 발송은 비동기(chatPushExecutor)라 여기서는 넘기기만 하고, 넘긴 시점에 발송 이력(REMINDER/PUSH)을 남긴다.
+    // 넘기다 실패해도(실행기 포화 등) 알림 흐름을 막지 않는다. 웹 푸시가 꺼져 있으면 보내지도 남기지도 않는다.
+    private void pushReminder(UUID tableId, List<UUID> userIds, ChatPushService.Payload payload) {
+        if (!chatPushService.isEnabled() || userIds.isEmpty()) {
             return;
         }
-        userService.findUsersByIds(Set.copyOf(userIds)).values().stream()
-                .filter(user -> !user.isWithdrawn())
-                .forEach(user -> createWithRetry(user, type, title, content.apply(user), link, linkId, target));
+        try {
+            chatPushService.pushToUsers(userIds, payload);
+            noticeLogService.recordAfterCommit(tableId, NoticeKind.REMINDER, NoticeChannel.PUSH, null);
+        } catch (RuntimeException e) {
+            log.warn("리마인드 푸시 실패: tableId={}", tableId, e);
+            noticeLogService.recordAfterCommit(tableId, NoticeKind.REMINDER, NoticeChannel.PUSH, e);
+        }
     }
 
     private void createWithRetry(User user, NotificationType type, String title, String content, NotificationLink link,

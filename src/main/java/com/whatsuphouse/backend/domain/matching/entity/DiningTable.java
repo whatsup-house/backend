@@ -27,6 +27,9 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DiningTable extends BaseEntity {
 
+    public static final String RESERVATION_NAME = "와썹하우스";
+    public static final int GATHER_BEFORE_MINUTES = 10;
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -101,6 +104,22 @@ public class DiningTable extends BaseEntity {
     @Column(name = "contents_posted_at")
     private LocalDateTime contentsPostedAt;
 
+    // 채팅방에 올린 대화 콘텐츠(dining_contents.id), 올린 순. 참가자 테이블 상세가 같은 콘텐츠를 보여 준다. (KAN-438)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "posted_content_ids", columnDefinition = "jsonb")
+    private List<UUID> postedContentIds;
+
+    // 식당 예약명·집합 시각. 식당을 배정할 때 정한다. (KAN-438)
+    @Column(name = "reservation_name", length = 50)
+    private String reservationName;
+
+    @Column(name = "gather_at")
+    private LocalDateTime gatherAt;
+
+    // 확정 후 채팅방 생성 자동 재시도 횟수(최대 3). (KAN-438)
+    @Column(name = "chat_retry_count", nullable = false)
+    private int chatRetryCount = 0;
+
     @Builder
     public DiningTable(GatheringSession session, UUID matchRunId, LocalDate eventDate, String region, int groupSize,
                        String algorithmVersion, BigDecimal groupScore, ScoreDetail scoreDetail,
@@ -143,8 +162,15 @@ public class DiningTable extends BaseEntity {
         this.venueId = null;
     }
 
+    // 예약명은 와썹하우스, 집합은 회차 시작 10분 전(시작 시간이 없으면 null). (KAN-438)
     public void assignVenue(UUID venueId) {
         this.venueId = venueId;
+        this.reservationName = RESERVATION_NAME;
+        this.gatherAt = session.getStartTime() == null ? null : session.getStartAt().minusMinutes(GATHER_BEFORE_MINUTES);
+    }
+
+    public void recordPostedContents(List<UUID> contentIds) {
+        this.postedContentIds = List.copyOf(contentIds);
     }
 
     public void updateRestaurant(String restaurantName, String restaurantAddress) {
