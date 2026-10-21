@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.dining.admin.dto.response;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationCandidateSession;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus;
 import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -42,6 +43,10 @@ public class DiningApplicantResponse {
     @Schema(description = "결제 완료 여부(이용권 차감 완료 = 승인·출석)", example = "true")
     private Boolean isPaid;
 
+    @Schema(description = "통합 결제 상태(신청·이용권 차감·보증금·해결 선택에서 계산). "
+            + "PENDING|PAID|FAILED|REFUND_AVAILABLE|REFUND_REQUESTED|REFUND_PROCESSING|REFUNDED|REFUND_FAILED", example = "PAID")
+    private DiningPaymentStatus paymentStatus;
+
     @Schema(description = "매칭 상태", example = "WAITING", nullable = true)
     private MatchStatus matchStatus;
 
@@ -57,9 +62,12 @@ public class DiningApplicantResponse {
     @Schema(description = "같은 회차 신청자와 제외 관계(피하고 싶음·신고)가 있는지", example = "false")
     private Boolean hasExcludedRelation;
 
+    @Schema(description = "이 회원이 신고된 건수(처리 여부 무관)", example = "0")
+    private long reportCount;
+
     public static DiningApplicantResponse of(Application application, String age, String gender, String mbti,
                                              List<ApplicationCandidateSession> candidates, long participationCount,
-                                             boolean hasExcludedRelation) {
+                                             boolean hasExcludedRelation, DiningPaymentStatus paymentStatus, long reportCount) {
         return DiningApplicantResponse.builder()
                 .applicationId(application.getId())
                 .userId(application.getUser() != null ? application.getUser().getId() : null)
@@ -69,11 +77,13 @@ public class DiningApplicantResponse {
                 .mbti(mbti)
                 .status(application.getStatus())
                 .isPaid(ApplicationStatus.SEAT_OCCUPYING.contains(application.getStatus()))
+                .paymentStatus(paymentStatus)
                 .matchStatus(application.getMatchStatus())
                 .candidateSessions(candidates.stream().map(CandidateSession::from).toList())
                 .candidateRegions(DiningRegion.labelsOf(application.getCandidateRegions()))
                 .participationCount(participationCount)
                 .hasExcludedRelation(hasExcludedRelation)
+                .reportCount(reportCount)
                 .build();
     }
 

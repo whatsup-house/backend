@@ -203,6 +203,19 @@ public class MatchingService {
         return sessionIds.isEmpty() ? Set.of() : Set.copyOf(matchRunRepository.findSessionIdsIn(sessionIds));
     }
 
+    /** 회차들의 매칭 실행 횟수(재실행 포함). (KAN-437 운영 대시보드) */
+    @Transactional(readOnly = true)
+    public long countMatchRuns(Collection<UUID> sessionIds) {
+        return sessionIds.isEmpty() ? 0 : matchRunRepository.countBySessionIdIn(sessionIds);
+    }
+
+    /** 회차들의 확정 테이블 중 식당이 배정되지 않은 수. (KAN-437 운영 대시보드) */
+    @Transactional(readOnly = true)
+    public long countConfirmedTablesWithoutVenue(Collection<UUID> sessionIds) {
+        return sessionIds.isEmpty() ? 0 : diningTableRepository
+                .countBySession_IdInAndStatusAndVenueIdIsNullAndDeletedAtIsNull(sessionIds, DiningTableStatus.CONFIRMED);
+    }
+
     /** 조원 중 회원의 userId (채팅 단체방 멤버 프리필용). 비회원 신청은 제외. */
     @Transactional(readOnly = true)
     public List<UUID> listGroupMemberUserIds(UUID groupId) {

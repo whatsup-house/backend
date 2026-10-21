@@ -32,6 +32,8 @@ public interface DiningTableRepository extends JpaRepository<DiningTable, UUID> 
             """)
     List<SessionStatusCountProjection> countBySessionIdsGroupByStatus(@Param("sessionIds") Collection<UUID> sessionIds);
 
+    long countBySession_IdInAndStatusAndVenueIdIsNullAndDeletedAtIsNull(Collection<UUID> sessionIds, DiningTableStatus status);
+
     List<DiningTable> findBySession_IdAndStatusInAndDeletedAtIsNullOrderByCreatedAtAsc(
             UUID sessionId, Collection<DiningTableStatus> statuses);
 

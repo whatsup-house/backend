@@ -3,10 +3,21 @@ package com.whatsuphouse.backend.domain.dining.admin.service;
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.application.enums.DiningPaymentStatus;
+import com.whatsuphouse.backend.domain.application.enums.MatchStatus;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningApplicantResponse;
 import com.whatsuphouse.backend.domain.dining.admin.dto.response.DiningDashboardResponse;
+import com.whatsuphouse.backend.domain.dining.enums.DiningRegion;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
+import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
+import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
+import com.whatsuphouse.backend.global.exception.CustomException;
+import com.whatsuphouse.backend.global.exception.ErrorCode;
 import com.whatsuphouse.backend.domain.dining.repository.ExceptionCaseRepository;
+import com.whatsuphouse.backend.domain.dining.repository.SafetyReportRepository;
+import com.whatsuphouse.backend.domain.matching.service.MatchResolutionService;
+import com.whatsuphouse.backend.domain.payment.service.DepositService;
+import com.whatsuphouse.backend.domain.ticket.service.TicketService;
 import com.whatsuphouse.backend.domain.dining.repository.VenueRepository;
 import com.whatsuphouse.backend.domain.form.entity.FormQuestion;
 import com.whatsuphouse.backend.domain.form.enums.QuestionType;
@@ -36,7 +47,10 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
@@ -63,6 +77,18 @@ class AdminDiningServiceTest {
 
     @Mock
     private MatchExclusionProvider matchExclusionProvider;
+
+    @Mock
+    private SafetyReportRepository safetyReportRepository;
+
+    @Mock
+    private TicketService ticketService;
+
+    @Mock
+    private DepositService depositService;
+
+    @Mock
+    private MatchResolutionService matchResolutionService;
 
     @InjectMocks
     private AdminDiningService adminDiningService;
@@ -233,5 +259,142 @@ class AdminDiningServiceTest {
                 "33",
                 "41");
         assertThat(applicants).extracting(DiningApplicantResponse::getParticipationCount).containsExactly(2L, 0L, 0L, 0L);
+    }
+
+    // ── 운영 지표·신청자 필터 (KAN-437) ───────────────────────────────────────
+
+    private Application confirmed(MatchStatus matchStatus, DiningRegion... regions) {
+        Application application = Application.builder()
+                .bookingNumber("WH261021-" + UUID.randomUUID().toString().substring(0, 6))
+                .gathering(gathering).user(member(30, null)).name("회원").phone("01012345678")
+                .candidateRegions(List.of(regions)).build();
+        ReflectionTestUtils.setField(application, "id", UUID.randomUUID());
+        application.confirm();
+        application.changeMatchStatus(matchStatus);
+        return application;
+    }
+
+    private static ExceptionCaseRepository.TypeCountProjection typeCount(ExceptionCaseType type, long count) {
+        return new ExceptionCaseRepository.TypeCountProjection() {
+            public ExceptionCaseType getType() { return type; }
+            public Long getCount() { return count; }
+        };
+    }
+
+    @Test
+    @DisplayName("운영 지표: 신청자·매칭·확정·재배치·성공률·해결 대기는 회차 신청에서, 문제 지표는 예외 유형별 열린 건·테이블·참석·환불 집계에서")
+    void getDashboard_operationMetrics() {
+        // given
+        GatheringSession session = session(3);
+        Application seated = confirmed(MatchStatus.CONFIRM_PENDING);
+        Application confirmedA = confirmed(MatchStatus.CONFIRMED);
+        Application confirmedB = confirmed(MatchStatus.CONFIRMED);
+        Application reallocating = confirmed(MatchStatus.REALLOCATING);
+        Application offered = confirmed(MatchStatus.ALTERNATIVE_OFFERED);
+        Application rejected = application();
+        rejected.reject("자격 미달");
+        List<UUID> sessionIds = List.of(session.getId());
+        given(gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE)).willReturn(List.of(session));
+        given(adminApplicationService.listSessionApplications(session.getId()))
+                .willReturn(List.of(seated, confirmedA, confirmedB, reallocating, offered, rejected));
+        given(matchingService.countMatchRuns(sessionIds)).willReturn(2L);
+        given(matchingService.countConfirmedTablesWithoutVenue(sessionIds)).willReturn(1L);
+        given(diningAttendanceService.countNoShowCandidates(sessionIds)).willReturn(3L);
+        given(matchResolutionService.findOfferedResolutionIds(anyCollection()))
+                .willReturn(Map.of(offered.getId(), UUID.randomUUID()));
+        given(ticketService.countRefundFailures()).willReturn(1L);
+        given(exceptionCaseRepository.countByStatusGroupByTypeExcludingHidden(ExceptionCaseStatus.OPEN)).willReturn(List.of(
+                typeCount(ExceptionCaseType.CONFLICT, 2),
+                typeCount(ExceptionCaseType.NOTIFICATION, 4),
+                typeCount(ExceptionCaseType.REFUND, 1),
+                typeCount(ExceptionCaseType.SAFETY, 5)));
+
+        // when
+        DiningDashboardResponse dashboard = adminDiningService.getDashboard();
+
+        // then
+        assertThat(dashboard.getTotalApplicantCount()).isEqualTo(5);          // 반려 제외
+        assertThat(dashboard.getMatchRunCount()).isEqualTo(2);
+        assertThat(dashboard.getMatchedApplicantCount()).isEqualTo(3);        // CONFIRM_PENDING + CONFIRMED 2
+        assertThat(dashboard.getReallocatedApplicantCount()).isEqualTo(1);
+        assertThat(dashboard.getConfirmedApplicantCount()).isEqualTo(2);
+        assertThat(dashboard.getMatchSuccessRate()).isEqualTo(2.0 / 5);       // 결제 완료 5명 중 확정 2명
+        assertThat(dashboard.getResolutionPendingCount()).isEqualTo(1);
+        assertThat(dashboard.getConflictCount()).isEqualTo(2);
+        assertThat(dashboard.getNoVenueTableCount()).isEqualTo(1);
+        assertThat(dashboard.getNotificationFailureCount()).isEqualTo(4);
+        assertThat(dashboard.getRefundFailureCount()).isEqualTo(2);           // REFUND 예외 1 + 환불 실패 차감 1
+        assertThat(dashboard.getNoShowCandidateCount()).isEqualTo(3);
+        assertThat(dashboard.getOpenReportCount()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("결제 완료 신청자가 없으면 매칭 성공률은 0")
+    void getDashboard_noPaidApplicant_zeroSuccessRate() {
+        // given
+        given(gatheringService.listUpcomingSessions(GatheringType.RANDOM_TABLE)).willReturn(List.of());
+
+        // when
+        DiningDashboardResponse dashboard = adminDiningService.getDashboard();
+
+        // then
+        assertThat(dashboard.getMatchSuccessRate()).isZero();
+        assertThat(dashboard.getTotalApplicantCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("신청자 표: 통합 결제 상태·신고된 수를 붙이고 paymentStatus·matchStatus·region으로 거른다")
+    void listApplicants_filtersAndPaymentStatus() {
+        // given
+        GatheringSession session = session(3);
+        Application paidGangnam = confirmed(MatchStatus.WAITING, DiningRegion.GANGNAM);
+        Application paidHongdae = confirmed(MatchStatus.CONFIRMED, DiningRegion.HONGDAE);
+        Application offered = confirmed(MatchStatus.ALTERNATIVE_OFFERED, DiningRegion.GANGNAM, DiningRegion.JAMSIL);
+        Application unpaid = application(member(30, null));
+        unpaid.awaitPayment();
+        given(adminApplicationService.listSessionApplications(session.getId()))
+                .willReturn(List.of(paidGangnam, paidHongdae, offered, unpaid));
+        given(ticketService.findDeductionStatuses(anyCollection())).willReturn(Map.of(
+                paidGangnam.getId(), TicketDeductionStatus.DEDUCTED,
+                paidHongdae.getId(), TicketDeductionStatus.DEDUCTED,
+                offered.getId(), TicketDeductionStatus.DEDUCTED));
+        given(matchResolutionService.findOfferedResolutionIds(anyCollection()))
+                .willAnswer(invocation -> invocation.<java.util.Collection<UUID>>getArgument(0).contains(offered.getId())
+                        ? Map.of(offered.getId(), UUID.randomUUID()) : Map.of());
+        UUID reportedUserId = offered.getUser().getId();
+        given(safetyReportRepository.countByReportedUserIds(anyCollection()))
+                .willReturn(List.of(new SafetyReportRepository.UserCountProjection() {
+                    public UUID getUserId() { return reportedUserId; }
+                    public Long getCount() { return 2L; }
+                }));
+
+        // when
+        List<DiningApplicantResponse> all = adminDiningService.listApplicants(session.getId(), null, null, null);
+        List<DiningApplicantResponse> paid = adminDiningService.listApplicants(session.getId(), DiningPaymentStatus.PAID, null, null);
+        List<DiningApplicantResponse> gangnamWaiting = adminDiningService.listApplicants(
+                session.getId(), null, MatchStatus.WAITING, "강남/신논현");
+        List<DiningApplicantResponse> jamsil = adminDiningService.listApplicants(session.getId(), null, null, "잠실");
+
+        // then
+        assertThat(all).extracting(DiningApplicantResponse::getApplicationId, DiningApplicantResponse::getPaymentStatus,
+                        DiningApplicantResponse::getReportCount)
+                .containsExactly(
+                        tuple(paidGangnam.getId(), DiningPaymentStatus.PAID, 0L),
+                        tuple(paidHongdae.getId(), DiningPaymentStatus.PAID, 0L),
+                        tuple(offered.getId(), DiningPaymentStatus.REFUND_AVAILABLE, 2L),
+                        tuple(unpaid.getId(), DiningPaymentStatus.PENDING, 0L));
+        assertThat(paid).extracting(DiningApplicantResponse::getApplicationId)
+                .containsExactly(paidGangnam.getId(), paidHongdae.getId());
+        assertThat(gangnamWaiting).extracting(DiningApplicantResponse::getApplicationId).containsExactly(paidGangnam.getId());
+        assertThat(jamsil).extracting(DiningApplicantResponse::getApplicationId).containsExactly(offered.getId());
+    }
+
+    @Test
+    @DisplayName("모르는 지역 라벨로 거르면 CustomException(INVALID_REGION)")
+    void listApplicants_unknownRegion_throwsCustomException() {
+        // when & then
+        assertThatThrownBy(() -> adminDiningService.listApplicants(UUID.randomUUID(), null, null, "부산"))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REGION);
     }
 }

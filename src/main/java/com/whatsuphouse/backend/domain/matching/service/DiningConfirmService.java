@@ -3,6 +3,7 @@ package com.whatsuphouse.backend.domain.matching.service;
 import com.whatsuphouse.backend.domain.application.admin.service.AdminApplicationService;
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.entity.ApplicationAnswer;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatGroupRoomCreateRequest;
 import com.whatsuphouse.backend.domain.chat.dto.request.ChatMessageSendRequest;
 import com.whatsuphouse.backend.domain.chat.dto.response.ChatRoomIdResponse;
@@ -24,6 +25,8 @@ import com.whatsuphouse.backend.domain.matching.entity.Attendance;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeChannel;
+import com.whatsuphouse.backend.domain.matching.enums.NoticeKind;
 import com.whatsuphouse.backend.domain.matching.repository.AttendanceRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
@@ -92,6 +95,7 @@ public class DiningConfirmService {
     private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformTransactionManager transactionManager;
+    private final NoticeLogService noticeLogService;
 
     // 자동 확정 채팅방 개설자(관리자 회원 ID). 비어 있으면 활성 관리자 중 한 명.
     @Value("${dining.system-admin-id:}")
@@ -125,20 +129,33 @@ public class DiningConfirmService {
 
     /** 채팅방 재시도: 확정 테이블에 채팅방이 없으면 4단계를 다시 한다(요청한 관리자가 개설자). 성공하면 채팅방 실패 예외를 닫는다. */
     public ChatRoomIdResponse retryChatRoom(UUID tableId, UUID adminId) {
-        UUID roomId = inNewTransaction(() -> {
-            requireConfirmed(tableId);
-            return openChatRoom(tableId, adminId);
-        });
+        UUID roomId;
+        try {
+            roomId = inNewTransaction(() -> {
+                requireConfirmed(tableId);
+                return openChatRoom(tableId, adminId);
+            });
+        } catch (RuntimeException e) {
+            noticeLogService.recordFailure(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT, e);
+            throw e;
+        }
+        noticeLogService.recordSuccess(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT);
         exceptionCaseService.resolveOpen(ExceptionCaseType.NOTIFICATION, tableId, CHAT_FAILURE_PREFIX, adminId, RETRY_NOTE);
         return new ChatRoomIdResponse(roomId);
     }
 
     /** 확정 알림 재발송(멤버 전원). 성공하면 알림 실패 예외를 닫는다. */
     public void retryNotifications(UUID tableId, UUID adminId) {
-        runInNewTransaction(() -> {
-            requireConfirmed(tableId);
-            publishConfirmed(tableId);
-        });
+        try {
+            runInNewTransaction(() -> {
+                requireConfirmed(tableId);
+                publishConfirmed(tableId);
+            });
+        } catch (RuntimeException e) {
+            noticeLogService.recordFailure(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP, e);
+            throw e;
+        }
+        noticeLogService.recordSuccess(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP);
         exceptionCaseService.resolveOpen(ExceptionCaseType.NOTIFICATION, tableId, NOTIFY_FAILURE_PREFIX, adminId, RETRY_NOTE);
     }
 
@@ -183,6 +200,7 @@ public class DiningConfirmService {
                 .collect(Collectors.toSet());
         for (DiningTableMember member : members) {
             member.getApplication().confirmMatch(session);
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(member.getApplication(), "테이블 확정"));
             // v1 멤버 이동으로 이미 참석 행이 있는 멤버는 건너뛴다(table_member_id UNIQUE).
             if (!scheduled.contains(member.getId())) {
                 attendanceRepository.save(Attendance.schedule(member.getId()));
@@ -244,8 +262,10 @@ public class DiningConfirmService {
     private void createChatRoom(UUID tableId) {
         try {
             inNewTransaction(() -> openChatRoom(tableId, systemAdminId()));
+            noticeLogService.recordSuccess(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT);
         } catch (Exception e) {
             log.warn("테이블 채팅방 생성 실패: tableId={}", tableId, e);
+            noticeLogService.recordFailure(tableId, NoticeKind.CONFIRM_MESSAGE, NoticeChannel.CHAT, e);
             openCase(ExceptionCaseType.NOTIFICATION, tableId, CHAT_FAILURE_PREFIX + "채팅방 생성 실패: " + e.getMessage());
         }
     }
@@ -348,8 +368,10 @@ public class DiningConfirmService {
     private void notifyMembers(UUID tableId) {
         try {
             runInNewTransaction(() -> publishConfirmed(tableId));
+            noticeLogService.recordSuccess(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP);
         } catch (Exception e) {
             log.warn("테이블 확정 알림 실패: tableId={}", tableId, e);
+            noticeLogService.recordFailure(tableId, NoticeKind.NOTIFICATION, NoticeChannel.IN_APP, e);
             openCase(ExceptionCaseType.NOTIFICATION, tableId, NOTIFY_FAILURE_PREFIX + "확정 알림 발송 실패: " + e.getMessage());
         }
     }

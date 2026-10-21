@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.payment.service;
 
 import com.whatsuphouse.backend.domain.application.entity.Application;
 import com.whatsuphouse.backend.domain.application.enums.ApplicationStatus;
+import com.whatsuphouse.backend.domain.application.event.ApplicationStatusChangedEvent;
 import com.whatsuphouse.backend.domain.notification.event.ApplicationConfirmedEvent;
 import com.whatsuphouse.backend.domain.payment.dto.PendingPayment;
 import com.whatsuphouse.backend.domain.payment.entity.Deposit;
@@ -66,6 +67,7 @@ public class DepositService {
                 Hibernate.initialize(application.getGathering());
                 eventPublisher.publishEvent(new ApplicationConfirmedEvent(application));
             }
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "보증금 입금 확인"));
         });
         return pending.isPresent();
     }
@@ -115,7 +117,10 @@ public class DepositService {
 
     /** 운영자 송금 완료 후속(PayoutSentEvent): RETURN_PENDING → RETURNED. */
     public void markReturned(UUID depositId) {
-        depositRepository.findById(depositId).ifPresent(Deposit::markReturned);
+        depositRepository.findById(depositId).ifPresent(deposit -> {
+            deposit.markReturned();
+            eventPublisher.publishEvent(new ApplicationStatusChangedEvent(deposit.getApplication(), "보증금 반환 송금 완료"));
+        });
     }
 
     /** 반환 송금 30일 후 보증금 쪽 계좌 사본도 끝 4자리만 남긴다. */
