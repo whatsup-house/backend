@@ -470,7 +470,7 @@ class DiningTableServiceTest {
         ReflectionTestUtils.setField(source, "region", "홍대/합정");
         ReflectionTestUtils.setField(target, "region", "홍대/합정");
         Application jamsilOnly = application(1995);
-        jamsilOnly.getCandidateRegions().add(DiningRegion.JAMSIL);
+        jamsilOnly.changeCandidateRegions(List.of(DiningRegion.JAMSIL));
         DiningTableMember moving = member(source, jamsilOnly);
         given(diningTableMemberRepository.findByIdAndRemovedAtIsNull(moving.getId())).willReturn(Optional.of(moving));
         given(diningTableMemberRepository.countByTable_IdAndRemovedAtIsNull(target.getId())).willReturn(3);

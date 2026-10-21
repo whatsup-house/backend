@@ -54,7 +54,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -151,7 +150,7 @@ public class ApplicationService {
         }
 
         // 우연한 식탁 희망 지역: 1개 이상, 4개 라벨만, 중복은 하나로. 다른 종류는 무시한다. (KAN-430)
-        Set<DiningRegion> candidateRegions = randomTable ? resolveCandidateRegions(candidateRegionLabels) : Set.of();
+        List<DiningRegion> candidateRegions = randomTable ? resolveCandidateRegions(candidateRegionLabels) : List.of();
 
         // 배정 회차: 일반 모임은 신청 회차, 우연한 식탁은 매칭 전이라 비워 둔다.
         GatheringSession session = randomTable ? null : candidates.get(0);
@@ -303,12 +302,12 @@ public class ApplicationService {
         return ApplicationResponse.from(saved);
     }
 
-    private static Set<DiningRegion> resolveCandidateRegions(List<String> labels) {
+    // 보낸 순서가 지망 순위다. 중복은 앞의 것만 남긴다.
+    private static List<DiningRegion> resolveCandidateRegions(List<String> labels) {
         if (labels == null || labels.isEmpty()) {
             throw new CustomException(ErrorCode.REGION_REQUIRED);
         }
-        return labels.stream().map(DiningRegion::fromLabel)
-                .collect(Collectors.toCollection(() -> EnumSet.noneOf(DiningRegion.class)));
+        return labels.stream().map(DiningRegion::fromLabel).distinct().toList();
     }
 
     private void validateRandomTableEligibility(User user) {
