@@ -209,15 +209,13 @@ class DiningMatchServiceTest {
                 new MatchRun.Unassigned(new UUID(0, 11), UnassignedReason.REGION_TOO_SMALL));
         assertThat(run.getRegionResults()).containsExactly(
                 new MatchRun.RegionResult("홍대/합정", 8, 2, true),
-                new MatchRun.RegionResult("잠실", 4, 1, false),
-                new MatchRun.RegionResult("강남/신논현", 0, 0, false),
-                new MatchRun.RegionResult("을지로/종로", 0, 0, false));
+                new MatchRun.RegionResult("잠실", 4, 1, false));
     }
 
     @Test
-    @DisplayName("앞 지역 결과가 버려지면 두 지역을 고른 사람은 다음 지역 후보로 남아 그 지역 테이블에 앉는다")
+    @DisplayName("1지망 지역이 열리지 못하면 두 지역을 고른 사람은 2지망 지역 테이블에 앉는다")
     void runMatch_multiRegionApplicants_flowToNextRegion() {
-        // given: 홍대만 4명(서로 같은 테이블 금지) + 홍대·잠실 4명 + 잠실만 4명. 후보 수·단일 지역 수가 같아 선언 순으로 홍대 먼저.
+        // given: 홍대만 4명(서로 같은 테이블 금지) + 홍대(1지망)·잠실(2지망) 4명 + 잠실만 4명. 홍대는 2테이블을 못 만든다.
         List<Application> hongdaeOnly = applications(0, 4, DiningRegion.HONGDAE);
         List<Application> both = applications(4, 8, DiningRegion.HONGDAE, DiningRegion.JAMSIL);
         List<Application> jamsilOnly = applications(8, 12, DiningRegion.JAMSIL);
@@ -249,9 +247,9 @@ class DiningMatchServiceTest {
     }
 
     @Test
-    @DisplayName("지역 순서는 후보 수 → 그 지역만 고른 사람 수 → 선언 순이고, 같은 입력이면 같은 결과다(무작위 없음)")
+    @DisplayName("가장 많이 앉히는 지역 조합을 고르고(잠실은 2테이블이 안 돼 잠실·강남 희망자는 강남으로), 같은 입력이면 같은 결과다(무작위 없음)")
     void runMatch_regionOrder_deterministic() {
-        // given: 16명. 홍대 8(홍대만 4), 잠실 8(잠실만 0), 강남 8(강남만 4) → 홍대 → 강남 → 잠실 순.
+        // given: 16명. 홍대만 4, 홍대>잠실 4, 잠실>강남 4, 강남만 4 → 홍대·강남 각 8명 2테이블, 잠실은 닫힌다.
         applications = IntStream.range(0, 16).mapToObj(i -> switch (i % 4) {
             case 0 -> application(i, DiningRegion.HONGDAE);
             case 1 -> application(i, DiningRegion.HONGDAE, DiningRegion.JAMSIL);
@@ -275,10 +273,34 @@ class DiningMatchServiceTest {
         assertThat(placements.subList(0, 16)).isEqualTo(placements.subList(16, 32));
         ArgumentCaptor<MatchRun> runs = ArgumentCaptor.forClass(MatchRun.class);
         then(matchRunRepository).should(times(2)).save(runs.capture());
-        assertThat(runs.getAllValues().get(0).getRegionResults()).extracting(MatchRun.RegionResult::region)
-                .containsExactly("홍대/합정", "강남/신논현", "잠실", "을지로/종로");
+        assertThat(runs.getAllValues().get(0).getRegionResults())
+                .extracting(MatchRun.RegionResult::region, MatchRun.RegionResult::adopted)
+                .containsExactly(tuple("홍대/합정", true), tuple("잠실", false), tuple("강남/신논현", true));
         assertThat(runs.getAllValues().get(0).getRegionResults())
                 .isEqualTo(runs.getAllValues().get(1).getRegionResults());
+    }
+
+    @Test
+    @DisplayName("두 지역 모두 열릴 수 있으면 사람마다 1지망 지역에 앉힌다(한 지역에 몰아도 앉는 수가 같으면 지망 순위 합이 작은 쪽)")
+    void runMatch_regionPriority_firstChoiceWins() {
+        // given: 홍대>잠실 8명 + 잠실>홍대 8명. 한 지역에 16명을 몰아도 16명이 앉지만 지망 순위 합이 더 크다.
+        List<Application> hongdaeFirst = applications(0, 8, DiningRegion.HONGDAE, DiningRegion.JAMSIL);
+        List<Application> jamsilFirst = applications(8, 16, DiningRegion.JAMSIL, DiningRegion.HONGDAE);
+        applications = Stream.concat(hongdaeFirst.stream(), jamsilFirst.stream()).toList();
+        givenRun(2, List.of());
+        given(diningTableRepository.save(any(DiningTable.class))).willAnswer(invocation -> invocation.getArgument(0));
+        ArgumentCaptor<DiningTableMember> seats = ArgumentCaptor.forClass(DiningTableMember.class);
+
+        // when
+        diningMatchService.runMatch(session.getId(), MatchRunTrigger.MANUAL, null, null);
+
+        // then
+        then(diningTableMemberRepository).should(times(16)).save(seats.capture());
+        assertThat(seats.getAllValues()).allSatisfy(member -> assertThat(member.getTable().getRegion())
+                .isEqualTo(member.getApplication().getCandidateRegions().get(0).getLabel()));
+        assertThat(savedRun().getRegionResults()).containsExactly(
+                new MatchRun.RegionResult("홍대/합정", 8, 2, true),
+                new MatchRun.RegionResult("잠실", 8, 2, true));
     }
 
     @Test
