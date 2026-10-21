@@ -198,4 +198,16 @@ public class GatheringSession extends BaseEntity {
         }
         return status.toGatheringStatus();
     }
+
+    /**
+     * 배지 표시용 상태. 유효 상태가 모집중이어도 신청 마감이 지났으면 마감(CLOSED)으로 보인다.
+     * 홈 배너·큐레이션처럼 마감 시각 없이 상태만 내려가는 응답에 쓴다(상세에선 신청이 막혀 있는데 모집중으로 뜨던 문제).
+     */
+    public GatheringStatus getDisplayStatus() {
+        GatheringStatus effective = getEffectiveStatus();
+        if (effective == GatheringStatus.OPEN && applyDeadlineAt != null && !LocalDateTime.now().isBefore(applyDeadlineAt)) {
+            return GatheringStatus.CLOSED;
+        }
+        return effective;
+    }
 }
