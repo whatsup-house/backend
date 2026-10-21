@@ -323,51 +323,103 @@ public class DiningMatchService {
     }
 
     /**
-     * 회차×지역 매칭(KAN-431). 지역을 후보 수 많은 순 → 그 지역만 고른 사람 많은 순 → 선언 순으로 돌며
-     * "남은 후보 중 이 지역 희망자"를 엔진에 넣는다. 테이블이 minTablesPerRegion개 이상이면 채택해 앉은 사람을 남은 후보에서 빼고
-     * (엔진 미배정자는 남은 후보로 돌아간다), 미만이면 그 지역 결과를 버린다(아무도 빼지 않는다). 무작위가 없어 같은 입력이면 같은 결과다.
-     * 끝까지 남은 사람의 사유: 채택된 지역에서 받은 하드 조건 사유(나이 차·제외 관계) → 결과가 버려진 지역에 있었으면 REGION_TOO_SMALL
-     * → 그 밖에는 NOT_ENOUGH_PEOPLE.
-     * ponytail: 지역 순서 그리디라 여러 지역을 고른 사람이 앞 지역에 먼저 흡수된다. 지역 간 최적 분배가 필요해지면
-     * "버려진 지역에 대해 앞 지역의 다지역 희망자를 옮겨 보는" 2차 패스를 추가한다.
+     * 회차×지역 매칭(KAN-431), 희망 지역 지망 순위 반영.
+     * 열 지역 조합(누군가 희망한 지역들의 부분집합, 최대 2^4=16개)을 모두 따져 본다. 조합마다 사람을 그 조합 안에서 가장 높은
+     * 지망 지역에 넣고 지역마다 엔진을 돌려, 모든 지역이 minTablesPerRegion개 이상 테이블을 만들 때만 유효한 조합으로 본다.
+     * 유효한 조합 중 ① 앉는 사람이 많은 것 ② 앉은 사람들의 지망 순위 합이 작은 것 ③ 선언 순서가 앞선 지역 조합 순으로 고른다.
+     * 같은 (지역, 인원) 풀은 한 번만 엔진에 넣는다. 무작위가 없어 같은 입력이면 같은 결과다.
+     * 끝까지 남은 사람의 사유: 채택된 지역에서 받은 하드 조건 사유(나이 차·제외 관계) → 희망 지역이 하나도 안 열렸으면
+     * REGION_TOO_SMALL → 그 밖에는 NOT_ENOUGH_PEOPLE.
+     * ponytail: 채택된 지역에서 엔진이 못 앉힌 사람은 다음 지망 지역에 다시 넣어 보지 않는다(다음 회차로 넘어간다).
+     * 지역이 4곳보다 많아지면 조합 수가 2^n 이라 탐욕 방식으로 바꿔야 한다.
      */
     private RegionMatch matchByRegion(List<Application> candidates, List<MatchingEngine.Applicant> applicants,
                                       MatchingEngine.Rules rules, MatchingEngine.Relations relations, int minTablesPerRegion) {
         Map<UUID, List<DiningRegion>> wanted = candidates.stream()
                 .collect(Collectors.toMap(Application::getId, Application::getCandidateRegions));
-        Map<DiningRegion, Long> candidateCount = new EnumMap<>(DiningRegion.class);
-        Map<DiningRegion, Long> onlyCount = new EnumMap<>(DiningRegion.class);
-        for (DiningRegion region : DiningRegion.values()) {
-            candidateCount.put(region, wanted.values().stream().filter(r -> r.contains(region)).count());
-            onlyCount.put(region, wanted.values().stream().filter(r -> r.size() == 1 && r.contains(region)).count());
-        }
-        List<DiningRegion> order = Arrays.stream(DiningRegion.values())
-                .sorted(Comparator.comparing((DiningRegion r) -> candidateCount.get(r), Comparator.reverseOrder())
-                        .thenComparing(r -> onlyCount.get(r), Comparator.reverseOrder())
-                        .thenComparing(Comparator.naturalOrder()))
+        List<DiningRegion> universe = Arrays.stream(DiningRegion.values())
+                .filter(region -> wanted.values().stream().anyMatch(w -> w.contains(region)))
                 .toList();
+        Map<List<UUID>, MatchingEngine.Result> engineCache = new HashMap<>();
 
+        RegionPlan best = null;
+        for (int mask = 0; mask < (1 << universe.size()); mask++) {
+            Set<DiningRegion> open = EnumSet.noneOf(DiningRegion.class);
+            for (int i = 0; i < universe.size(); i++) {
+                if ((mask & (1 << i)) != 0) {
+                    open.add(universe.get(i));
+                }
+            }
+            RegionPlan plan = planFor(open, applicants, wanted, rules, relations, engineCache);
+            boolean valid = plan.results().values().stream().allMatch(r -> r.tables().size() >= minTablesPerRegion)
+                    && plan.results().keySet().equals(open);
+            if (valid && (best == null || plan.isBetterThan(best))) {
+                best = plan;
+            }
+        }
+        // 지역마다 "모두 열었을 때" 풀·테이블 수 — 채택되지 않은 지역의 결과 표시에 쓴다
+        RegionPlan allOpen = planFor(universe.isEmpty() ? EnumSet.noneOf(DiningRegion.class) : EnumSet.copyOf(universe),
+                applicants, wanted, rules, relations, engineCache);
+        return adoptRegions(candidates, wanted, best, allOpen);
+    }
+
+    // 열린 지역 조합 하나의 배정 결과. seated = 앉은 사람 수, rankSum = 앉은 사람들의 지망 순위 합(1지망=1)
+    private record RegionPlan(Set<DiningRegion> open, Map<DiningRegion, List<MatchingEngine.Applicant>> pools,
+                              Map<DiningRegion, MatchingEngine.Result> results, int seated, int rankSum, int order) {
+        boolean isBetterThan(RegionPlan other) {
+            if (seated != other.seated) return seated > other.seated;
+            if (rankSum != other.rankSum) return rankSum < other.rankSum;
+            return order < other.order;
+        }
+    }
+
+    private RegionPlan planFor(Set<DiningRegion> open, List<MatchingEngine.Applicant> applicants,
+                               Map<UUID, List<DiningRegion>> wanted, MatchingEngine.Rules rules,
+                               MatchingEngine.Relations relations, Map<List<UUID>, MatchingEngine.Result> engineCache) {
+        Map<DiningRegion, List<MatchingEngine.Applicant>> pools = new EnumMap<>(DiningRegion.class);
+        for (MatchingEngine.Applicant applicant : applicants) {
+            wanted.get(applicant.applicationId()).stream().filter(open::contains).findFirst()
+                    .ifPresent(region -> pools.computeIfAbsent(region, r -> new ArrayList<>()).add(applicant));
+        }
+        Map<DiningRegion, MatchingEngine.Result> results = new EnumMap<>(DiningRegion.class);
+        int seated = 0;
+        int rankSum = 0;
+        for (Map.Entry<DiningRegion, List<MatchingEngine.Applicant>> entry : pools.entrySet()) {
+            List<UUID> key = entry.getValue().stream().map(MatchingEngine.Applicant::applicationId).toList();
+            MatchingEngine.Result result = engineCache.computeIfAbsent(key, k -> matchingEngine.match(entry.getValue(), rules, relations));
+            results.put(entry.getKey(), result);
+            for (MatchingEngine.TableResult table : result.tables()) {
+                for (MatchingEngine.Seat seat : table.seats()) {
+                    seated++;
+                    rankSum += wanted.get(seat.applicationId()).indexOf(entry.getKey()) + 1;
+                }
+            }
+        }
+        int order = open.stream().mapToInt(region -> 1 << region.ordinal()).sum();
+        return new RegionPlan(open, pools, results, seated, rankSum, order);
+    }
+
+    private RegionMatch adoptRegions(List<Application> candidates, Map<UUID, List<DiningRegion>> wanted,
+                                     RegionPlan best, RegionPlan allOpen) {
         Set<UUID> remaining = new LinkedHashSet<>();
         candidates.forEach(a -> remaining.add(a.getId()));
         Map<UUID, UnassignedReason> hardReasons = new HashMap<>();
-        Set<UUID> inDiscardedRegion = new HashSet<>();
         List<RegionTable> tables = new ArrayList<>();
         List<MatchRun.RegionResult> regionResults = new ArrayList<>();
         int splitCount = 0;
         int mergeCount = 0;
         int reallocatedCount = 0;
-        for (DiningRegion region : order) {
-            List<MatchingEngine.Applicant> pool = applicants.stream()
-                    .filter(a -> remaining.contains(a.applicationId()) && wanted.get(a.applicationId()).contains(region))
-                    .toList();
-            MatchingEngine.Result result = pool.isEmpty() ? null : matchingEngine.match(pool, rules, relations);
-            int tableCount = result == null ? 0 : result.tables().size();
-            boolean adopted = result != null && tableCount >= minTablesPerRegion;
-            regionResults.add(new MatchRun.RegionResult(region.getLabel(), pool.size(), tableCount, adopted));
-            if (!adopted) {
-                pool.forEach(a -> inDiscardedRegion.add(a.applicationId()));
+        Set<DiningRegion> adoptedRegions = best == null ? Set.of() : best.open();
+        for (DiningRegion region : DiningRegion.values()) {
+            if (!adoptedRegions.contains(region)) {
+                if (allOpen.pools().containsKey(region)) {
+                    regionResults.add(new MatchRun.RegionResult(region.getLabel(), allOpen.pools().get(region).size(),
+                            allOpen.results().get(region).tables().size(), false));
+                }
                 continue;
             }
+            MatchingEngine.Result result = best.results().get(region);
+            regionResults.add(new MatchRun.RegionResult(region.getLabel(), best.pools().get(region).size(), result.tables().size(), true));
             for (MatchingEngine.TableResult table : result.tables()) {
                 tables.add(new RegionTable(region, table));
                 table.seats().forEach(seat -> remaining.remove(seat.applicationId()));
@@ -381,8 +433,9 @@ public class DiningMatchService {
         }
 
         List<MatchRun.Unassigned> unassigned = remaining.stream()
-                .map(id -> new MatchRun.Unassigned(id, hardReasons.getOrDefault(id, inDiscardedRegion.contains(id)
-                        ? UnassignedReason.REGION_TOO_SMALL : UnassignedReason.NOT_ENOUGH_PEOPLE)))
+                .map(id -> new MatchRun.Unassigned(id, hardReasons.getOrDefault(id,
+                        wanted.get(id).stream().noneMatch(adoptedRegions::contains)
+                                ? UnassignedReason.REGION_TOO_SMALL : UnassignedReason.NOT_ENOUGH_PEOPLE)))
                 .toList();
         return new RegionMatch(tables, unassigned, regionResults, splitCount, mergeCount, reallocatedCount);
     }
