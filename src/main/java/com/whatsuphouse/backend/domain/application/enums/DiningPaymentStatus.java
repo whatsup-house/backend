@@ -11,12 +11,12 @@ import com.whatsuphouse.backend.domain.ticket.enums.TicketDeductionStatus;
  * 1. 이용권 차감 REFUND_FAILED / REFUND_REQUESTED → 그대로
  * 2. 이용권 차감 REFUND_PROCESSING, 또는 끝난(취소·반려) 신청의 보증금 RETURN_PENDING → REFUND_PROCESSING
  * 3. 이용권 차감 REFUNDED·RESTORED(이용권 복원), 또는 끝난 신청의 보증금 RETURNED → REFUNDED
- * 4. 끝난 신청: 차감(DEDUCTED)·보증금 입금(PAID·FORFEITED)이 있으면 PAID(환불 없이 끝남), 결제 전에 끝났으면 FAILED
+ * 4. 끝난 신청: 차감(DEDUCTED)·보증금 입금(PAID·FORFEITED)이 있으면 PAID(환불 없이 끝남), 결제 전에 끝났으면 null(결제 상태 없음 — 그냥 취소된 신청)
  * 5. 매칭 실패(ALTERNATIVE_OFFERED·NO_MATCH)로 해결 선택 응답 대기 → REFUND_AVAILABLE
  * 6. 승인·출석(이용권 차감·보증금 입금 완료) → PAID, 그 밖(승인 대기·결제 대기) → PENDING
  * 보증금 반환은 신청이 끝났을 때만 환불로 본다(체크인 뒤 반환은 정상 흐름이라 PAID 유지).
  * 우연한 식탁이 아닌 신청: 유료면 입금 확인 여부로 PAID|PENDING, 무료면 null.
- * ponytail: 입금 기한 경과 자동 취소 흐름이 아직 없어 FAILED는 "결제 없이 취소·반려된 신청"이다. 기한 취소가 생기면 그 표시로 좁힌다.
+ * FAILED 는 입금 기한 경과 자동 취소용으로 남겨 둔 값이다. 그 흐름이 아직 없어 지금은 내려가지 않는다.
  */
 public enum DiningPaymentStatus {
     PENDING, PAID, FAILED, REFUND_AVAILABLE, REFUND_REQUESTED, REFUND_PROCESSING, REFUNDED, REFUND_FAILED;
@@ -46,7 +46,7 @@ public enum DiningPaymentStatus {
         }
         if (closed) {
             return ticket == TicketDeductionStatus.DEDUCTED || deposit == DepositStatus.PAID
-                    || deposit == DepositStatus.FORFEITED ? PAID : FAILED;
+                    || deposit == DepositStatus.FORFEITED ? PAID : null;
         }
         MatchStatus matchStatus = application.getMatchStatus();
         if (resolutionOffered && (matchStatus == MatchStatus.ALTERNATIVE_OFFERED || matchStatus == MatchStatus.NO_MATCH)) {
