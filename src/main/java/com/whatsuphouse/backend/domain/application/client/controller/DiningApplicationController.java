@@ -1,6 +1,7 @@
 package com.whatsuphouse.backend.domain.application.client.controller;
 
 import com.whatsuphouse.backend.domain.application.client.dto.request.DiningCancelRequest;
+import com.whatsuphouse.backend.domain.application.client.dto.request.DiningWishUpdateRequest;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningApplicationListResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningCancelPreviewResponse;
 import com.whatsuphouse.backend.domain.application.client.dto.response.DiningPrefillResponse;
@@ -17,6 +18,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -40,6 +42,25 @@ public class DiningApplicationController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ResponseEntity.ok(ApiResult.success(diningApplicationService.listMyApplications(principal.getUserId())));
+    }
+
+    @Operation(summary = "매칭 대기 중 일정·지역 바꾸기",
+            description = "매칭 대기(WAITING·REALLOCATING)인 내 신청의 희망 회차(우선순위 순)와 희망 지역(지망 순)을 통째로 바꿉니다. "
+                    + "결제·이용권·보증금은 그대로입니다. 회차는 같은 모임의 모집 중·마감 전·매칭 실행 전 회차만 고를 수 있습니다. "
+                    + "본인 신청이 아니면 403, 대기 상태가 아니거나 매칭을 이미 실행한 회차면 WISH_CHANGE_NOT_ALLOWED(409), "
+                    + "없는 회차 SESSION_NOT_FOUND, 다른 모임 회차 SESSION_GATHERING_MISMATCH, 모집 마감 GATHERING_NOT_RECRUITING·APPLY_DEADLINE_PASSED, "
+                    + "지역 누락 REGION_REQUIRED, 모르는 지역 INVALID_REGION, 그 회차에 내 다른 신청이 있으면 ALREADY_APPLIED. "
+                    + "멤버십으로 확정한 신청은 마지막 희망 회차가 멤버십 기간 밖이면 MEMBERSHIP_PERIOD_EXCEEDED, "
+                    + "회차가 여러 주면 CANDIDATE_SESSIONS_DIFFERENT_WEEKS, 그 주에 다른 활성 신청이 있으면 MEMBERSHIP_WEEKLY_LIMIT.")
+    @PutMapping("/me/applications/{id}/wishes")
+    public ResponseEntity<ApiResult<Void>> updateWishes(
+            @Parameter(description = "신청 ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+            @PathVariable UUID id,
+            @Valid @RequestBody DiningWishUpdateRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        diningApplicationService.updateWishes(id, principal.getUserId(), request);
+        return ResponseEntity.ok(ApiResult.success(null));
     }
 
     @Operation(summary = "신청 폼 프리필",

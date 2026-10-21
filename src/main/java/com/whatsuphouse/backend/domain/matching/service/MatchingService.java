@@ -10,8 +10,10 @@ import com.whatsuphouse.backend.domain.matching.dto.response.MatchingResultRespo
 import com.whatsuphouse.backend.domain.matching.dto.response.MatchingRunResponse;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTable;
 import com.whatsuphouse.backend.domain.matching.entity.DiningTableMember;
+import com.whatsuphouse.backend.domain.matching.entity.MatchRun;
 import com.whatsuphouse.backend.domain.matching.enums.DiningTableStatus;
 import com.whatsuphouse.backend.domain.matching.enums.MatchRunTrigger;
+import com.whatsuphouse.backend.domain.matching.enums.UnassignedReason;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableMemberRepository;
 import com.whatsuphouse.backend.domain.matching.repository.DiningTableRepository;
 import com.whatsuphouse.backend.domain.matching.repository.MatchRunRepository;
@@ -23,7 +25,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -157,6 +161,28 @@ public class MatchingService {
     public DiningTable findTable(UUID tableId) {
         return diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new CustomException(ErrorCode.MATCHING_GROUP_NOT_FOUND));
+    }
+
+    /**
+     * 신청별 마지막 매칭 실행에서 받은 미배정 사유. 신청마다 희망 회차들의 실행 중 가장 최근 실행만 보고,
+     * 그 실행에서 미배정되지 않았으면 결과에 없다. 참가자 내 신청 조회용. (KAN-436)
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, UnassignedReason> findLastUnassignedReasons(Map<UUID, ? extends Collection<UUID>> sessionIdsByApplication) {
+        Set<UUID> sessionIds = sessionIdsByApplication.values().stream().flatMap(Collection::stream).collect(Collectors.toSet());
+        if (sessionIds.isEmpty()) {
+            return Map.of();
+        }
+        List<MatchRun> runs = matchRunRepository.findBySessionIdIn(sessionIds);
+        Map<UUID, UnassignedReason> reasons = new HashMap<>();
+        sessionIdsByApplication.forEach((applicationId, wished) -> runs.stream()
+                .filter(run -> wished.contains(run.getSessionId()))
+                .max(Comparator.comparing(MatchRun::getStartedAt))
+                .flatMap(run -> run.getUnassignedReasons().stream()
+                        .filter(u -> u.applicationId().equals(applicationId))
+                        .findFirst())
+                .ifPresent(u -> reasons.put(applicationId, u.reason())));
+        return reasons;
     }
 
     /** 회차별·상태별 테이블 수. 테이블이 없는 회차는 결과에 없다. (KAN-348 운영 대시보드) */

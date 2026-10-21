@@ -76,6 +76,8 @@ public enum ErrorCode {
     RESOLUTION_ALREADY_HANDLED("이미 처리된 해결 선택입니다.", HttpStatus.CONFLICT),
     RESOLUTION_SESSION_REQUIRED("회차 이동은 옮길 회차를 골라야 합니다.", HttpStatus.BAD_REQUEST),
     RESOLUTION_SESSION_NOT_OFFERED("제안된 회차 중 아직 모집 중인 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
+    // 대기 중 일정·지역 바꾸기 (KAN-436)
+    WISH_CHANGE_NOT_ALLOWED("매칭 대기 중인 신청만, 아직 매칭 전인 회차로만 일정을 바꿀 수 있습니다.", HttpStatus.CONFLICT),
 
     // Dining (우연한 식탁 운영자 어드민)
     NOT_RANDOM_TABLE_SESSION("우연한 식탁 회차가 아닙니다.", HttpStatus.BAD_REQUEST),
@@ -167,6 +169,7 @@ public enum ErrorCode {
     DEPOSIT_ACCOUNT_REQUIRED("보증금 반환 계좌(은행·계좌번호·예금주)를 입력해주세요.", HttpStatus.BAD_REQUEST),
     MEMBERSHIP_WEEKLY_LIMIT("멤버십은 한 주에 한 번만 신청할 수 있습니다.", HttpStatus.CONFLICT),
     CANDIDATE_SESSIONS_DIFFERENT_WEEKS("멤버십으로 신청할 때는 같은 주의 회차만 고를 수 있습니다.", HttpStatus.BAD_REQUEST),
+    MEMBERSHIP_PERIOD_EXCEEDED("멤버십 기간 밖의 회차로는 바꿀 수 없습니다.", HttpStatus.CONFLICT),
     TICKET_PRODUCT_NOT_FOUND("존재하지 않는 이용권 상품입니다.", HttpStatus.NOT_FOUND),
     INVALID_REFUND_TRANSITION("환불을 진행할 수 없는 이용권 차감 기록입니다.", HttpStatus.CONFLICT),
     REFUND_ACCOUNT_REQUIRED("환불받을 계좌(은행·계좌번호·예금주)를 입력해주세요.", HttpStatus.BAD_REQUEST),

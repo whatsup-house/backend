@@ -14,6 +14,8 @@ public interface MatchRunRepository extends JpaRepository<MatchRun, UUID> {
 
     Optional<MatchRun> findFirstBySessionIdOrderByStartedAtDesc(UUID sessionId);
 
+    List<MatchRun> findBySessionIdIn(Collection<UUID> sessionIds);
+
     @Query("select distinct r.sessionId from MatchRun r where r.sessionId in :sessionIds")
     List<UUID> findSessionIdsIn(@Param("sessionIds") Collection<UUID> sessionIds);
 }

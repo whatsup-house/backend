@@ -219,6 +219,8 @@ public class DiningMatchService {
                         .groupScore(table.getGroupScore())
                         .scoreDetail(table.getScoreDetail())
                         .confirmAt(table.getConfirmAt())
+                        .matchedAt(table.getMatchedAt())
+                        .confirmedAt(table.getConfirmedAt())
                         .locked(table.isLocked())
                         .venueId(table.getVenueId())
                         .chatRoomId(table.getChatRoomId())
@@ -328,10 +330,10 @@ public class DiningMatchService {
      * 지망 지역에 넣고 지역마다 엔진을 돌려, 모든 지역이 minTablesPerRegion개 이상 테이블을 만들 때만 유효한 조합으로 본다.
      * 유효한 조합 중 ① 앉는 사람이 많은 것 ② 앉은 사람들의 지망 순위 합이 작은 것 ③ 선언 순서가 앞선 지역 조합 순으로 고른다.
      * 같은 (지역, 인원) 풀은 한 번만 엔진에 넣는다. 무작위가 없어 같은 입력이면 같은 결과다.
+     * 고른 조합에 마무리 패스(finishUnseated)를 한 번 돌려, 채택 지역에서 엔진이 못 앉힌 사람을 다음 지망 채택 지역에 넣어 본다.
      * 끝까지 남은 사람의 사유: 채택된 지역에서 받은 하드 조건 사유(나이 차·제외 관계) → 희망 지역이 하나도 안 열렸으면
      * REGION_TOO_SMALL → 그 밖에는 NOT_ENOUGH_PEOPLE.
-     * ponytail: 채택된 지역에서 엔진이 못 앉힌 사람은 다음 지망 지역에 다시 넣어 보지 않는다(다음 회차로 넘어간다).
-     * 지역이 4곳보다 많아지면 조합 수가 2^n 이라 탐욕 방식으로 바꿔야 한다.
+     * ponytail: 지역이 4곳보다 많아지면 조합 수가 2^n 이라 탐욕 방식으로 바꿔야 한다.
      */
     private RegionMatch matchByRegion(List<Application> candidates, List<MatchingEngine.Applicant> applicants,
                                       MatchingEngine.Rules rules, MatchingEngine.Relations relations, int minTablesPerRegion) {
@@ -360,7 +362,63 @@ public class DiningMatchService {
         // 지역마다 "모두 열었을 때" 풀·테이블 수 — 채택되지 않은 지역의 결과 표시에 쓴다
         RegionPlan allOpen = planFor(universe.isEmpty() ? EnumSet.noneOf(DiningRegion.class) : EnumSet.copyOf(universe),
                 applicants, wanted, rules, relations, engineCache);
-        return adoptRegions(candidates, wanted, best, allOpen);
+        RegionPlan finished = best == null ? null
+                : finishUnseated(best, applicants, wanted, rules, relations, minTablesPerRegion, engineCache);
+        return adoptRegions(candidates, wanted, finished, allOpen);
+    }
+
+    /**
+     * 같은 날짜 다른 지역 마무리 패스(STA-03, KAN-436). 채택 지역에서 엔진이 못 앉힌 사람(하드 조건 사유 포함)을 신청 순으로,
+     * 그 사람의 다음 지망 지역 중 채택된 지역에 지망 순으로 한 번씩 넣어 그 지역만 엔진을 다시 돌린다.
+     * 다시 돌린 결과가 그 지역 테이블 수 ≥ minTablesPerRegion, 그 지역에 이미 앉아 있던 사람 전원 유지, 넣은 사람 착석일 때만
+     * 그 지역 결과를 바꾸고(넣은 사람은 원래 지역 풀에서 뺀다), 아니면 원래 결과를 둔다.
+     * ponytail: 사람마다 탐욕으로 한 번씩만 본다. 앞사람을 옮긴 뒤 뒷사람 기회가 달라져도 다시 돌지 않는다(모두 다시 보려면 바뀌지 않을 때까지 반복).
+     */
+    private RegionPlan finishUnseated(RegionPlan best, List<MatchingEngine.Applicant> applicants,
+                                      Map<UUID, List<DiningRegion>> wanted, MatchingEngine.Rules rules,
+                                      MatchingEngine.Relations relations, int minTablesPerRegion,
+                                      Map<List<UUID>, MatchingEngine.Result> engineCache) {
+        Map<DiningRegion, List<MatchingEngine.Applicant>> pools = new EnumMap<>(DiningRegion.class);
+        pools.putAll(best.pools());
+        Map<DiningRegion, MatchingEngine.Result> results = new EnumMap<>(DiningRegion.class);
+        results.putAll(best.results());
+        for (MatchingEngine.Applicant person : applicants) {
+            UUID id = person.applicationId();
+            DiningRegion home = wanted.get(id).stream().filter(best.open()::contains).findFirst().orElse(null);
+            if (home == null || seatedIds(results.get(home)).contains(id)) {
+                continue;
+            }
+            for (DiningRegion next : wanted.get(id)) {
+                if (next == home || !best.open().contains(next)) {
+                    continue;
+                }
+                Set<UUID> poolIds = new HashSet<>(ids(pools.get(next)));
+                poolIds.add(id);
+                // 엔진 동점 처리 기준(입력 순서)을 지키려고 신청 순으로 다시 세운다
+                List<MatchingEngine.Applicant> pool = applicants.stream().filter(a -> poolIds.contains(a.applicationId())).toList();
+                MatchingEngine.Result retry = engineCache.computeIfAbsent(ids(pool), k -> matchingEngine.match(pool, rules, relations));
+                Set<UUID> retrySeated = seatedIds(retry);
+                if (retry.tables().size() >= minTablesPerRegion && retrySeated.contains(id)
+                        && retrySeated.containsAll(seatedIds(results.get(next)))) {
+                    pools.put(next, pool);
+                    results.put(next, retry);
+                    pools.put(home, pools.get(home).stream().filter(a -> !a.applicationId().equals(id)).toList());
+                    break;
+                }
+            }
+        }
+        return new RegionPlan(best.open(), pools, results, best.seated(), best.rankSum(), best.order());
+    }
+
+    private static List<UUID> ids(List<MatchingEngine.Applicant> applicants) {
+        return applicants.stream().map(MatchingEngine.Applicant::applicationId).toList();
+    }
+
+    private static Set<UUID> seatedIds(MatchingEngine.Result result) {
+        return result.tables().stream()
+                .flatMap(table -> table.seats().stream())
+                .map(MatchingEngine.Seat::applicationId)
+                .collect(Collectors.toSet());
     }
 
     // 열린 지역 조합 하나의 배정 결과. seated = 앉은 사람 수, rankSum = 앉은 사람들의 지망 순위 합(1지망=1)
@@ -588,6 +646,7 @@ public class DiningMatchService {
                 .mbti(profile.mbti())
                 .assignReason(member.getAssignReason())
                 .isManual(member.isManual())
+                .reallocationCount(member.getApplication().getReallocationCount())
                 .build();
     }
 
@@ -607,6 +666,8 @@ public class DiningMatchService {
                             .applicationId(u.applicationId())
                             .nickname(nickname)
                             .reason(u.reason())
+                            .reallocationCount(application == null ? 0 : application.getReallocationCount())
+                            .failedAt(run.getFinishedAt())
                             .build();
                 })
                 .toList();
