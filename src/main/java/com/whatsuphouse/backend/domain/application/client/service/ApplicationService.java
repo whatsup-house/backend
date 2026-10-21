@@ -304,6 +304,43 @@ public class ApplicationService {
         return ApplicationResponse.from(saved);
     }
 
+    /**
+     * 심사용 회차 초기화(KAN-442)의 시드 신청. 신청 경로와 같은 모양(폼 스냅샷·희망 회차 1지망 = 이 회차·희망 지역·표준 질문 답)으로 만들되
+     * 마감·중복 검사는 하지 않는다. 답은 이 모임 폼의 표준 질문(reserved_key)에 붙인다. 이용권이 필요하면 결제 대기, 무료면 바로 참가 확정.
+     */
+    @Transactional
+    public Application createDemoSeedApplication(GatheringSession session, User user, List<DiningRegion> regions,
+                                                 Map<ReservedQuestionKey, Object> answers) {
+        Gathering gathering = session.getGathering();
+        List<FormQuestion> questions = formProvisionService.findQuestions(formProvisionService.findOrCreateForm(gathering));
+        Application application = applicationRepository.save(Application.builder()
+                .bookingNumber(generateBookingNumber())
+                .gathering(gathering)
+                .user(user)
+                .name(user.getName())
+                .phone(user.getPhone())
+                .email(user.getEmail())
+                .formSnapshot(buildFormSnapshot(questions))
+                .candidateRegions(regions)
+                .build());
+        applicationCandidateSessionRepository.save(new ApplicationCandidateSession(application, session, 1));
+        applicationAnswerRepository.saveAll(questions.stream()
+                .filter(q -> q.getReservedKey() != null && answers.containsKey(q.getReservedKey()))
+                .map(q -> ApplicationAnswer.builder()
+                        .application(application)
+                        .question(q)
+                        .value(Map.of("value", answers.get(q.getReservedKey())))
+                        .build())
+                .toList());
+        if (application.requiresRandomTableTicket()) {
+            application.awaitPayment();
+        } else {
+            application.confirm();
+        }
+        eventPublisher.publishEvent(new ApplicationStatusChangedEvent(application, "심사용 시드 신청"));
+        return application;
+    }
+
     // 보낸 순서가 지망 순위다. 중복은 앞의 것만 남긴다. 대기 중 지역 바꾸기(DiningApplicationService)도 쓴다.
     static List<DiningRegion> resolveCandidateRegions(List<String> labels) {
         if (labels == null || labels.isEmpty()) {

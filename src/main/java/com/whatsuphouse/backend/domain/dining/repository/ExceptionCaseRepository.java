@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.dining.entity.ExceptionCase;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseStatus;
 import com.whatsuphouse.backend.domain.dining.enums.ExceptionCaseType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -12,6 +13,16 @@ import java.util.List;
 import java.util.UUID;
 
 public interface ExceptionCaseRepository extends JpaRepository<ExceptionCase, UUID> {
+
+    // 심사용 회차 초기화(KAN-442): 이 회차·테이블·신청에 걸린 예외. 신고(safety_reports.exception_case_id)는 호출 측이 먼저 지운다.
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            delete from ExceptionCase e
+            where e.sessionId = :sessionId or e.tableId in :tableIds or e.applicationId in :applicationIds
+            """)
+    void deleteBySessionOrTablesOrApplications(@Param("sessionId") UUID sessionId,
+                                               @Param("tableIds") Collection<UUID> tableIds,
+                                               @Param("applicationIds") Collection<UUID> applicationIds);
 
     interface SessionCountProjection {
         UUID getSessionId();

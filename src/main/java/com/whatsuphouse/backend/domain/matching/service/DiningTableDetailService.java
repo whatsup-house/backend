@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DiningTableDetailService {
 
-    /** 테이블 상세·확정 채팅 안내에 쓰는 취소 정책. 기한은 CancelPolicy(회차 전날 0시 마감)와 같다. (KAN-418) */
+    /** 테이블 상세에 쓰는 취소 정책. 기한은 CancelPolicy(회차 전날 0시 마감)와 같다. (KAN-418) */
     public static final String CANCEL_POLICY =
             "회차 전전날 23:59까지 취소하면 전액, 그 뒤 전날까지는 50% 환불돼요. 당일 취소와 노쇼는 환불되지 않아요.";
 

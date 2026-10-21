@@ -118,6 +118,12 @@ public class GatheringSession extends BaseEntity {
         this.closingProcessedAt = at;
     }
 
+    /** 심사용 회차 초기화(KAN-442): 자동 매칭 예정 시각을 비우고(스케줄러가 매칭하지 않는다) 모집 중으로 둔다. */
+    public void resetForDemo() {
+        this.matchRunAt = null;
+        this.status = GatheringSessionStatus.OPEN;
+    }
+
     public void update(Location location, LocalDate eventDate, LocalTime startTime, LocalTime endTime,
                        Integer priceOverride, int maxAttendees, LocalDateTime applyDeadlineAt) {
         this.location = location;

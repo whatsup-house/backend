@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.whatsuphouse.backend.global.common.repository.LockRefreshRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
@@ -25,6 +26,13 @@ public interface DepositRepository extends JpaRepository<Deposit, UUID>, LockRef
     Optional<Deposit> findByApplication_IdForUpdate(@Param("applicationId") UUID applicationId);
 
     List<Deposit> findByApplication_IdIn(Collection<UUID> applicationIds);
+
+    @Query("select d.id from Deposit d where d.application.id in :applicationIds")
+    List<UUID> findIdsByApplicationIdIn(@Param("applicationIds") Collection<UUID> applicationIds);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Deposit d where d.id in :ids")
+    void deleteByIdIn(@Param("ids") Collection<UUID> ids);
 
     // 입금 대사 후보: 취소되지 않은 신청의 입금 대기 보증금.
     @EntityGraph(attributePaths = {"application", "application.user"})

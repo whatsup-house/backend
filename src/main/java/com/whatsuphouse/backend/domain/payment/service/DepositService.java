@@ -175,6 +175,21 @@ public class DepositService {
                 .collect(Collectors.toSet());
     }
 
+    /**
+     * 심사용 회차 초기화(KAN-442): 신청을 지우기 전에 이 신청들의 보증금과, 신청·이용권(ticketPassIds)·보증금에 걸린 송금 요청을 지운다.
+     * 입금 알림(deposit_notifications)은 은행 원문 기록이라 남긴다(FK 없음, 대상 이름은 비어 보인다).
+     */
+    public void deleteForApplications(Collection<UUID> applicationIds, Collection<UUID> ticketPassIds) {
+        if (applicationIds.isEmpty()) {
+            return;
+        }
+        List<UUID> depositIds = depositRepository.findIdsByApplicationIdIn(applicationIds);
+        payoutService.deleteLinkedTo(applicationIds, ticketPassIds, depositIds);
+        if (!depositIds.isEmpty()) {
+            depositRepository.deleteByIdIn(depositIds);
+        }
+    }
+
     /** 신청 ID → 보증금. 보증금이 없는 신청은 결과에 없다. */
     @Transactional(readOnly = true)
     public Map<UUID, Deposit> findByApplicationIds(Collection<UUID> applicationIds) {

@@ -2,6 +2,7 @@ package com.whatsuphouse.backend.domain.dining.repository;
 
 import com.whatsuphouse.backend.domain.dining.entity.Feedback;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -10,6 +11,10 @@ import java.util.List;
 import java.util.UUID;
 
 public interface FeedbackRepository extends JpaRepository<Feedback, UUID> {
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Feedback f where f.tableMemberId in :tableMemberIds")
+    void deleteByTableMemberIdIn(@Param("tableMemberIds") Collection<UUID> tableMemberIds);
 
     boolean existsByTableMemberId(UUID tableMemberId);
 

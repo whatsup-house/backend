@@ -8,6 +8,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,6 +29,15 @@ public interface PayoutRequestRepository extends JpaRepository<PayoutRequest, UU
     List<PayoutRequest> findByTypeAndStatusOrderByCreatedAtAsc(PayoutType type, PayoutStatus status);
 
     List<PayoutRequest> findByTicketPassIdInAndType(Collection<UUID> ticketPassIds, PayoutType type);
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            delete from PayoutRequest p
+            where p.applicationId in :applicationIds or p.ticketPassId in :ticketPassIds or p.depositId in :depositIds
+            """)
+    void deleteLinkedTo(@Param("applicationIds") Collection<UUID> applicationIds,
+                        @Param("ticketPassIds") Collection<UUID> ticketPassIds,
+                        @Param("depositIds") Collection<UUID> depositIds);
 
     Optional<PayoutRequest> findByDepositId(UUID depositId);
 

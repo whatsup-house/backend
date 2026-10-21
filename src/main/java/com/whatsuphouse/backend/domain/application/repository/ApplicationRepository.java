@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.whatsuphouse.backend.global.common.repository.LockRefreshRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
@@ -119,6 +120,24 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID>,
             @Param("excludedType") GatheringType excludedType,
             @Param("statuses") List<ApplicationStatus> statuses,
             @Param("since") LocalDate since);
+
+    // 심사용 회차 초기화(KAN-442) 대상: 이 회차에 배정됐거나, 배정 전이고 이 회차를 희망한 신청. 취소(soft delete)된 신청도 포함.
+    @Query("""
+            SELECT a.id FROM Application a
+            WHERE a.session.id = :sessionId
+               OR (a.session IS NULL AND EXISTS (SELECT 1 FROM ApplicationCandidateSession c
+                                                 WHERE c.application = a AND c.session.id = :sessionId))
+            """)
+    List<UUID> findIdsBySessionIdIncludingDeleted(@Param("sessionId") UUID sessionId);
+
+    // 희망 지역(@ElementCollection)은 벌크 삭제가 따라 지우지 않아 테이블을 직접 지운다. (KAN-442)
+    @Modifying(flushAutomatically = true)
+    @Query(value = "DELETE FROM application_candidate_regions WHERE application_id IN (:ids)", nativeQuery = true)
+    void deleteCandidateRegionsByApplicationIdIn(@Param("ids") Collection<UUID> ids);
+
+    @Modifying(flushAutomatically = true)
+    @Query("DELETE FROM Application a WHERE a.id IN :ids")
+    void deleteByIdIn(@Param("ids") Collection<UUID> ids);
 
     // 입금 알림·후보 목록의 대상 이름(모임 제목) 일괄 조회. (KAN-426)
     @EntityGraph(attributePaths = {"gathering"})

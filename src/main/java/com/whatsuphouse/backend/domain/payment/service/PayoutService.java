@@ -38,6 +38,11 @@ public class PayoutService {
     private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
 
+    /** 심사용 회차 초기화(KAN-442): 이 신청·이용권·보증금에 걸린 송금 요청을 지운다(송금 여부와 무관). */
+    public void deleteLinkedTo(Collection<UUID> applicationIds, Collection<UUID> ticketPassIds, Collection<UUID> depositIds) {
+        payoutRequestRepository.deleteLinkedTo(applicationIds, ticketPassIds, depositIds);
+    }
+
     /** 송금 요청을 만든다. 환불은 계좌 필수(REFUND_ACCOUNT_REQUIRED). 데모 회원이면 바로 송금 완료 처리한다. */
     public PayoutRequest request(PayoutType type, UUID userId, int amount, RefundAccount account,
                                  UUID applicationId, UUID ticketPassId, UUID depositId) {

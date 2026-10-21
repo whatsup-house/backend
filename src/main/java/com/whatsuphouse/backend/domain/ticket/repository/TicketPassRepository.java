@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.whatsuphouse.backend.global.common.repository.LockRefreshRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,6 +19,22 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TicketPassRepository extends JpaRepository<TicketPass, UUID>, LockRefreshRepository<TicketPass> {
+
+    // 이 신청들에 연결된(결제 대기 신청에서 구매한) 이용권 중 멤버십이 아닌 것. 상품이 없는 레거시 이용권은 횟수권으로 본다. (KAN-442)
+    @Query("""
+            select p.id from TicketPass p left join p.productOption o
+            where p.application.id in :applicationIds and (o is null or o.kind <> :periodKind)
+            """)
+    List<UUID> findIdsByApplicationIdInAndNotKind(@Param("applicationIds") Collection<UUID> applicationIds,
+                                                  @Param("periodKind") TicketProductKind periodKind);
+
+    @Modifying(flushAutomatically = true)
+    @Query("update TicketPass p set p.application = null where p.application.id in :applicationIds")
+    void unlinkApplications(@Param("applicationIds") Collection<UUID> applicationIds);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from TicketPass p where p.id in :ids")
+    void deleteByIdIn(@Param("ids") Collection<UUID> ids);
 
     // 이용권 소유자(회원) 기준 조회.
     List<TicketPass> findByUser_IdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID userId);

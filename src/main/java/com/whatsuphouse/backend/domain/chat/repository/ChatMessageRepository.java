@@ -4,6 +4,7 @@ import com.whatsuphouse.backend.domain.chat.entity.ChatMessage;
 import com.whatsuphouse.backend.domain.chat.enums.ChatMessageType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -21,6 +22,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
     }
 
     Optional<ChatMessage> findByIdAndDeletedAtIsNull(UUID id);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ChatMessage m where m.roomId in :roomIds")
+    void deleteByRoomIdIn(@Param("roomIds") Collection<UUID> roomIds);
 
     Optional<ChatMessage> findByIdAndRoomId(UUID id, UUID roomId);
 

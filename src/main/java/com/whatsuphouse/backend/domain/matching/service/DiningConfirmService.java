@@ -65,7 +65,7 @@ import java.util.stream.Collectors;
  * 우연한 식탁 자동 확정 파이프라인. (설계 4.6, KAN-346)
  * 1~2. 하드 조건 최종 검증 → 테이블 CONFIRMED, 멤버 신청 CONFIRMED(배정 회차 = 테이블 회차), 참석 SCHEDULED. 여기까지 한 트랜잭션.
  *      위반이면 보류(상태·confirm_at 유지) + 예외함 CONFLICT(그 테이블에 열린 CONFLICT가 없을 때만).
- * 3. 식당 배정, 4. 채팅방 + 운영자 메시지 2개·취소 정책 공지, 5. 확정 알림. 단계마다 새 트랜잭션이라 실패해도 확정은 되돌아가지 않고 예외함에 남는다.
+ * 3. 식당 배정, 4. 채팅방 + 운영자 메시지 2개, 5. 확정 알림. 단계마다 새 트랜잭션이라 실패해도 확정은 되돌아가지 않고 예외함에 남는다.
  * 4단계가 실패한 테이블은 스케줄러가 5분마다 최대 3회 다시 시도한다(retryMissingChatRooms, KAN-438).
  * 모든 단계가 REQUIRES_NEW라 호출 측 트랜잭션과 섞이지 않는다.
  */
@@ -327,7 +327,8 @@ public class DiningConfirmService {
         }
     }
 
-    // 채팅방이 없으면 만들고 개설자(운영자) 이름으로 메시지 2개(장점 문구, 일시·지역·식당) + 취소 정책 공지를 남긴다. (설계 6.4)
+    // 채팅방이 없으면 만들고 개설자(운영자) 이름으로 메시지 2개(장점 문구, 일시·지역·식당)를 남긴다. (설계 6.4)
+    // 취소 정책은 채팅방에 올리지 않는다(테이블 상세에서 안내, KAN-442).
     // 방·chat_room_id·메시지가 한 트랜잭션이라 중간에 실패하면 모두 되돌아간다. 방이 이미 있으면 다시 보내지 않는다.
     private UUID openChatRoom(UUID tableId, UUID creatorId) {
         DiningTable table = findTable(tableId);
@@ -340,7 +341,6 @@ public class DiningConfirmService {
         List<Application> applications = findActiveMembers(tableId).stream().map(DiningTableMember::getApplication).toList();
         sendAsOperator(roomId, creatorId, diningTableExplanationService.explain(table, applications).strengths().get(0));
         sendAsOperator(roomId, creatorId, meetingMessage(table));
-        chatService.postSystemNotice(roomId, "취소 정책: " + DiningTableDetailService.CANCEL_POLICY);
         return roomId;
     }
 
@@ -402,7 +402,7 @@ public class DiningConfirmService {
         return name.length() > ROOM_NAME_MAX_LENGTH ? name.substring(0, ROOM_NAME_MAX_LENGTH) : name;
     }
 
-    // 확정·리마인드(KAN-349) 채팅 안내: 첫 줄 + 시간·지역·식당·취소 정책
+    // 리마인드(KAN-349) 채팅 안내: 첫 줄 + 시간·지역·식당. 취소 정책은 넣지 않는다(KAN-442).
     String tableNotice(DiningTable table, String headline) {
         GatheringSession session = table.getSession();
         String time = session.getStartTime() == null ? ""
@@ -417,7 +417,6 @@ public class DiningConfirmService {
         }
         lines.add("식당: " + (venue != null ? venue.getName() + " (" + venue.getAddress() + ")"
                 : "배정 중이에요. 정해지면 이 방에서 알려드릴게요."));
-        lines.add("취소 정책: " + DiningTableDetailService.CANCEL_POLICY);
         return String.join("\n", lines);
     }
 
